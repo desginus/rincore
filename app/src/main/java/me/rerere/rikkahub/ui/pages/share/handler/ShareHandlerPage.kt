@@ -91,7 +91,8 @@ fun ShareHandlerPage(text: String, image: String?) {
                             vm.updateAssistant(assistant.id)
                             navigateToChatPage(
                                 navigator = navController,
-                                initText = vm.shareText.base64Encode(),
+                                // v5.0.88：超长分享文本不预填输入框（整篇文档会撑满输入并落入草稿）
+                                initText = if (vm.shareText.length <= 4000) vm.shareText.base64Encode() else null,
                                 initFiles = image?.let { listOf(it.toUri()) } ?: emptyList()
                             )
                         }

@@ -68,7 +68,13 @@ fun SketchDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val state = remember { SketchState(aspectRatio) }
+    val state = remember {
+        // v5.0.88 性能打点：过滤 SketchPerf 即得三段耗时（state / renderer / 首帧）
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        SketchState(aspectRatio).also {
+            android.util.Log.i("SketchPerf", "state init ${android.os.SystemClock.elapsedRealtime() - t0}ms")
+        }
+    }
     var confirmDiscard by remember { mutableStateOf(false) }
 
     val loadFailed = stringResource(R.string.sketch_dialog_image_load_failed)

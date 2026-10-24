@@ -262,7 +262,10 @@ object WorkspaceImageResolver {
             val repo = fallbackRepo
                 ?: org.koin.core.context.GlobalContext.get()
                     .get<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
-            kotlinx.coroutines.runBlocking { repo.getAllWorkspaces() }
+            // v5.0.88：加超时护栏 —— DB 写事务风暴时这里会一直等，图片渲染链随之整段卡住
+            kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                kotlinx.coroutines.withTimeoutOrNull(800L) { repo.getAllWorkspaces() }
+            }
         }.getOrNull()
         if (fetched != null) {
             cachedWorkspaces = fetched

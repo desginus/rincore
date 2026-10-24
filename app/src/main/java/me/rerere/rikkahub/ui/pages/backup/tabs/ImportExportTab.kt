@@ -74,24 +74,37 @@ fun ImportExportTab(
                     // 表现为「体积涨到差不多就忽然停住」→ 用户以为卡死/失败。
                     // 改为分块复制并实时上报（每 ~16MB 更新一次，含总量），进度文案="写入文件"。
                     val totalBytes = exportFile.length()
-                    var written = 0L
-                    vm.exportProgress = "写入文件" to 0L
-                    context.contentResolver.openOutputStream(targetUri)?.use { outputStream ->
-                        FileInputStream(exportFile).use { inputStream ->
-                            val buf = ByteArray(1 shl 20) // 1MB
-                            while (true) {
-                                val n = inputStream.read(buf)
-                                if (n <= 0) break
-                                outputStream.write(buf, 0, n)
-                                written += n
-                                if (written / (16L shl 20) != (written - n) / (16L shl 20)) {
-                                    vm.exportProgress = "写入文件（共 ${"%.1f".format(totalBytes / 1024.0 / 1024.0)} MB）" to written
+                    // v5.0.88 ★用户实测「导出/分享卡死」同类根因（与 v5.0.47 导入侧同款）：
+                    // 这个 scope 是 rememberCoroutineScope（Main）—— 旧实现把 10G+ 的
+                    // FileInputStream→openOutputStream 复制循环**整个放在主线程** → ANR/卡死。
+                    // 现在整段复制进 IO 线程，进度回主线程更新；主线程只负责 UI 状态。
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        vm.exportProgress = "写入文件" to 0L
+                    }
+                    withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        var written = 0L
+                        context.contentResolver.openOutputStream(targetUri)?.use { outputStream ->
+                            FileInputStream(exportFile).use { inputStream ->
+                                val buf = ByteArray(1 shl 20) // 1MB
+                                while (true) {
+                                    val n = inputStream.read(buf)
+                                    if (n <= 0) break
+                                    outputStream.write(buf, 0, n)
+                                    written += n
+                                    if (written / (16L shl 20) != (written - n) / (16L shl 20)) {
+                                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                            vm.exportProgress =
+                                                "写入文件（共 ${"%.1f".format(totalBytes / 1024.0 / 1024.0)} MB）" to written
+                                        }
+                                    }
                                 }
                             }
+                            runCatching { outputStream.flush() }
                         }
-                        runCatching { outputStream.flush() }
                     }
-                    vm.exportProgress = null
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        vm.exportProgress = null
+                    }
 
                     // 清理临时文件
                     exportFile.delete()

@@ -1157,11 +1157,14 @@ private fun TableNode(node: ASTNode, content: String, modifier: Modifier = Modif
         uri?.let {
             scope.launch {
                 try {
-                    context.contentResolver.openOutputStream(it)?.use { outputStream ->
-                        outputStream.write(tableCsv.toByteArray())
+                    // v5.0.88：写文件不能在主线程（大表格会卡住输入/滚动）
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                            outputStream.write(tableCsv.toByteArray())
+                        }
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    android.util.Log.w("MarkdownTable", "csv export failed: ${e.message}")
                 }
             }
         }

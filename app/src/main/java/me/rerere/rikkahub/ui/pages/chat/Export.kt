@@ -163,11 +163,20 @@ fun ChatExportSheet(
                     onClick = {
                         // v4.8.185 (审计重写): 图片内联为 data URI 属重活 (读盘+base64) — 移入协程
                         scope.launch {
+                            // v5.0.88：真实结果反馈（旧实现无条件弹成功 → 用户以为导出成功但文件不存在）
                             exportToMarkdown(context, conversation, selectedMessages, exportOptions)
-                            toaster.show(
-                                markdownSuccessMessage,
-                                type = ToastType.Success
-                            )
+                                .onSuccess { savedPath ->
+                                    toaster.show(
+                                        "$markdownSuccessMessage（已保存到 $savedPath）",
+                                        type = ToastType.Success
+                                    )
+                                }
+                                .onFailure { e ->
+                                    toaster.show(
+                                        "Markdown 导出失败：${e.message ?: e::class.simpleName}",
+                                        type = ToastType.Error
+                                    )
+                                }
                             onDismissRequest()
                         }
                     },
@@ -520,6 +529,19 @@ private fun shareAsText(
     }
     val chooser = android.content.Intent.createChooser(intent, null)
         .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    // v5.0.88：同样排除本应用（避免"分享文本给自己"把整段文字灌进输入框）
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+        runCatching {
+            val self = context.packageManager.queryIntentActivities(intent, 0)
+                .map { it.activityInfo }
+                .filter { it.packageName == context.packageName }
+                .map { android.content.ComponentName(it.packageName, it.name) }
+                .toTypedArray()
+            if (self.isNotEmpty()) {
+                chooser.putExtra(android.content.Intent.EXTRA_EXCLUDE_COMPONENTS, self)
+            }
+        }
+    }
     context.startActivity(chooser)
 }
 
@@ -528,7 +550,7 @@ private suspend fun exportToMarkdown(
     conversation: Conversation,
     messages: List<UIMessage>,
     options: ExportOptions,
-) {
+): Result<String> = runCatching {
     val filename = "chat-export-${LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))}.md"
 
     // v4.8.185 (审计重写): 组装含 data URI 读盘/base64 — 移出主线程 (闭合见 try 前)。
@@ -643,32 +665,60 @@ private suspend fun exportToMarkdown(
     }
     } // v4.8.185: withContext(Dispatchers.IO) 闭合
 
-    try {
-        val dir = context.appTempFolder
-        val file = dir.resolve(filename)
-        if (!file.exists()) {
-            file.createNewFile()
-        } else {
-            file.delete()
-            file.createNewFile()
-        }
-        withContext(Dispatchers.IO) {
-            FileOutputStream(file).use {
-                it.write(sb.toString().toByteArray())
-            }
-        }
-
-        // Share the file
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file
-        )
-        shareFile(context, uri, "text/markdown")
-
-    } catch (e: Exception) {
-        e.printStackTrace()
+    // v5.0.88 ★用户实测「以 Markdown 文件形式分享 → 根本不写入手机存储」：
+    // 旧实现只写 cache/temp（应用缓存，用户在文件管理器看不到），且异常被
+    // catch + printStackTrace 吞掉、调用方无条件弹"成功" → 彻底静默失败。
+    // 现在：①写入系统「下载/RinCore」（MediaStore，无需权限）②分享面板排除本应用
+    // （否则点到自己会把整篇文本回灌输入框）③失败返回 Result.failure 由调用方提示。
+    val markdown = sb.toString()
+    val dir = context.appTempFolder
+    val file = File(dir, filename)
+    withContext(Dispatchers.IO) {
+        if (file.exists()) file.delete()
+        FileOutputStream(file).use { it.write(markdown.toByteArray()) }
     }
+    val savedPath = withContext(Dispatchers.IO) {
+        saveMarkdownToDownloads(context, filename, markdown)
+    }
+    // 分享是"附加动作"：FileProvider/chooser 失败不影响"已保存到下载"这一事实
+    runCatching {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        shareFile(context, uri, "text/markdown")
+    }
+    savedPath
+}
+
+/**
+ * v5.0.88：把导出内容真正写入手机存储（下载/RinCore）。
+ * API 29+ 走 MediaStore.Downloads（无需任何权限）；更低版本写公共 Downloads。
+ */
+private fun saveMarkdownToDownloads(context: Context, filename: String, content: String): String {
+    val bytes = content.toByteArray(Charsets.UTF_8)
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/markdown")
+            put(
+                android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                android.os.Environment.DIRECTORY_DOWNLOADS + "/RinCore"
+            )
+        }
+        val uri = context.contentResolver.insert(
+            android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values
+        ) ?: error("无法在下载目录创建文件")
+        context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+            ?: error("无法写入下载目录")
+        return "下载/RinCore/$filename"
+    }
+    val dir = File(
+        android.os.Environment.getExternalStoragePublicDirectory(
+            android.os.Environment.DIRECTORY_DOWNLOADS
+        ),
+        "RinCore"
+    )
+    if (!dir.exists() && !dir.mkdirs()) error("无法创建下载目录")
+    File(dir, filename).writeBytes(bytes)
+    return "下载/RinCore/$filename"
 }
 
 /** v4.8.185 (审计重写): 导出携图 — 应用本地图片地址词法 (规范形态无空白/引号/括号)。 */
@@ -1107,10 +1157,23 @@ private fun shareFile(context: Context, uri: Uri, mimeType: String) {
         putExtra(android.content.Intent.EXTRA_STREAM, uri)
         addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    context.startActivity(
-        android.content.Intent.createChooser(
-            intent,
-            context.getString(R.string.chat_page_export_share_via)
-        )
+    val chooser = android.content.Intent.createChooser(
+        intent,
+        context.getString(R.string.chat_page_export_share_via)
     )
+    // v5.0.88 ★排除本应用：导出分享的 chooser 里点到自己 → ACTION_SEND 回灌 ChatPage
+    //（整篇 Markdown 进输入框并被写成草稿，重启后仍在——本次用户实测的总链条之一）
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+        runCatching {
+            val self = context.packageManager.queryIntentActivities(intent, 0)
+                .map { it.activityInfo }
+                .filter { it.packageName == context.packageName }
+                .map { android.content.ComponentName(it.packageName, it.name) }
+                .toTypedArray()
+            if (self.isNotEmpty()) {
+                chooser.putExtra(android.content.Intent.EXTRA_EXCLUDE_COMPONENTS, self)
+            }
+        }
+    }
+    context.startActivity(chooser)
 }

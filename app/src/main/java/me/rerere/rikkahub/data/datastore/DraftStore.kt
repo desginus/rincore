@@ -22,6 +22,12 @@ import kotlin.uuid.Uuid
  * 独立 DataStore 文件 (settings 库不掺动态 key); 草稿属可丢数据, 损坏静默回退空。
  */
 class DraftStore(context: Context) {
+    private companion object {
+        /** v5.0.88：单条草稿上限 —— 超出说明是被误灌入的长文档（如整篇 Markdown 导出），
+         *  既不该进输入框也不该进草稿；load 时遇到历史脏数据直接清掉。 */
+        const val MAX_DRAFT_CHARS = 32_768
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val store = PreferenceDataStoreFactory.create(scope = scope) {
         context.preferencesDataStoreFile("drafts")
@@ -30,7 +36,14 @@ class DraftStore(context: Context) {
     private fun key(id: Uuid) = stringPreferencesKey("draft_" + id.toString())
 
     suspend fun load(id: Uuid): String = runCatching {
-        store.data.catch { emit(emptyPreferences()) }.first()[key(id)] ?: ""
+        val raw = store.data.catch { emit(emptyPreferences()) }.first()[key(id)] ?: ""
+        if (raw.length > MAX_DRAFT_CHARS) {
+            // 历史脏草稿（整篇文档被误写入）→ 清理，不回填输入框
+            runCatching { clear(id) }
+            ""
+        } else {
+            raw
+        }
     }.getOrDefault("")
 
     /**
@@ -44,6 +57,7 @@ class DraftStore(context: Context) {
      */
     suspend fun save(id: Uuid, text: String) {
         if (text.isEmpty()) return
+        if (text.length > MAX_DRAFT_CHARS) return
         runCatching { store.edit { it[key(id)] = text } }
     }
 

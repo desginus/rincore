@@ -153,6 +153,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
 @OptIn(FlowPreview::class)
+/** v5.0.88：分享进聊天页的文本长度上限（超过不自动填输入框，防止整篇文档灌入） */
+private const val SHARE_TEXT_MAX_CHARS = 4000
+
 @Composable
 fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, folderId: Uuid? = null) {
     val vm: ChatVM = koinViewModel(
@@ -300,11 +303,23 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
             // 追加而非替换 (不抹除用户已写内容)
             inputState.messageContent = inputState.messageContent + parts
         }
-        text?.base64Decode()?.let { decodedText ->
-            if (decodedText.isNotEmpty()) {
+        // v5.0.88 ★分享文本长度闸（用户实测：导出整篇 Markdown 后被全文塞进输入框，
+        // 1s 后写成草稿 → 退出重进仍是满屏 Markdown；清缓存无效因为草稿在 datastore）。
+        // 规则：分享进来的文本超过阈值一律不自动填入（提示用户改用文件分享）。
+        text?.let { raw ->
+            val decoded = runCatching { raw.base64Decode() }
+                .getOrNull()
+                ?.takeIf { it.isNotEmpty() }
+                ?: raw
+            if (decoded.length > SHARE_TEXT_MAX_CHARS) {
+                shareToaster.show(
+                    "分享内容过长（${decoded.length} 字符），未自动填入输入框；请以文件形式分享",
+                    type = ToastType.Error,
+                )
+            } else if (decoded.isNotBlank()) {
                 val existing = inputState.textContent.text.toString()
                 inputState.setMessageText(
-                    if (existing.isBlank()) decodedText else "$existing\n$decodedText"
+                    if (existing.isBlank()) decoded else "$existing\n$decoded"
                 )
             }
         }

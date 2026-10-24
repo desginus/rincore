@@ -38,7 +38,8 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
 
     private fun dao(): WorkspaceDAO = GlobalContext.get().get()
 
-    private fun allWorkspaces(): List<WorkspaceEntity> = runBlocking { dao().getAll() }
+    private fun allWorkspaces(): List<WorkspaceEntity> =
+        runBlocking(kotlinx.coroutines.Dispatchers.IO) { dao().getAll() }
 
     private fun workspaceName(root: String): String =
         allWorkspaces().firstOrNull { it.root == root }?.name ?: root

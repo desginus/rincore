@@ -109,12 +109,28 @@ internal fun SketchCanvas(state: SketchState, modifier: Modifier = Modifier) {
                         }
                     },
             ) {
-                val renderer = remember { CanvasStrokeRenderer.create() }
+                // v5.0.88 ★用户实测「进草图后彻底卡死，约 10 秒才能用」：
+                // 旧实现在首帧同步执行 CanvasStrokeRenderer.create()（androidx.ink 的渲染器，
+                // 首次初始化可能触发 GPU/字体/shader 准备）→ 整个对话框首帧被阻塞，
+                // 工具栏与关闭按钮也一起卡住。现在：先让界面框架出来（一帧），
+                // 再创建渲染器；创建期间只是画布暂时不显示笔画（本来也是空白画布）。
+                var renderer by remember { mutableStateOf<CanvasStrokeRenderer?>(null) }
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    val t0 = android.os.SystemClock.elapsedRealtime()
+                    kotlinx.coroutines.delay(16)
+                    renderer = runCatching { CanvasStrokeRenderer.create() }.getOrNull()
+                    android.util.Log.i(
+                        "SketchPerf",
+                        "renderer ready in ${android.os.SystemClock.elapsedRealtime() - t0}ms"
+                    )
+                }
                 val selectionColor = MaterialTheme.colorScheme.primary
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     state.revision
-                    drawSketch(state, size.width / paper.width, renderer)
-                    drawSelection(state, size.width / paper.width, selectionColor)
+                    renderer?.let { r ->
+                        drawSketch(state, size.width / paper.width, r)
+                        drawSelection(state, size.width / paper.width, selectionColor)
+                    }
                 }
                 if (canvasSize != IntSize.Zero) {
                     val scale = canvasSize.width / paper.width
