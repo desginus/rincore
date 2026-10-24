@@ -41,6 +41,9 @@ import me.rerere.rikkahub.utils.resolveWorkspaceRelPath
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
+/** v5.0.85：同一图片 URL 只允许一轮失败重试（进程级；URL 版本键随文件更新而变化） */
+private val workspaceImageRetriedUrls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
 @Composable
 fun ZoomableAsyncImage(
     model: String?,
@@ -82,6 +85,11 @@ fun ZoomableAsyncImage(
 
     androidx.compose.runtime.LaunchedEffect(model, workspaceFailed) {
         if (workspaceFailed && workspaceRetry < 3) {
+            // v5.0.85 ★用户定案（重试链收敛）：同一张图**只允许一轮重试**（首次失败时的
+            // 0.7s/1.4s/2.1s 三次），之后（切页面/重组/再次进入）不再重试 —— 免得每进一次
+            // 都白转 3 次。用进程级集合按 URL 记账；URL 含 mtime 版本键，文件更新后自然放行新一轮。
+            val urlKey = model?.toString()?.substringBefore('#') ?: return@androidx.compose.runtime.LaunchedEffect
+            if (workspaceRetry == 0 && !workspaceImageRetriedUrls.add(urlKey)) return@androidx.compose.runtime.LaunchedEffect
             kotlinx.coroutines.delay(700L * (workspaceRetry + 1))
             workspaceRetry += 1
             workspaceFailed = false
@@ -100,35 +108,55 @@ fun ZoomableAsyncImage(
     var loading by remember { mutableStateOf(false) }
 
     if (workspaceFetch && (workspaceFailed || workspaceDead)) {
-        // 失败态: 同一 modifier 作用在占位组件上 (尺寸跟随调用方约束)
+        // v5.0.85 ★失败占位升级（用户 A1/A4）：红框 + 失败原因分类 + 完整路径（点按复制），
+        // 一眼区分"路径不存在 / 解码失败 / 流式路径未就绪"，不再只有一句"图片不可用"。
+        val failedPath = model ?: ""
+        val failReason = if (workspaceDead) {
+            "路径尚未就绪（流式内容未完整）"
+        } else {
+            "加载失败：文件不存在 / 解码失败 / 缓存已清理（已重试一轮）"
+        }
+        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
         Column(
             modifier = modifier
                 .background(
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
                     shape = RoundedCornerShape(8.dp),
                 )
                 .border(
                     width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant,
+                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
                     shape = RoundedCornerShape(8.dp),
                 )
                 .padding(8.dp)
-                .clickable { showImageViewer = false },
+                .clickable { runCatching { clipboard.setText(androidx.compose.ui.text.AnnotatedString(failedPath)) } },
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 text = "图片不可用",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.error,
             )
-            if (!contentDescription.isNullOrBlank()) {
+            Text(
+                text = failReason,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (failedPath.isNotBlank()) {
                 Text(
-                    text = contentDescription,
+                    text = failedPath.substringAfter("://").ifBlank { failedPath },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "点按复制路径",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         }

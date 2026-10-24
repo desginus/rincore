@@ -300,6 +300,9 @@ class ChatService(
     // 队列派发）会**后写覆盖先写**，这就是"切换后消息串了/少了"的数据层来源。
     // 用 per-conversation Mutex 串行化同一对话的保存；不同对话互不阻塞（不引入全局锁）。
     private val saveLocks = java.util.concurrent.ConcurrentHashMap<Uuid, kotlinx.coroutines.sync.Mutex>()
+
+    /** v5.0.85：用量流水去重（同一条 assistant 消息只记一次） */
+    private val usageRecordedMessages = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     /** v5.0.83：UI 读取队列流时的静态空回退（避免为读取而创建空壳 session） */
     private val emptyMessageQueueFlow: kotlinx.coroutines.flow.StateFlow<MessageQueueState> =
         kotlinx.coroutines.flow.MutableStateFlow(MessageQueueState())
@@ -1087,6 +1090,9 @@ class ChatService(
                     memoryConsolidationScheduler.onTurnFinished(finalConversation, dreamScope, folderIds)
                 }
             }.onFailure { Logging.log(TAG, "memory onTurnFinished failed: $it") }
+            // v5.0.85 ★Token 用量流水落库（此前 usage_record 只有 Migration_33_34 回填的历史，
+            // 生成链从未写入 → 统计页永远只显示历史、且 model_name 是 UUID 的乱码）。
+            recordUsage(model, assistant, finalConversation)
         }
         // 强制停表 (顽固 bug 根治): 无论成功/失败/取消, 生成结束即停 reasoning 计时。
         // onCompletion 已停表但存在缝隙 (挂起路径), 此处兜底 — finishReasoning 幂等。
@@ -1106,6 +1112,42 @@ class ChatService(
                 updateConversation(conversationId, updated)
             }
         }
+    }
+
+    /**
+     * v5.0.85：把本次生成的真实用量写进 usage_record（按消息 id 去重，重试/多次完成回调不重复计）。
+     * DAO 用 GlobalContext 取（ChatService 构造参数保持稳定，避免 Koin 链改动）。
+     */
+    private suspend fun recordUsage(
+        model: me.rerere.ai.provider.Model,
+        assistant: me.rerere.rikkahub.data.model.Assistant?,
+        conversation: Conversation,
+    ) {
+        runCatching {
+            val message = conversation.messageNodes
+                .flatMap { it.messages }
+                .lastOrNull { it.role == MessageRole.ASSISTANT } ?: return
+            val usage = message.usage ?: return
+            if (usage.promptTokens <= 0 && usage.completionTokens <= 0) return
+            if (!usageRecordedMessages.add(message.id.toString())) return
+            val dao = org.koin.core.context.GlobalContext.get()
+                .getOrNull<me.rerere.rikkahub.data.db.dao.UsageRecordDAO>() ?: return
+            dao.insert(
+                me.rerere.rikkahub.data.db.entity.UsageRecordEntity(
+                    createdAt = System.currentTimeMillis(),
+                    source = "CHAT",
+                    providerId = null,
+                    modelId = model.id.toString(),
+                    // 关键：快照写 displayName（不是 modelId），迁移回填的 UUID 由 StatsVM 解析
+                    modelName = model.displayName.ifBlank { model.modelId },
+                    assistantId = assistant?.id?.toString(),
+                    conversationId = conversation.id.toString(),
+                    promptTokens = usage.promptTokens,
+                    completionTokens = usage.completionTokens,
+                    cachedTokens = usage.cachedTokens,
+                )
+            )
+        }.onFailure { Logging.log(TAG, "recordUsage failed: $it") }
     }
 
     // ---- 检查无效消息 ----

@@ -291,7 +291,7 @@ class MemoryRepository(
 
     suspend fun updateContent(id: Long, content: String): AssistantMemory {
         val old = memoryDAO.getMemoryById(id) ?: error("Memory record #$id not found")
-        val newMemory = old.copy(content = content)
+        val newMemory = old.copy(content = content, updatedAt = System.currentTimeMillis())
         memoryDAO.updateMemory(newMemory)
         return newMemory.toModel()
     }
@@ -308,7 +308,7 @@ class MemoryRepository(
     ): AssistantMemory {
         val old = memoryDAO.getMemoryById(id) ?: error("记忆 #$id 不存在")
         guardMemoryAccess(old, allowedAssistantId, currentConversationId)
-        val newMemory = old.copy(content = content)
+        val newMemory = old.copy(content = content, updatedAt = System.currentTimeMillis())
         memoryDAO.updateMemory(newMemory)
         return newMemory.toModel()
     }
@@ -345,6 +345,8 @@ class MemoryRepository(
                 sourceConversationId = memory.sourceConversationId,
                 folderId = memory.folderId,
                 source = memory.source,
+                // v5.0.85（用户 B3）：创建即记录时间戳，便于判断新旧
+                updatedAt = System.currentTimeMillis(),
             )
         )
         return memory
@@ -370,9 +372,12 @@ class MemoryRepository(
     ) {
         val entity = memoryDAO.getMemoryById(id) ?: error("记忆 #$id 不存在")
         guardMemoryAccess(entity, allowedAssistantId, currentConversationId)
-        memoryDAO.deleteMemory(id)
+        // v5.0.85（用户 B1/B3）：模型侧"删除"改为**软删（失效）** —— 旧口径被废弃后
+        // 不再注入后续会话，但记录留痕（此前物理删除后无从追溯，用户也只能新增"作废"条目）。
+        memoryDAO.invalidateMemory(id, System.currentTimeMillis())
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun guardMemoryAccess(
         entity: MemoryEntity,
         allowedAssistantId: String,
@@ -381,9 +386,9 @@ class MemoryRepository(
         if (entity.assistantId != allowedAssistantId) {
             error("该记忆不属于当前上下文，无法访问")
         }
-        if (entity.conversationId != null && entity.conversationId != currentConversationId) {
-            error("该记忆属于另一个对话，无法访问（单对话记忆只在它所属的对话里可用）")
-        }
+        // v5.0.85（用户 B1 亲见：改同主题旧记录被拒「该记忆属于另一个对话，无法访问」）：
+        // **放开跨对话编辑/废弃** —— 同一助手内允许修正任意对话产生的旧口径；归属不变。
+        // 仅保留"跨助手不可访问"这一条硬边界。
     }
 }
 

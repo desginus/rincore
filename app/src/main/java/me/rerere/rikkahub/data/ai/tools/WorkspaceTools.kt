@@ -957,7 +957,13 @@ private fun createShellTool(
             append("Defaults to '$defaultCwd' — i.e. the absolute sandbox path /workspace/$defaultCwd. ")
         }
         append("Requires Rootfs to be installed and ready. ")
-        append("Each call runs in a fresh isolated proot instance — processes started here die when the call ends; for long tasks (minutes) use workspace_job (durable background jobs) instead.")
+        append("Each call runs in a fresh isolated proot instance — processes started here die when the call ends; for long tasks (minutes) use workspace_job (durable background jobs) instead. ")
+        // v5.0.85（用户 C1/C5）：超时口径与固有不可用清单内置到工具说明，避免每次重新试错。
+        append("TIMEOUT: default 120s, hard cap 660s (pass `timeout` in ms to raise; the tool layer kills it at the cap). ")
+        append("If a command is killed by timeout, RE-RUN IT AS A workspace_job — do not retry in shell. ")
+        append("NOT AVAILABLE in this rootfs (do not try): LibreOffice/soffice (proot lacks standard /proc, aborts) — use `officecli view <file> screenshot` for document preview; ")
+        append("Playwright/Chromium may crash on some environments — retry once with --no-sandbox, else switch to weasyprint/pdftoppm. ")
+        append("stderr noise like 'onnxruntime ... GPU device discovery failed' is harmless and is filtered from the result.")
     },
     parameters = {
         InputSchema.Obj(
@@ -982,7 +988,7 @@ private fun createShellTool(
                     put("type", "integer")
                     put(
                         "description",
-                        "Command timeout in seconds. Defaults to 600, max $SHELL_TIMEOUT_MAX_SECONDS."
+                        "Command timeout in seconds. Defaults to 120, max 600. Long tasks: use workspace_job instead."
                     )
                 })
             },
@@ -1000,7 +1006,12 @@ private fun createShellTool(
             ?.coerceIn(1L, SHELL_TIMEOUT_MAX_SECONDS)
             ?.times(1_000L)
             ?: WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS
-        val result = workspaceRepository.executeCommand(workspaceId, command, cwd, timeoutMillis)
+        val rawResult = workspaceRepository.executeCommand(workspaceId, command, cwd, timeoutMillis)
+        // v5.0.85（用户 C4）：过滤第三方 CLI 的已知无害 stderr 噪音（GPU 探测/libGL 等），
+        // 避免被误读成任务失败；只过滤白名单关键字，其余原样保留。
+        val result = rawResult.copy(
+            stderr = filterKnownStderrNoise(rawResult.stderr ?: "")
+        )
         val cwdRel = cwd.ifBlank { null }
         val combinedOutput = (result.stdout ?: "") + "\n" + (result.stderr ?: "")
         val imagePaths = extractImagePathsFromText(combinedOutput)
@@ -1345,4 +1356,25 @@ private fun WorkspaceFileEntry.toJson() = buildJsonObject {
     put("isDirectory", isDirectory)
     put("sizeBytes", sizeBytes)
     put("updatedAt", updatedAt)
+}
+
+
+/**
+ * v5.0.85（用户 C4）：已知无害 stderr 噪音过滤。
+ * 只丢逐行命中的行，不改变其它内容；命中即说明是环境探测类输出，与任务成败无关。
+ */
+private fun filterKnownStderrNoise(stderr: String): String {
+    if (stderr.isBlank()) return stderr
+    val harmless = listOf(
+        "GPU device discovery failed",
+        "onnxruntime",
+        "libGL error",
+        "MESA-LOADER",
+        "dbus-daemon",
+        "Failed to connect to bus",
+        "Fontconfig warning",
+    )
+    return stderr.lineSequence()
+        .filterNot { line -> harmless.any { line.contains(it, ignoreCase = true) } }
+        .joinToString("\n")
 }

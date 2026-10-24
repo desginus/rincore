@@ -30,4 +30,10 @@ data class MemoryEntity(
     // v5.0.26 用户定案：记忆来源 —— manual=模型主动写入 / user=用户手动添加 / dream=做梦整理
     @ColumnInfo("source")
     val source: String = "manual",
+    // v5.0.85（用户 B3）：失效标记（软删）。非空 = 已废弃，不再注入上下文/不在管理页展示，但留痕。
+    @ColumnInfo("invalidated_at")
+    val invalidatedAt: Long? = null,
+    // v5.0.85（用户 B3）：最后更新时间戳（环境类结论随时间失效，用户据此判断新旧）。
+    @ColumnInfo("updated_at")
+    val updatedAt: Long = 0L,
 )

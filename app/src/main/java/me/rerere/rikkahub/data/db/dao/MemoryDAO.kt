@@ -16,38 +16,38 @@ import me.rerere.rikkahub.data.db.entity.MemoryEntity
 interface MemoryDAO {
     // v4.8.92: 助手级记忆 = 排除单对话记忆（conversation_id IS NULL）—— 单对话记忆绝不出现在
     // 其它对话的注入与"整个助手"列表里（用户定版：其它对话无法观测/修改/阅读）。
-    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NULL AND folder_id IS NULL ORDER BY id ASC")
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NULL AND folder_id IS NULL AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY id ASC")
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<MemoryEntity>>
 
-    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NULL AND folder_id IS NULL ORDER BY id ASC")
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NULL AND folder_id IS NULL AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY id ASC")
     suspend fun getMemoriesOfAssistant(assistantId: String): List<MemoryEntity>
 
     // ── v4.8.92: 单对话记忆 ──
     // v5.0.24: 项目包记忆 —— 该包内所有对话可见
-    @Query("SELECT * FROM memoryentity WHERE folder_id = :folderId AND conversation_id IS NULL ORDER BY id ASC")
+    @Query("SELECT * FROM memoryentity WHERE folder_id = :folderId AND conversation_id IS NULL AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY id ASC")
     fun getMemoriesOfFolderFlow(folderId: String): Flow<List<MemoryEntity>>
 
-    @Query("SELECT * FROM memoryentity WHERE folder_id = :folderId AND conversation_id IS NULL ORDER BY id ASC")
+    @Query("SELECT * FROM memoryentity WHERE folder_id = :folderId AND conversation_id IS NULL AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY id ASC")
     suspend fun getMemoriesOfFolder(folderId: String): List<MemoryEntity>
 
     // v5.0.25: 助手名下全部项目包记忆（按包分组展示）
-    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND folder_id IS NOT NULL AND conversation_id IS NULL ORDER BY folder_id ASC, id ASC")
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND folder_id IS NOT NULL AND conversation_id IS NULL AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY folder_id ASC, id ASC")
     fun getFolderMemoriesOfAssistantFlow(assistantId: String): Flow<List<MemoryEntity>>
 
-    @Query("SELECT * FROM memoryentity WHERE conversation_id = :conversationId ORDER BY id ASC")
+    @Query("SELECT * FROM memoryentity WHERE conversation_id = :conversationId AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY id ASC")
     fun getMemoriesOfConversationFlow(conversationId: String): Flow<List<MemoryEntity>>
 
-    @Query("SELECT * FROM memoryentity WHERE conversation_id = :conversationId ORDER BY id ASC")
+    @Query("SELECT * FROM memoryentity WHERE conversation_id = :conversationId AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY id ASC")
     suspend fun getMemoriesOfConversation(conversationId: String): List<MemoryEntity>
 
-    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NOT NULL ORDER BY conversation_id ASC, id ASC")
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NOT NULL AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY conversation_id ASC, id ASC")
     fun getConversationMemoriesOfAssistantFlow(assistantId: String): Flow<List<MemoryEntity>>
 
     /**
      * v5.0.67 ★项目包记忆的**真正实现**：取一批对话各自的「仅对话内可见」记忆。
      * 用户定案：项目包不是独立存储层，而是「该对话 + 同包所有对话」的对话级记忆集合。
      */
-    @Query("SELECT * FROM memoryentity WHERE conversation_id IN (:conversationIds) ORDER BY conversation_id ASC, id ASC")
+    @Query("SELECT * FROM memoryentity WHERE conversation_id IN (:conversationIds) AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY conversation_id ASC, id ASC")
     suspend fun getMemoriesOfConversations(conversationIds: List<String>): List<MemoryEntity>
 
     /** v5.0.67：删某 scope 下由做梦整理产生的条目（每次整理后全量重建，保证幂等） */
@@ -66,6 +66,14 @@ interface MemoryDAO {
     /** 历史混合层 dream 条目洗正：归属以最细层为准（对话层），folder_id 清空（幂等） */
     @Query("UPDATE memoryentity SET folder_id = NULL WHERE assistant_id = :assistantId AND source = 'dream' AND folder_id IS NOT NULL AND conversation_id IS NOT NULL")
     suspend fun clearFolderOnMixedDreams(assistantId: String)
+
+    /** v5.0.85（用户 B3）：软删/废弃 —— 不再注入也不在管理页展示，留痕可审计 */
+    @Query("UPDATE memoryentity SET invalidated_at = :at, updated_at = :at WHERE id = :id")
+    suspend fun invalidateMemory(id: Long, at: Long)
+
+    /** v5.0.85：撤销废弃（恢复可见） */
+    @Query("UPDATE memoryentity SET invalidated_at = NULL, updated_at = :at WHERE id = :id")
+    suspend fun restoreMemory(id: Long, at: Long)
 
     @Query("DELETE FROM memoryentity WHERE conversation_id = :conversationId")
     suspend fun deleteMemoriesOfConversation(conversationId: String)
