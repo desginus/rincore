@@ -319,14 +319,15 @@ class AssistantDetailVM(
      * 全量做梦整理（产物落为做梦记忆，范围=该对话）。
      * 助手未开启记忆时直接抛出异常（调用方 toast）。
      */
-    fun triggerDreamConsolidation(conversationId: String) {
-        val current = assistant.value
-        val mid = current.takeIf { it.enableMemory }?.memoryId
+    fun triggerDreamConsolidation(conversationId: String): Boolean {
+        val mid = assistant.value.takeIf { it.enableMemory }?.memoryId
         if (mid == null) {
+            // 未开启记忆：返回 false，由调用方（按钮）toast 提示
             Logging.log(TAG, "triggerDream: 助手未开启记忆")
-            return
+            return false
         }
         memoryConsolidationScheduler.organizeConversation(mid, Uuid.parse(conversationId))
+        return true
     }
 
     /** 整理所有待整理的对话，并把整个记忆库清理一遍（上游 3.0.0） */
