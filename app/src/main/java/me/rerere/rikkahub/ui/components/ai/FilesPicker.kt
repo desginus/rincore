@@ -340,7 +340,13 @@ internal fun FilesPicker(
                     // v5.0.24 用户定案：观测删除 → 记忆（三范围：单对话 / 项目包 / 助手）
                     GlassToolTile(HugeIcons.Book02, "记忆", modifier = Modifier.weight(1f)) {
                         onDismiss()
-                        navController.navigate(Screen.AssistantMemory(assistant.id.toString()))
+                        // v5.0.80：带当前对话 id —— 记忆页的「主动做梦」要记忆的就是这条对话
+                        navController.navigate(
+                            Screen.AssistantMemory(
+                                id = assistant.id.toString(),
+                                conversationId = conversation.id.toString(),
+                            )
+                        )
                     }
                     GlassToolTile(
                         HugeIcons.Folder01, "本对话产出", badge = producedFiles.size, modifier = Modifier.weight(1f)

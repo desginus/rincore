@@ -28,6 +28,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -60,6 +63,8 @@ import java.util.Locale
 @Composable
 fun StatsPage(vm: StatsVM = koinViewModel()) {
     val stats by vm.stats.collectAsStateWithLifecycle()
+    // v5.0.80：Token 用量状态
+    val usage by vm.usage.collectAsStateWithLifecycle()
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -96,6 +101,14 @@ fun StatsPage(vm: StatsVM = koinViewModel()) {
                         modifier = Modifier.padding(horizontal = 8.dp),
                     )
                 }
+                // v5.0.80 Token 用量（对齐 3.1.0：时间窗 + 按模型 + 按来源）
+                item {
+                    TokenUsageCard(
+                        usage = usage,
+                        onRangeChange = { vm.setUsageRange(it) },
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                }
                 item {
                     StatsGrid(
                         stats = stats,
@@ -108,8 +121,7 @@ fun StatsPage(vm: StatsVM = koinViewModel()) {
 }
 
 @Composable
-private fun HeatmapCard(conversationsPerDay: Map<LocalDate, Int>, modifier: Modifier = Modifier) {
-    Card(
+private fun HeatmapCard(conversationsPerDay: Map<LocalDate, Int>, modifier: Modifier = Modifier) {    Card(
         modifier = modifier.fillMaxWidth(),
         colors = CustomColors.cardColorsOnSurfaceContainer,
     ) {
@@ -332,6 +344,109 @@ private fun StatsGrid(stats: AppStats, modifier: Modifier = Modifier) {
             label = stringResource(R.string.stats_page_launch_count),
             value = formatCount(stats.launchCount.toLong()),
         )
+    }
+}
+
+@Composable
+private fun TokenUsageCard(
+    usage: TokenUsageStats,
+    onRangeChange: (StatsRange) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(modifier = modifier.fillMaxWidth(), colors = CustomColors.cardColorsOnSurfaceContainer) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.stats_token_usage_title), style = MaterialTheme.typography.titleMedium)
+            }
+            // v5.0.80 时间范围（对齐 3.1.0：7 天/30 天/90 天/全部）
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                val entries = listOf(
+                    StatsRange.D7 to R.string.stats_range_7d,
+                    StatsRange.D30 to R.string.stats_range_30d,
+                    StatsRange.D90 to R.string.stats_range_90d,
+                    StatsRange.ALL to R.string.stats_range_all,
+                )
+                entries.forEachIndexed { index, (range, label) ->
+                    SegmentedButton(
+                        selected = usage.range == range,
+                        onClick = { onRangeChange(range) },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = entries.size),
+                    ) {
+                        Text(stringResource(label))
+                    }
+                }
+            }
+            // 总计
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(formatTokens(usage.promptTokens), style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        stringResource(R.string.stats_page_input_tokens),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(formatTokens(usage.completionTokens), style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        stringResource(R.string.stats_page_output_tokens),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (usage.cachedTokens > 0) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(formatTokens(usage.cachedTokens), style = MaterialTheme.typography.headlineSmall)
+                        Text(
+                            stringResource(R.string.stats_page_cached_tokens),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            // 按模型
+            if (usage.byModel.isNotEmpty()) {
+                Text(stringResource(R.string.stats_by_model), style = MaterialTheme.typography.titleSmall)
+                usage.byModel.take(10).forEach { m ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(m.modelName ?: m.modelId ?: "unknown", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        Text(
+                            formatTokens(m.promptTokens + m.completionTokens),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            // 按来源
+            if (usage.bySource.isNotEmpty()) {
+                Text(stringResource(R.string.stats_by_source), style = MaterialTheme.typography.titleSmall)
+                usage.bySource.forEach { s ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(s.source, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        Text(
+                            formatTokens(s.promptTokens + s.completionTokens),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

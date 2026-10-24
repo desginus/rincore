@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import me.rerere.rikkahub.data.ai.MemoryConsolidationStatus
+import me.rerere.common.android.Logging
 import me.rerere.rikkahub.data.model.MemoryFile
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -311,6 +312,21 @@ class AssistantDetailVM(
 
     /** 当前助手读写的记忆库 */
     val memoryId: String get() = memoryIdOf(assistant.value)
+
+    /**
+     * v5.0.80 主动做梦（用户指令）：从记忆页手动触发，立即对**当前对话**做一次
+     * 全量做梦整理（产物落为做梦记忆，范围=该对话）。
+     * 助手未开启记忆时直接抛出异常（调用方 toast）。
+     */
+    fun triggerDreamConsolidation(conversationId: String) {
+        val current = assistant.value
+        val mid = current.takeIf { it.enableMemory }?.memoryId
+        if (mid == null) {
+            Logging.log(TAG, "triggerDream: 助手未开启记忆")
+            return
+        }
+        memoryConsolidationScheduler.organizeConversation(mid, Uuid.parse(conversationId))
+    }
 
     /** 整理所有待整理的对话，并把整个记忆库清理一遍（上游 3.0.0） */
     fun organizeMemory() {

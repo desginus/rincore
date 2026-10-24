@@ -109,6 +109,8 @@ private fun createWorkspaceToolsWithApprovals(
         // 专用工具优于 shell 拼接: 结构化输出/统一截断/免审批只读)
         createGrepTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
         createGlobTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
+        // v5.0.80 合并入口：content/name 一参分流（grep/glob 保留兼容，模型优先用 search）
+        createSearchTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
     )
 }
 
@@ -525,6 +527,7 @@ private fun createGrepTool(
 ) = Tool(
     name = "workspace_grep",
     description = """
+        (v5.0.80: merged into workspace_search — prefer calling workspace_search with mode="content"; this tool remains as a compatibility alias.)
         Search file contents in the workspace (ripgrep when available, grep fallback).
         Returns matching lines as path:line:content. Use this instead of shell grep/rg for code search.
         Parameters: pattern (regex, required); path (search root, defaults to /workspace);
@@ -630,6 +633,7 @@ private fun createGlobTool(
 ) = Tool(
     name = "workspace_glob",
     description = """
+        (v5.0.80: merged into workspace_search — prefer calling workspace_search with mode="name"; this tool remains as a compatibility alias.)
         Find files by name pattern in the workspace (e.g. "*.kt", "README*", "config.*"). Patterns containing "/" or "**" are matched against the full path at any depth (e.g. "**/*" lists all files; "**/*.kt" all .kt files at any depth).
         Returns matching file paths sorted by modification time (newest first).
         Use this instead of shell find/ls for file discovery.
@@ -751,6 +755,63 @@ private fun createGlobTool(
                 }.toString()
             )
         )
+    },
+)
+
+/**
+ * v5.0.80 合并工具（用户裁定"grep/glob 合并成一个，区别改成填参数，方便模型调度"）：
+ * 一个入口 `workspace_search`，`mode` 参数区分内容搜索（content）/按名找文件（name）。
+ * 两个分支直接**透传 args 复用** grep/glob 的执行体（两者必填键都是 pattern，schema 全兼容），
+ * 零逻辑复制。旧 `workspace_grep`/`workspace_glob` 保留为兼容形态（描述已指向 search）。
+ */
+private fun createSearchTool(
+    workspaceId: String,
+    needsApproval: (String) -> Boolean,
+    workspaceRepository: WorkspaceRepository,
+    defaultCwd: String? = null,
+) = Tool(
+    name = "workspace_search",
+    description = """
+        Search the workspace: one unified entry for both content search and file-name lookup.
+        mode="content": regex search inside files (like workspace_grep; glob filters files; returns path:line:content).
+        mode="name": find files by name pattern (like workspace_glob; pattern may contain * and ** for full-path match; returns paths sorted by mtime).
+        Prefer this over workspace_grep/workspace_glob. Absolute /workspace paths resolve against the current CWD.
+    """.trimIndent().replace("\n", " "),
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("mode", buildJsonObject {
+                    put("type", "string")
+                    put("enum", kotlinx.serialization.json.JsonArray(
+                        listOf(kotlinx.serialization.json.JsonPrimitive("content"), kotlinx.serialization.json.JsonPrimitive("name"))
+                    ))
+                    put("description", "content = search inside file contents; name = find files by name pattern")
+                })
+                put("pattern", buildJsonObject {
+                    put("type", "string")
+                    put("description", "content: regex pattern. name: file name pattern (e.g. *.kt, README*, **/*.md)")
+                })
+                putPathProperty(required = false)
+                put("glob", buildJsonObject {
+                    put("type", "string")
+                    put("description", "content mode only: file filter like \"*.kt\"")
+                })
+                put("maxResults", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "Max results. Default GREP max $GREP_MAX_LIMIT / glob default.")
+                })
+            },
+            required = listOf("mode", "pattern"),
+        )
+    },
+    needsApproval = { needsApproval("workspace_search") },
+    execute = { args ->
+        val mode = args.jsonObject.string("mode")
+        when (mode) {
+            "content" -> createGrepTool(workspaceId, needsApproval, workspaceRepository, defaultCwd).execute(args)
+            "name" -> createGlobTool(workspaceId, needsApproval, workspaceRepository, defaultCwd).execute(args)
+            else -> error("mode must be \"content\" or \"name\"")
+        }
     },
 )
 

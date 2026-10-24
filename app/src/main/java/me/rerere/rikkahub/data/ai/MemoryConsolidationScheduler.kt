@@ -189,6 +189,18 @@ class MemoryConsolidationScheduler(
         }
     }
 
+    /**
+     * v5.0.80 主动做梦（用户指令）：记忆页「主动做梦」按钮手动触发 ——
+     * 立即对**指定对话**做一次全量整理（fullReview=true，与做梦范围无关），
+     * 产物按 scope 落库（单对话 → dream 条目归属该对话）。
+     * 与 [organize] 的区别：只整理这一个对话、不看 pending 缓存、直接开跑。
+     */
+    fun organizeConversation(memoryId: String, conversationId: Uuid) {
+        if (status.value[memoryId]?.running == true) return
+        cancelTimer(memoryId)
+        scope.launch { run(memoryId, fullReview = true, conversationIds = setOf(conversationId)) }
+    }
+
     private fun launchRun(memoryId: String) {
         scope.launch { runAutomatically(memoryId) }
     }

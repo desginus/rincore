@@ -4,6 +4,7 @@ import android.text.format.DateUtils
 import androidx.annotation.StringRes
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
+import me.rerere.hugeicons.stroke.AiMagic
 import me.rerere.hugeicons.stroke.Brain02
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Settings03
@@ -145,7 +146,7 @@ private fun MemorySectionCard(
 }
 
 @Composable
-fun AssistantMemoryPage(id: String) {
+fun AssistantMemoryPage(id: String, conversationId: String? = null) {
     val vm: AssistantDetailVM = koinViewModel(
         parameters = {
             parametersOf(id)
@@ -178,6 +179,21 @@ fun AssistantMemoryPage(id: String) {
                     if (memorySection == MemorySection.MEMORY && memoryCategory == MemoryCategory.DREAM) {
                         IconButton(onClick = { navController.navigate(Screen.MemoryFile(vm.memoryId, null)) }) {
                             Icon(HugeIcons.Add01, contentDescription = stringResource(R.string.add))
+                        }
+                    }
+                    // v5.0.80 主动做梦（用户指令："新增一个主动做梦记忆，记忆范围=当该功能被
+                    // 触发的时候，开始记忆当前对话的内容"）：从工具箱进入时带当前对话 id，
+                    // 点按钮立即对该对话做一次全量做梦整理（产物落为做梦记忆）。
+                    if (memorySection == MemorySection.MEMORY && conversationId != null) {
+                        val dreaming = vm.memoryConsolidation.collectAsStateWithLifecycle().value.running
+                        IconButton(
+                            onClick = { vm.triggerDreamConsolidation(conversationId) },
+                            enabled = !dreaming,
+                        ) {
+                            Icon(
+                                imageVector = HugeIcons.AiMagic,
+                                contentDescription = stringResource(R.string.assistant_page_memory_dream_now),
+                            )
                         }
                     }
                 },

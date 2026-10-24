@@ -614,7 +614,7 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.AssistantMemory> { key ->
-                                AssistantMemoryPage(key.id)
+                                AssistantMemoryPage(key.id, key.conversationId)
                             }
 
                             entry<Screen.AssistantRequest> { key ->
@@ -962,7 +962,7 @@ sealed interface Screen : NavKey {
     data class AssistantPrompt(val id: String) : Screen
 
     @Serializable
-    data class AssistantMemory(val id: String) : Screen
+    data class AssistantMemory(val id: String, val conversationId: String? = null) : Screen
 
     @Serializable
     data class AssistantRequest(val id: String) : Screen
