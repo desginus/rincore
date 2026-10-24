@@ -88,8 +88,8 @@ fun ZoomableAsyncImage(
             // v5.0.85 ★用户定案（重试链收敛）：同一张图**只允许一轮重试**（首次失败时的
             // 0.7s/1.4s/2.1s 三次），之后（切页面/重组/再次进入）不再重试 —— 免得每进一次
             // 都白转 3 次。用进程级集合按 URL 记账；URL 含 mtime 版本键，文件更新后自然放行新一轮。
-            val urlKey = model?.toString()?.substringBefore('#') ?: return@androidx.compose.runtime.LaunchedEffect
-            if (workspaceRetry == 0 && !workspaceImageRetriedUrls.add(urlKey)) return@androidx.compose.runtime.LaunchedEffect
+            val urlKey = model?.toString()?.substringBefore('#') ?: return@LaunchedEffect
+            if (workspaceRetry == 0 && !workspaceImageRetriedUrls.add(urlKey)) return@LaunchedEffect
             kotlinx.coroutines.delay(700L * (workspaceRetry + 1))
             workspaceRetry += 1
             workspaceFailed = false

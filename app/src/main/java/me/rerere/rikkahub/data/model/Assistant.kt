@@ -40,6 +40,14 @@ data class Assistant(
     /** v5.0.54 用户定案：新建记忆的归属范围 — 0=助手级 / 1=项目包内 / 2=当前对话。
      *  决定模型主动写入的记忆挂到哪个区块（可见范围随之收窄）。 */
     val memoryWriteScope: Int = 0,
+    /**
+     * v5.0.86（用户定案）：**挂载分离** —— 主动写入的记忆与做梦记录的记忆
+     * 可以分别决定挂载到哪一个区块（注入时按来源各自过滤）。
+     * 取值：1=仅助手级 / 2=项目包内 / 3=仅当前对话。
+     * 默认 2 = 与既有注入链行为一致（助手级 + 项目包 + 包内对话 + 本对话）。
+     */
+    val manualMemoryMount: Int = 2,
+    val dreamMemoryMount: Int = 2,
     val enableRecentChatsReference: Boolean = false,
     val messageTemplate: String = "{{ message }}",
     val presetMessages: List<UIMessage> = emptyList(),

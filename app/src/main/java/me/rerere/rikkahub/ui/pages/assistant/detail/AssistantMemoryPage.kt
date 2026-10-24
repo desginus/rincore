@@ -463,6 +463,59 @@ private fun MemorySettingsTab(
                 },
             )
             // （v5.0.62 曾误删上面两块，v5.0.63 已回滚 —— 记录在此避免重犯）
+            // v5.0.86 ★挂载分离（用户定案）：主动写入 / 做梦记录各自的挂载区块
+            item(
+                headlineContent = { Text("主动写入记忆的挂载") },
+                supportingContent = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "模型主动写入（含手动添加）的记忆注入到哪些区块",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(
+                                1 to "仅助手级",
+                                2 to "项目包内",
+                                3 to "仅当前对话",
+                            ).forEach { (value, label) ->
+                                FilterChip(
+                                    selected = assistant.manualMemoryMount == value,
+                                    onClick = { onUpdateAssistant(assistant.copy(manualMemoryMount = value)) },
+                                    label = { Text(label) },
+                                    enabled = assistant.enableMemory,
+                                )
+                            }
+                        }
+                    }
+                },
+            )
+            item(
+                headlineContent = { Text("做梦记忆的挂载") },
+                supportingContent = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "做梦整理产生的记忆注入到哪些区块",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(
+                                1 to "仅助手级",
+                                2 to "项目包内",
+                                3 to "仅当前对话",
+                            ).forEach { (value, label) ->
+                                FilterChip(
+                                    selected = assistant.dreamMemoryMount == value,
+                                    onClick = { onUpdateAssistant(assistant.copy(dreamMemoryMount = value)) },
+                                    label = { Text(label) },
+                                    enabled = assistant.enableMemory,
+                                )
+                            }
+                        }
+                    }
+                },
+            )
             // v5.0.16 用户定案：做梦（记忆整理）独立开关
             switchItem(
                 checked = assistant.memoryDreamEnabled,

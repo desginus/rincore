@@ -906,7 +906,25 @@ class ChatService(
                         memoryRepository.getMemoriesOfConversation(conversation.id.toString())
                     }.getOrDefault(emptyList())
                     // 同包批量查询已包含本对话的记忆 → distinctBy 去重，避免 prompt 重复
+                    // v5.0.86 ★挂载分离（用户定案）：主动写入与做梦记忆各有自己的挂载层级，
+                    // 1=仅助手级 / 2=项目包内（默认=现状全量） / 3=仅当前对话。
+                    val manualMount = assistant.manualMemoryMount
+                    val dreamMount = assistant.dreamMemoryMount
+                    val ownConversationId = conversation.id.toString()
+                    fun mountAllowed(memory: me.rerere.rikkahub.data.model.AssistantMemory, level: Int): Boolean =
+                        when (level) {
+                            1 -> memory.folderId == null && memory.conversationId == null
+                            3 -> (memory.folderId == null && memory.conversationId == null) ||
+                                memory.conversationId == ownConversationId
+                            else -> true
+                        }
                     (base + folderMemories + siblingMemories + ownMemories).distinctBy { it.id }
+                        .filter { memory ->
+                            mountAllowed(
+                                memory,
+                                if (memory.source == "dream") dreamMount else manualMount,
+                            )
+                        }
                 },
                 inputTransformers = buildList {
                     addAll(inputTransformers)
