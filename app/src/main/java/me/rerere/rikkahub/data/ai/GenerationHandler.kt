@@ -783,7 +783,7 @@ class GenerationHandler(
                         it is UIMessagePart.Text || it is UIMessagePart.Reasoning || it is UIMessagePart.Tool
                     }
                 // v5.0.58: 1 → 2 次（平台偶发空流，第 2 次多半成功；仍远小于流中断链）
-                if (emptyResponse && emptyRetryCount < 2) {
+                if (emptyResponse && emptyRetryCount < 4) {
                     emptyRetryCount++
                     CallTracer.event("RETRY", "empty_stream", "Empty assistant response, retry #$emptyRetryCount (step=$stepIndex)")
                     messages = messages.dropLast(1)

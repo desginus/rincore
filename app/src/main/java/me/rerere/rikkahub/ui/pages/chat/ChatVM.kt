@@ -160,7 +160,14 @@ class ChatVM(
                 .distinctUntilChanged()
                 .collect { hasText ->
                     if (hasText) {
-                        me.rerere.rikkahub.service.SandboxPrewarmer.warmOnTypingStartAsync(appScope)
+                        // v5.0.90 ★预热分工重构（用户质疑"预热对首字到底有没有效"）：
+                        // 旧实现在这里预热沙箱（proot + officecli 34MB），它只服务"首个工具调用"，
+                        // 与首字毫无关系，却恰好和"打完字立刻发送"抢 IO/CPU → 首字更慢。
+                        // 输入沿改为预热 LLM 端点连接（DNS + TCP + TLS，发送时直接复用连接池）。
+                        me.rerere.rikkahub.data.ai.LlmConnectionPrewarmer.warmAsync(
+                            appScope,
+                            resolveModelBaseUrl(settingsStore.settingsFlow.value, currentChatModel.value),
+                        )
                     }
                 }
         }
@@ -373,8 +380,35 @@ class ChatVM(
      * @param content 消息内容
      * @param answer 是否触发消息生成，如果为false，则仅添加消息到消息列表中
      */
+    /**
+     * v5.0.90：当前对话模型的端点 URL —— 供 LLM 连接预热使用。
+     * `ProviderSetting` 是 sealed class，baseUrl 只在具体子类上（接口无此属性），
+     * 因此按三个主要子类取；其它自定义类型直接不预热（无害）。
+     */
+    private fun resolveModelBaseUrl(
+        setting: me.rerere.rikkahub.data.datastore.Settings,
+        model: me.rerere.ai.provider.Model?,
+    ): String? {
+        if (model == null) return null
+        // Model 本身不带 providerId —— 模型归属由 ProviderSetting.models 表达；
+        // providerOverwrite（模型级覆盖）优先。
+        val provider = model.providerOverwrite
+            ?: setting.providers.firstOrNull { p -> p.models.any { it.id == model.id } }
+            ?: return null
+        return when (provider) {
+            is me.rerere.ai.provider.ProviderSetting.OpenAI -> provider.baseUrl
+            is me.rerere.ai.provider.ProviderSetting.Google -> provider.baseUrl
+            is me.rerere.ai.provider.ProviderSetting.Claude -> provider.baseUrl
+            else -> null
+        }
+    }
+
     fun handleMessageSend(content: List<UIMessagePart>,answer: Boolean = true) {
         if (content.isEmptyInputMessage()) return
+        // v5.0.90 ★沙箱预热改在"发送之后"（用户实证：旧输入沿预热与首字请求抢 IO，
+        // 预热没什么用还越等越久）。此时 LLM 请求已发出，proot/officecli 走热与
+        // 服务端 TTFB 并行，只为"首个工具调用"服务，不再影响首字。
+        me.rerere.rikkahub.service.SandboxPrewarmer.warmOnTypingStartAsync(appScope)
         // v4.8.123 (用户定版): 压缩期可发送 — 与模型输出期同款排队"等待中"
         // (派发门在压缩期挂起; 压缩完成由 ChatService.runCompression 统一派发)
         analytics.logEvent("ai_send_message", null)

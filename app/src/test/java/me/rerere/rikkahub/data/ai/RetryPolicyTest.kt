@@ -17,25 +17,25 @@ class RetryPolicyTest {
 
     @Test
     fun `三条链的配额`() {
-        assertEquals(8, RetryPhase.Init().total)
-        assertEquals(12, RetryPhase.Stream().total)
-        assertEquals(3, RetryPhase.DataTimeout().total)
+        assertEquals(12, RetryPhase.Init().total)
+        assertEquals(18, RetryPhase.Stream().total)
+        assertEquals(5, RetryPhase.DataTimeout().total)
     }
 
     @Test
     fun `配额耗尽即终止`() {
         val init = RetryDecision.decide(
-            StreamFailure.InitPhase(headerDead = false), RetryPhase.Init(used = 8), true
+            StreamFailure.InitPhase(headerDead = false), RetryPhase.Init(used = 12), true
         )
         assertTrue(init is RetryVerdict.Abort)
 
         val stream = RetryDecision.decide(
-            StreamFailure.StreamInterrupted, RetryPhase.Stream(used = 12), true
+            StreamFailure.StreamInterrupted, RetryPhase.Stream(used = 18), true
         )
         assertTrue(stream is RetryVerdict.Abort)
 
         val data = RetryDecision.decide(
-            StreamFailure.DataTimeout, RetryPhase.DataTimeout(used = 3), true
+            StreamFailure.DataTimeout, RetryPhase.DataTimeout(used = 5), true
         )
         assertTrue(data is RetryVerdict.Abort)
     }
@@ -46,26 +46,26 @@ class RetryPolicyTest {
     fun `指数退避序列 不抖动`() {
         // base 500ms，封顶 8000ms
         val init = RetryPhase.Init()
-        assertEquals(500L, init.backoffMs(1, jitter = false))
-        assertEquals(1_000L, init.backoffMs(2, jitter = false))
-        assertEquals(2_000L, init.backoffMs(3, jitter = false))
-        assertEquals(4_000L, init.backoffMs(4, jitter = false))
-        assertEquals(8_000L, init.backoffMs(5, jitter = false))
-        assertEquals(8_000L, init.backoffMs(8, jitter = false))
+        assertEquals(350L, init.backoffMs(1, jitter = false))
+        assertEquals(700L, init.backoffMs(2, jitter = false))
+        assertEquals(1_400L, init.backoffMs(3, jitter = false))
+        assertEquals(2_800L, init.backoffMs(4, jitter = false))
+        assertEquals(5_600L, init.backoffMs(5, jitter = false))
+        assertEquals(6_000L, init.backoffMs(8, jitter = false))
     }
 
     @Test
     fun `流中断退避同指数`() {
-        assertEquals(500L, RetryPhase.Stream(used = 0).delayMs(jitter = false))
-        assertEquals(1_000L, RetryPhase.Stream(used = 1).delayMs(jitter = false))
-        assertEquals(8_000L, RetryPhase.Stream(used = 9).delayMs(jitter = false))
+        assertEquals(350L, RetryPhase.Stream(used = 0).delayMs(jitter = false))
+        assertEquals(700L, RetryPhase.Stream(used = 1).delayMs(jitter = false))
+        assertEquals(6_000L, RetryPhase.Stream(used = 9).delayMs(jitter = false))
     }
 
     @Test
-    fun `思考静默退避 2 5 12 秒`() {
+    fun `思考静默退避 2 4 8 秒`() {
         assertEquals(2_000L, RetryPhase.DataTimeout(used = 0).delayMs())
-        assertEquals(5_000L, RetryPhase.DataTimeout(used = 1).delayMs())
-        assertEquals(12_000L, RetryPhase.DataTimeout(used = 2).delayMs())
+        assertEquals(4_000L, RetryPhase.DataTimeout(used = 1).delayMs())
+        assertEquals(8_000L, RetryPhase.DataTimeout(used = 2).delayMs())
     }
 
     @Test
@@ -79,7 +79,7 @@ class RetryPolicyTest {
     // ── 快速失败 ──
 
     @Test
-    fun `连续秒失败把退避抬到 30 秒`() {
+    fun `连续秒失败把退避抬到 15 秒`() {
         val v = RetryDecision.decide(
             StreamFailure.StreamInterrupted,
             RetryPhase.Stream(used = 0),
@@ -124,7 +124,7 @@ class RetryPolicyTest {
             retryAfterMs = 30_000L,
             jitter = false,
         )
-        assertEquals(30_000L, (v as RetryVerdict.Retry).delayMs)
+        assertEquals(15_000L, (v as RetryVerdict.Retry).delayMs)
     }
 
     @Test

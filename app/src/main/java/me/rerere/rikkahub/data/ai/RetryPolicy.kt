@@ -18,10 +18,10 @@ import kotlin.random.Random
  *
  * | 链            | 旧        | 新   | 理由 |
  * |---------------|-----------|------|------|
- * | Init 发起     | 5 线性    | 8 指数| 连接失败没花算力，便宜；指数避免撞同一拥塞点 |
- * | Stream 流中断 | 18 固定序 | 12 指数| 固定序列第 2 轮起节奏重复；指数+jitter 更抗抖动 |
- * | DataTimeout   | **1** 固定| 3 递增| 旧值 1 次等于没有容错（用户"忽然很频繁"的根源） |
- * | 空响应        | 1         | 2     | 平台偶发空流，第 2 次多半成功 |
+ * | Init 发起     | 5 线性    | **12 指数**（v5.0.90 激进化） | 连接失败没花算力；指数避免撞同一拥塞点 |
+ * | Stream 流中断 | 18 固定序 | **18 指数**（3 轮×6，v5.0.90 激进化） | 指数+jitter 更抗抖动 |
+ * | DataTimeout   | **1** 固定| **5 递增**（v5.0.90 激进化） | 旧值 1 次等于没有容错 |
+ * | 空响应        | 1         | **4** | 平台偶发空流，多次重发多半成功 |
  *
  * 另外两处结构性改动：
  *  ① **分类不再靠中文字符串嗅探** —— 优先读 [StreamTimeoutException] 的 phase 字段；
@@ -44,16 +44,16 @@ sealed class RetryPhase {
     val hasQuota: Boolean get() = used < total
 
     /**
-     * 发起阶段: 重试 8 次 (1 次初始请求 + 8 次重试)。
-     * v5.0.58: 5 → 8；退避由线性 0.5s×n 改为指数 0.5/1/2/4/8s(封顶) + jitter。
+     * 发起阶段: 重试 12 次 (1 次初始请求 + 12 次重试)。
+     * v5.0.90 用户定案「重试合理激进一点」: 8 → 12；退避 0.35/0.7/1.4/2.8/5.6/6s(封顶) + jitter。
      * 依据：Codex 的连接类错误是"无上限 + 指数封顶 60s"；我们保留有限预算但给指数。
      */
     data class Init(override val used: Int = 0) : RetryPhase() {
-        override val total get() = 8
+        override val total get() = 12
 
         /** 第 n 次（1-based）的等待时长；header 判死型不 delay（已耗 25-60s） */
         fun backoffMs(attempt: Int, jitter: Boolean = true): Long =
-            RetryPhase.backoff(attempt, base = 500L, cap = 8_000L, jitter = jitter)
+            RetryPhase.backoff(attempt, base = 350L, cap = 6_000L, jitter = jitter)
 
         fun next() = copy(used = used + 1)
         fun exhaustedMessage(): String =
@@ -61,42 +61,41 @@ sealed class RetryPhase {
     }
 
     /**
-     * 流中断阶段: 两轮链 2×6 = 12 次（v5.0.58: 旧三轮 18 次）。
-     * 退避指数 0.5/1/2/4/8/8s（封顶 8s）+ jitter，取代旧的固定序列 300/700/1s/2s/3s/5s。
+     * 流中断阶段: 三轮链 3×6 = 18 次（v5.0.90 用户定案「合理激进一点」: 12 → 18）。
+     * 退避指数 0.35/0.7/1.4/2.8/5.6/6s（封顶 6s）+ jitter。
      */
     data class Stream(override val used: Int = 0) : RetryPhase() {
-        override val total get() = 12
+        override val total get() = 18
 
         fun delayMs(jitter: Boolean = true): Long =
-            RetryPhase.backoff(used + 1, base = 500L, cap = 8_000L, jitter = jitter)
+            RetryPhase.backoff(used + 1, base = 350L, cap = 6_000L, jitter = jitter)
 
-        /** 日志描述: round x/2 step y/6 */
+        /** 日志描述: round x/3 step y/6 */
         fun describe(): String {
-            val round = used / 6 + 1
+            val round = (used / 6 + 1).coerceAtMost(3)
             val phaseInRound = used % 6 + 1
-            return "round $round/2 step $phaseInRound/6"
+            return "round $round/3 step $phaseInRound/6"
         }
 
         fun next() = copy(used = used + 1)
         fun exhaustedMessage(): String =
-            "生成中断: 自动恢复 2 轮 (共 $used 次) 已达上限，已保留已生成内容"
+            "生成中断: 自动恢复 3 轮 (共 $used 次) 已达上限，已保留已生成内容"
     }
 
     /**
      * 数据超时阶段 (v5.0.12 引入 / v5.0.58 重定预算): 建连成功但思考/排队静默超时
      * (看门狗 first-event/thinking 阶段判死)。
      *
-     * 旧值 1 次 —— 等于没有容错（用户实证"思考链中断忽然很频繁"）。新值 3 次，
-     * 退避 2s/5s/12s 递增（总等待约 19s，不长）。
+     * v5.0.90 用户定案「合理激进一点」: 3 → 5 次，退避 2/4/8/12/16s（总等待约 42s）。
      *
      * 为什么不能并进 12 次流中断链：思考被杀后每次重试都要从头再付整段思考
      * (最长 480s × 4)，12 次就是马拉松。
      */
     data class DataTimeout(override val used: Int = 0) : RetryPhase() {
-        override val total get() = 3
+        override val total get() = 5
 
-        fun delayMs(): Long = longArrayOf(2_000L, 5_000L, 12_000L)
-            .getOrElse(used) { 12_000L }
+        fun delayMs(): Long = longArrayOf(2_000L, 4_000L, 8_000L, 12_000L, 16_000L)
+            .getOrElse(used) { 16_000L }
 
         fun next() = copy(used = used + 1)
         fun exhaustedMessage(): String =
@@ -202,7 +201,7 @@ object RetryDecision {
     const val FAST_FAIL_THRESHOLD = 3
 
     /** 硬故障时的最小退避 */
-    const val FAST_FAIL_MIN_DELAY_MS = 30_000L
+    const val FAST_FAIL_MIN_DELAY_MS = 15_000L
 
     fun decide(
         failure: StreamFailure,
