@@ -223,13 +223,36 @@ class MemoryRepository(
      * 「助手记忆/项目包记忆/单对话记忆」过滤。这里在每次整理结束后，把该 scope 下
      * 的 dream 条目**全量重建**（先删后按文件写），保证幂等且与记忆库一致。
      */
+    /**
+     * v5.0.82 ★隔离带重写（用户定案：范围=隔离带与沙箱）：
+     * - [incremental]=true：[files] 是"本次做梦实际写过（touched）的记忆文件"，
+     *   删除只精准移除这些标题对应的旧条目（不再全量删重建）—— 其它对话/其它包产生的
+     *   记忆条目**绝不被复制或覆盖进本范围**；
+     * - [incremental]=false：旧行为（全量删重建，仅遗留调用面兼容）。
+     * - 三层归属**互斥**：助手级=两者 null；项目包=folderId 非空 conversationId null；
+     *   对话=conversationId 非空 folderId null（不再出现"包+对话"双字段混合条目，
+     *   同步前先把历史混合条目洗成对话层）。
+     */
     suspend fun syncDreamMemories(
         assistantId: String,
         folderId: String?,
         conversationId: String?,
         files: List<MemoryFile>,
+        incremental: Boolean = false,
     ) {
-        memoryDAO.deleteDreamMemories(assistantId, folderId, conversationId)
+        // 历史混合层 dream 条目洗正（幂等）：归属以"最细层"为准
+        memoryDAO.clearFolderOnMixedDreams(assistantId)
+        if (incremental) {
+            val touchedTitles = files.map { it.title }.filter { it.isNotBlank() }.toSet()
+            if (touchedTitles.isEmpty()) return
+            val scoped = memoryDAO.getDreamMemories(assistantId, folderId, conversationId)
+            val deletable = scoped.filter { entryTitleOf(it.content) in touchedTitles }
+            if (deletable.isNotEmpty()) {
+                memoryDAO.deleteMemoriesByIds(deletable.map { it.id })
+            }
+        } else {
+            memoryDAO.deleteDreamMemories(assistantId, folderId, conversationId)
+        }
         files.forEach { file ->
             if (file.content.isBlank()) return@forEach
             addMemory(
@@ -241,6 +264,10 @@ class MemoryRepository(
             )
         }
     }
+
+    /** dream 条目 content 的首行标题（addMemory 存储形态 = "【title】\ncontent"） */
+    private fun entryTitleOf(content: String): String =
+        if (content.startsWith("【")) content.substringBefore('】').removePrefix("【").trim() else ""
 
     /** v5.0.67：一批对话的对话级记忆（项目包互通：同包所有对话的记忆互相可见） */
     suspend fun getMemoriesOfConversations(conversationIds: List<String>): List<AssistantMemory> {

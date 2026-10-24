@@ -175,8 +175,20 @@ private const val READ_MESSAGE_LENGTH = 12_000
 fun createMemoryConversationTools(
     conversationRepo: ConversationRepository,
     assistantIds: Set<Uuid>,
+    /**
+     * v5.0.82 做梦范围硬隔离：整理模型允许接触的对话集合。
+     * null = 不限定（助手级做梦，旧行为）；非 null = 搜索结果只保留范围内对话，
+     * 全文读取只允许范围内对话（范围外一律 error 拒绝，绝不让其他包/其他对话内容进入产物）。
+     */
+    allowedConversationIds: Set<Uuid>? = null,
 ): List<Tool> = listOf(
-    conversationSearchTool { query -> conversationRepo.searchMessagesOfAssistants(query, assistantIds) },
+    conversationSearchTool { query -> conversationRepo.searchMessagesOfAssistants(query, assistantIds) }.let { search ->
+        if (allowedConversationIds == null) search
+        else search.copy(execute = { args ->
+            val output = search.execute(args)
+            filterConversationSearchOutput(output, allowedConversationIds)
+        })
+    },
     Tool(
         name = "conversation_read",
         description = """
@@ -212,7 +224,9 @@ fun createMemoryConversationTools(
                 ?.let { id -> runCatching { Uuid.parse(id) }.getOrNull() }
                 ?.let { id -> conversationRepo.getConversationById(id) }
                 ?.takeIf { conversation -> conversation.assistantId in assistantIds }
-                ?: error("conversation not found")
+                // v5.0.82 做梦范围硬隔离：范围外对话一律拒绝读取（其他包/其他对话的内容进不来）
+                ?.takeIf { conversation -> allowedConversationIds?.contains(conversation.id) != false }
+                ?: error("conversation not found or outside the dream scope")
             val offset = (args["offset"]?.jsonPrimitive?.intOrNull ?: 0).coerceAtLeast(0)
             val limit = (args["limit"]?.jsonPrimitive?.intOrNull ?: READ_DEFAULT_LIMIT).coerceIn(1, READ_MAX_LIMIT)
             val messages = conversation.dialogueMessages()
@@ -238,3 +252,25 @@ fun createMemoryConversationTools(
 /** 当前分支上用户和助手的消息，位置编号以这个列表为准 */
 internal fun Conversation.dialogueMessages(): List<UIMessage> =
     currentMessages.filter { it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT }
+
+/**
+ * v5.0.82 做梦范围硬隔离：把 conversation_search 输出里的范围外对话剔除。
+ * 输出形态 = 裸 JsonArray（每项含 conversation_id/title/snippet/date，见 conversationSearchTool）；
+ * 解析失败时原样放行（不因过滤而中断整理链）。数组里连带保留 date/title 等原字段。
+ */
+private fun filterConversationSearchOutput(output: List<UIMessagePart>, allowed: Set<Uuid>): List<UIMessagePart> {
+    val text = output.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
+    val arr = runCatching {
+        kotlinx.serialization.json.Json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonArray
+    }.getOrNull() ?: return output
+    val filtered = arr.filter { item ->
+        val id = (item as? kotlinx.serialization.json.JsonObject)
+            ?.get("conversation_id")
+            ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull }
+        id == null || runCatching { allowed.contains(kotlin.uuid.Uuid.parse(id)) }.getOrDefault(false)
+    }
+    val rebuilt = kotlinx.serialization.json.buildJsonArray {
+        filtered.forEach { add(it) }
+    }
+    return listOf(UIMessagePart.Text(JsonInstantPretty.encodeToString(rebuilt)))
+}

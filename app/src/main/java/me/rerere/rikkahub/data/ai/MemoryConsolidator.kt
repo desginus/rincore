@@ -120,9 +120,10 @@ class MemoryConsolidator(
         memoryId: String,
         conversationIds: Set<Uuid>,
         fullReview: Boolean,
+        scope: Int,
     ): MemoryConsolidationRun? = withContext(Dispatchers.IO) {
         try {
-            consolidateStore(memoryId, conversationIds, fullReview)
+            consolidateStore(memoryId, conversationIds, fullReview, scope)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -135,6 +136,7 @@ class MemoryConsolidator(
         memoryId: String,
         conversationIds: Set<Uuid>,
         fullReview: Boolean,
+        scope: Int,
     ): MemoryConsolidationRun? {
         val settings = settingsStore.awaitLoaded()
         val assistants = settings.assistants.filter { it.enableMemory && it.memoryId == memoryId }
@@ -154,14 +156,45 @@ class MemoryConsolidator(
         // 没有新的轮次时，只有手动清理且记忆库里有东西才值得调用模型
         if (batches.isEmpty() && (!fullReview || files.isEmpty())) return null
 
+        // ══ v5.0.82 做梦范围硬隔离（用户定案：范围=隔离带与沙箱，绝不容许跨范围污染）══
+        // 推断本次有效的 scope 与素材边界：
+        //   scope=0（助手级）→ 素材=全库（旧行为）
+        //   scope=1（项目包）→ batches 必须同属一个包；允许解析=包内全部对话；跨包时**回退助手级**
+        //   scope=2（当前对话）→ batches 恰好 1 个对话；允许解析=仅本对话
+        val scopeConversationIds: Set<Uuid>? = when (scope) {
+            1 -> {
+                val commonFolder = batches.mapNotNull { it.conversation.folderId }.toSet().singleOrNull()
+                if (commonFolder == null) {
+                    // 跨包批次无法界定"单个包" → 安全回退：素材限本批，归属落助手级（scope 降为 0 语义）
+                    batches.map { it.conversation.id }.toSet()
+                } else {
+                    // 包内全部对话都可作素材（与注入链"包内互通"一致）
+                    conversationRepo.getConversationIdsOfFolder(commonFolder)
+                        .mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }
+                        .toSet()
+                }
+            }
+            2 -> conversationIds
+            else -> null
+        }
+        val effectiveScope: Int = when (scope) {
+            1 -> if (scopeConversationIds == null) 0 else 1
+            else -> scope
+        }
+        val effectiveFolderForScope: Uuid? = when (effectiveScope) {
+            1 -> batches.mapNotNull { it.conversation.folderId }.toSet().singleOrNull()
+            else -> null
+        }
+
         val model = settings.consolidationModel(batches.firstOrNull()?.conversation, assistants.first())
             ?: error("No model available")
         val providerSetting = model.findProvider(settings.providers) ?: error("Provider not found")
-        // 自动整理只增改；删文件只在用户手动要求清理整个记忆库时才允许
+        // 自动整理只增改；删文件只在用户手动要求清理整个记忆库时才允许。
+        // v5.0.82：范围不是"整个助手"时禁用 DELETE 工具 —— 范围内清理不该有权触碰范围外的记忆文件。
         val tools = buildMemoryTools(memoryRepository, memoryId)
-            .filter { fullReview || it.name != MemoryToolNames.DELETE } +
-            createMemoryConversationTools(conversationRepo, assistantIds)
-        val systemPrompt = buildMemoryConsolidationPrompt(fullReview)
+            .filter { (fullReview && effectiveScope == 0) || it.name != MemoryToolNames.DELETE } +
+            createMemoryConversationTools(conversationRepo, assistantIds, allowedConversationIds = scopeConversationIds)
+        val systemPrompt = buildMemoryConsolidationPrompt(fullReview, effectiveScope)
         // 整次整理的每一步用同一个会话 ID，服务端才能命中前面几步的缓存
         val params = backgroundTextGenerationParams(model, Uuid.random(), settings.fastModelReasoningLevel)
         val hooks = object : AgentHooks {
@@ -210,20 +243,28 @@ class MemoryConsolidator(
         // v5.0.67 ★用户定案：「做梦整理」必须能和「助手/项目包/单对话」三个存储标签交叉过滤，
         // 而 MemoryFile 是文件式、没有 scope 维度 —— 所以每次整理结束后，把该 scope 下的
         // dream 条目**全量重建**（Repository.syncDreamMemories 内部先删后写，幂等）。
-        // scope 推断：只整理 1 个对话 → 归该对话；整理多个 → 归它们的共同项目包（无则助手级）。
+        // v5.0.82 ★★隔离带重写（用户实测"范围=当前对话却引入其他包/对话内容"的落库侧真根）：
+        //   旧实现 files=remaining 是【全库记忆文件】，全部镜像成当前范围条目 = 其它包/其它对话
+        //   的既有记忆被复制进本范围。现在只重建【本次 touched】的文件 + 三层归属互斥：
+        //   助手级=两者 null / 项目包=folderId 非空 conversationId null / 对话=conversationId 非空 folderId null。
         runCatching {
-            val scopeConv = conversationIds.singleOrNull()
-            val scopeFolder = if (scopeConv == null) {
-                batches.mapNotNull { it.conversation.folderId }.toSet().singleOrNull()
-            } else {
-                batches.firstOrNull()?.conversation?.folderId
+            val syncFolder: String? = when (effectiveScope) {
+                1 -> effectiveFolderForScope?.toString()
+                else -> null
             }
+            val syncConv: String? = when (effectiveScope) {
+                2 -> conversationIds.singleOrNull()?.toString()
+                else -> null
+            }
+            val touchedPaths = touched.toSet()
+            val touchedFiles = remaining.values.filter { it.path in touchedPaths }
             assistants.forEach { a ->
                 memoryRepository.syncDreamMemories(
                     assistantId = a.id.toString(),
-                    folderId = scopeFolder?.toString(),
-                    conversationId = scopeConv?.toString(),
-                    files = remaining.values.toList(),
+                    folderId = syncFolder,
+                    conversationId = syncConv,
+                    files = touchedFiles,
+                    incremental = true,
                 )
             }
         }.onFailure { Logging.log(TAG, "syncDreamMemories: $it") }

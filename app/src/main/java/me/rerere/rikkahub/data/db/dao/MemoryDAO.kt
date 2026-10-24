@@ -54,6 +54,19 @@ interface MemoryDAO {
     @Query("DELETE FROM memoryentity WHERE assistant_id = :assistantId AND source = 'dream' AND folder_id IS :folderId AND conversation_id IS :conversationId")
     suspend fun deleteDreamMemories(assistantId: String, folderId: String?, conversationId: String?)
 
+    // ── v5.0.82 隔离带：精准重建 + 归属互斥 ──
+
+    /** 取某 scope 下全部 dream 条目（与 deleteDreamMemories 同条件），供"只清 touched"精准重建 */
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND source = 'dream' AND folder_id IS :folderId AND conversation_id IS :conversationId")
+    suspend fun getDreamMemories(assistantId: String, folderId: String?, conversationId: String?): List<MemoryEntity>
+
+    @Query("DELETE FROM memoryentity WHERE id IN (:ids)")
+    suspend fun deleteMemoriesByIds(ids: List<Long>)
+
+    /** 历史混合层 dream 条目洗正：归属以最细层为准（对话层），folder_id 清空（幂等） */
+    @Query("UPDATE memoryentity SET folder_id = NULL WHERE assistant_id = :assistantId AND source = 'dream' AND folder_id IS NOT NULL AND conversation_id IS NOT NULL")
+    suspend fun clearFolderOnMixedDreams(assistantId: String)
+
     @Query("DELETE FROM memoryentity WHERE conversation_id = :conversationId")
     suspend fun deleteMemoriesOfConversation(conversationId: String)
 

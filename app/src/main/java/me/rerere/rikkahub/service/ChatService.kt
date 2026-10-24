@@ -300,6 +300,9 @@ class ChatService(
     // 队列派发）会**后写覆盖先写**，这就是"切换后消息串了/少了"的数据层来源。
     // 用 per-conversation Mutex 串行化同一对话的保存；不同对话互不阻塞（不引入全局锁）。
     private val saveLocks = java.util.concurrent.ConcurrentHashMap<Uuid, kotlinx.coroutines.sync.Mutex>()
+    /** v5.0.83：UI 读取队列流时的静态空回退（避免为读取而创建空壳 session） */
+    private val emptyMessageQueueFlow: kotlinx.coroutines.flow.StateFlow<MessageQueueState> =
+        kotlinx.coroutines.flow.MutableStateFlow(MessageQueueState())
     private fun saveLockFor(id: Uuid): kotlinx.coroutines.sync.Mutex =
         saveLocks.getOrPut(id) { kotlinx.coroutines.sync.Mutex() }
 
@@ -323,6 +326,17 @@ class ChatService(
 
     fun removeConversationReference(conversationId: Uuid) {
         sessionManager.release(conversationId)
+    }
+
+    /**
+     * v5.0.83：UI 持有余会话引用（配对 release）。此前 ChatPage/ChatVM 从不 acquire，
+     * refCount 恒 0 → 30 分钟空闲回收**连前台正在使用、还挂着 StateFlow 绑定的会话一起
+     * 回收** → UI flow 绑定旧实例、新消息进新壳 → 气泡不出现 + 发送链路失灵（用户实测
+     * "切换另一包发消息全乱 + 红叉无效 + 抽屉全空" 的顽固根因之一）。
+     * pin 期间绝不回收；onCleared 配对 release 后进入 30min 空闲回收。
+     */
+    fun pinConversationReference(conversationId: Uuid) {
+        sessionManager.acquire(conversationId)
     }
 
     private fun launchWithConversationReference(
@@ -367,6 +381,8 @@ class ChatService(
                 ).updateCurrentMessages(assistant.presetMessages)
             }
         }
+        // v5.0.83：加载完成后主动派发排队中的消息（未就绪期间 dispatch 被挡住，队列不受损）
+        dispatchNextQueuedMessage(conversationId)
     }
 
     // ---- 发送消息 ----
@@ -408,7 +424,8 @@ class ChatService(
     }
 
     fun getMessageQueueFlow(conversationId: Uuid): StateFlow<MessageQueueState> =
-        sessionManager.getOrCreate(conversationId).messageQueue.state
+        // v5.0.83：绝不因 UI 读取而创建空壳 session（fallback = 静态空队列）
+        sessionManager.get(conversationId)?.messageQueue?.state ?: emptyMessageQueueFlow
 
     fun removeQueuedMessage(conversationId: Uuid, messageId: Uuid) {
         sessionManager.get(conversationId)?.messageQueue?.remove(messageId)?.let(::cleanupQueuedAttachments)
@@ -463,6 +480,12 @@ class ChatService(
 
     private fun dispatchNextQueuedMessage(conversationId: Uuid): Job? {
         val session = sessionManager.get(conversationId) ?: return null
+        // v5.0.83 ★绝不向空壳派发：未就绪时消息留在队列里，等 initializeConversation
+        // 完成加载后主动派发（否则 sendQueuedMessage 会读到空壳 state 拼出"空壳+1条消息"落库）
+        if (!session.isReady) {
+            Log.d(TAG, "dispatch: session not ready, queue kept id=$conversationId")
+            return null
+        }
         synchronized(session) {
             // A pending tool approval is still part of the current turn.
             // v4.8.75 (用户定版): ask_user 等候期豁免 — 模型通过 ask_user 等用户回答时,
@@ -1375,16 +1398,21 @@ class ChatService(
 
     private fun updateConversation(conversationId: Uuid, conversation: Conversation) {
         if (conversation.id != conversationId) return
-        val session = sessionManager.getOrCreate(conversationId)
+        // v5.0.83：不创建空壳（get）；未就绪时由 session 内部排队
+        val session = sessionManager.get(conversationId) ?: return
         checkFilesDelete(conversation, session.state.value)
-        // 2.5.3: state 封装 — 经 updateConversation 写入 (@Synchronized, 维护 initialized)
         session.updateConversation(conversation)
     }
 
     fun updateConversationState(conversationId: Uuid, update: (Conversation) -> Conversation) {
-        // v5.0.76：原子读改写（替代"读 state.value → update → updateConversation"的外部快照模式）。
-        // LOADING 期间自动排队，加载完成后按序重放 —— 归属同步再也不会覆盖/丢失。
-        sessionManager.getOrCreate(conversationId).apply(update)
+        // v5.0.76：原子读改写；v5.0.83：**绝不创建空壳 session**（get 而非 getOrCreate），
+        // 未就绪的 session 内部自动排队（见 ConversationSession.apply）。
+        val session = sessionManager.get(conversationId)
+        if (session == null) {
+            Log.w(TAG, "updateConversationState: no active session, ignored id=$conversationId")
+            return
+        }
+        session.apply(update)
     }
 
     /**
@@ -1396,9 +1424,10 @@ class ChatService(
      */
     suspend fun persistConversationState(conversationId: Uuid) {
         saveLockFor(conversationId).withLock {
-            val session = sessionManager.getOrCreate(conversationId)
-            if (!session.isInitialized()) {
-                Log.w(TAG, "persistConversationState: session not loaded yet, skip id=$conversationId")
+            // v5.0.83：绝不创建空壳；未就绪则跳过错过的保存由后续信号补齐
+            val session = sessionManager.get(conversationId)
+            if (session == null || !session.isReady) {
+                Log.w(TAG, "persistConversationState: session not ready, skip id=$conversationId")
                 return@withLock
             }
             val snapshot = session.state.value
@@ -1425,19 +1454,25 @@ class ChatService(
      */
     /** 4.8.27: 会话是否已完成 DB 加载 (发送路径归属同步守卫)。 */
     fun isConversationInitialized(conversationId: Uuid): Boolean =
-        sessionManager.get(conversationId)?.isInitialized() == true
+        sessionManager.get(conversationId)?.isReady == true
 
     /**
      * v5.0.19 (B201 数据事故): 等待对话完成 DB 加载。
      * 供"打开页面即写入归属/草稿"等早期写入方使用——未加载时的 session 是空壳
      * （messageNodes 为空），任何整对象落库都会把历史消息删光。
      */
-    suspend fun awaitConversationLoaded(conversationId: Uuid, timeoutMs: Long = 15_000) {
+    /**
+     * v5.0.83：等待会话完成 DB 加载。返回 true = 已就绪可安全读写。
+     * session 不存在时**绝不创建空壳**（调用方应通过 initializeConversation 建会话）。
+     */
+    suspend fun awaitConversationLoaded(conversationId: Uuid, timeoutMs: Long = 8_000): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            if (isConversationInitialized(conversationId)) return
+            val session = sessionManager.get(conversationId) ?: return false
+            if (session.isReady) return true
             kotlinx.coroutines.delay(50)
         }
+        return sessionManager.get(conversationId)?.isReady == true
     }
 
     /** 4.8.32: 该会话是否正在生成 (压缩入口守卫 — 生成中禁止压缩)。 */
@@ -1509,34 +1544,49 @@ class ChatService(
     }
 
     suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
-        // v5.0.68: 同一对话的保存串行化（Mutex 不可重入 → dispatch 放到锁外）。
+        // v5.0.83 ★★★数据丢失根修（用户实测：并发生成+切换→重启后对话内容消失）：
+        //
+        // 旧实现三宗罪：
+        //  ① awaitConversationLoaded(15s) 在 saveLock **内** → 每条保存持锁等 15s，N 条排队
+        //     = 15s×N 卡死；而 finishGeneration 是 NonCancellable → 停止键（红叉）永远无效。
+        //  ② 加载守卫判处决后仍用**调用方入参快照**写内存与 DB —— 入参可能来自空壳
+        //     （sendQueuedMessage 读 session.state.value，未加载时=空对话）→ **空壳+1条消息覆盖历史**。
+        //  ③ 任何 getOrCreate（14 处）+ apply 可把空壳污染成 initialized → DB 权威数据永不加载。
+        //
+        // 新契约：等待在**锁外**；写库权威=**session.state**；空 messageNodes 严禁覆盖非空历史。
+        if (!awaitConversationLoaded(conversationId)) {
+            Log.w(
+                TAG,
+                "saveConversation: skipped — session not ready (no shell creation), id=$conversationId",
+            )
+            return
+        }
         saveLockFor(conversationId).withLock {
-            val session = sessionManager.getOrCreate(conversationId)
-            // v5.0.76 ★加载窗口守卫（B201 类数据事故总闸）：
-            // session 尚未完成 DB 加载时，调用方手里的 conversation 大概率是空壳
-            // 或基于空壳的快照 —— 直接写内存会把 initialized 置 true、让 initialize
-            // 的 DB 权威数据被永久丢弃（"切换后聊天记录全部消失"的机制）。
-            // 这里等待加载完成（15s 上限）；仍未加载则明确跳过并记日志（检修点）。
-            if (!session.isInitialized()) {
-                awaitConversationLoaded(conversationId)
-                if (!session.isInitialized()) {
-                    Log.w(TAG, "saveConversation: skipped — session not loaded after wait, id=$conversationId")
-                    return@withLock
-                }
+            val session = sessionManager.get(conversationId) ?: return@withLock
+            if (!session.isReady) {
+                Log.w(TAG, "saveConversation: skipped — session not READY, id=$conversationId")
+                return@withLock
             }
-            val exists = conversationRepo.existsConversationById(conversation.id)
+            // ★数据事故总闸：空壳（空 messageNodes）永远不许覆盖非空历史（v5.0.19 B201 教训的制度化）
+            if (conversation.messageNodes.isEmpty() && session.state.value.messageNodes.isNotEmpty()) {
+                Log.e(
+                    TAG,
+                    "saveConversation: BLOCKED empty-shell overwrite id=$conversationId " +
+                        "(incoming=0 nodes, session=${session.state.value.messageNodes.size} nodes)",
+                )
+                return@withLock
+            }
+            val exists = conversationRepo.existsConversationById(conversationId)
             if (!exists && conversation.title.isBlank() && conversation.messageNodes.isEmpty()) {
                 return@withLock // 新会话且为空时不保存
             }
-
-            val updatedConversation = conversation.copy()
-            // v5.0.76：内存写入改走原子 apply（不再是外部整对象盲覆盖）
-            session.apply { updatedConversation }
-
+            // 入参合并进内存（原子 apply），随后以 session.state 为唯一权威落库
+            session.apply { conversation }
+            val snapshot = session.state.value
             if (!exists) {
-                conversationRepo.insertConversation(updatedConversation)
+                conversationRepo.insertConversation(snapshot)
             } else {
-                conversationRepo.updateConversation(updatedConversation)
+                conversationRepo.updateConversation(snapshot)
             }
         }
 

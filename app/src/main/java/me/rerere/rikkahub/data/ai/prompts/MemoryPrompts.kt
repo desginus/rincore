@@ -151,7 +151,11 @@ private val MEMORY_FULL_REVIEW_PROMPT = """
 """.trimIndent()
 
 /** 后台记忆整理的 system prompt；[fullReview] 时除了提取新对话，还把整个记忆库清理一遍 */
-internal fun buildMemoryConsolidationPrompt(fullReview: Boolean): String = buildString {
+/**
+ * v5.0.82：[scope] 0=整个助手 / 1=项目包内 / 2=当前对话 —— 追加"范围硬约束"段：
+ * 做梦范围=隔离带，允许只有范围内的事实进入本次产物；范围外的既有记忆文件只是背景知识。
+ */
+internal fun buildMemoryConsolidationPrompt(fullReview: Boolean, scope: Int = 0): String = buildString {
     appendLine(MEMORY_CONSOLIDATION_INTRO)
     appendLine()
     appendLine(MEMORY_FORMAT_PROMPT)
@@ -161,6 +165,18 @@ internal fun buildMemoryConsolidationPrompt(fullReview: Boolean): String = build
         appendLine()
         appendLine()
         append(MEMORY_FULL_REVIEW_PROMPT)
+    }
+    when (scope) {
+        1 -> appendLine(
+            "\n[SCOPE: package] 本次做梦范围=项目包内。只允许把【范围内对话】的事实写入新记忆；" +
+                "范围外的记忆文件（其它项目包产生的内容）只可作背景知识，禁止引用、合并或照抄进新条目。"
+        )
+        2 -> appendLine(
+            "\n[SCOPE: conversation] 本次做梦范围=当前对话。只允许把【当前对话（即 <conversation> 输入中出现的那一条）】" +
+                "的事实写入新记忆；<memory_listing> 里由其它对话/其它项目包产生的记忆文件一律视为背景知识，" +
+                "禁止把它们的内容写进新条目或据此生成新条目。"
+        )
+        else -> {}
     }
 }
 

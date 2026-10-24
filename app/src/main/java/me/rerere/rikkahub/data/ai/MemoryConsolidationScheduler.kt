@@ -68,11 +68,18 @@ interface MemoryConsolidationWorker {
     /**
      * 整理 [conversationIds] 里新增的轮次，[fullReview] 时再把整个记忆库清理一遍。
      * 没有可做的事时返回 null，失败时抛出。
+     *
+     * v5.0.82 ★做梦范围硬隔离（用户定案：范围=隔离带与沙箱）：
+     * [scope] ∈ 0=整个助手 / 1=项目包内 / 2=当前对话。范围决定了
+     * ①整理模型可查询/可读取的对话集合（范围外对话一律拒绝）；
+     * ②产物条目的归属（三层互斥，绝不再混层）；
+     * ③产物重建只覆盖本次实际写过（touched）的文件，不再把全库镜像成当前范围条目。
      */
     suspend fun consolidate(
         memoryId: String,
         conversationIds: Set<Uuid>,
         fullReview: Boolean,
+        scope: Int = 0,
     ): MemoryConsolidationRun?
 }
 
@@ -127,9 +134,9 @@ class MemoryConsolidationScheduler(
                 markPending(item)
                 when (dreamScope) {
                     // 项目包内：只整理本包对话（无包归属时退化为单对话）
-                    1 -> runScoped(item.memoryId, (folderConversationIds + conversation.id).toSet())
+                    1 -> runScoped(item.memoryId, (folderConversationIds + conversation.id).toSet(), scope = 1)
                     // 当前对话：只整理这一条
-                    2 -> runScoped(item.memoryId, setOf(conversation.id))
+                    2 -> runScoped(item.memoryId, setOf(conversation.id), scope = 2)
                     else -> if (item.turns >= maxPendingTurns) {
                         runAutomatically(item.memoryId)
                     } else {
@@ -194,11 +201,14 @@ class MemoryConsolidationScheduler(
      * 立即对**指定对话**做一次全量整理（fullReview=true，与做梦范围无关），
      * 产物按 scope 落库（单对话 → dream 条目归属该对话）。
      * 与 [organize] 的区别：只整理这一个对话、不看 pending 缓存、直接开跑。
+     * v5.0.82：scope=2（当前对话）—— 整理模型的素材/工具/产物归属全部限定在该对话内。
      */
     fun organizeConversation(memoryId: String, conversationId: Uuid) {
         if (status.value[memoryId]?.running == true) return
         cancelTimer(memoryId)
-        scope.launch { run(memoryId, fullReview = true, conversationIds = setOf(conversationId)) }
+        scope.launch {
+            run(memoryId, fullReview = true, conversationIds = setOf(conversationId), scope = 2)
+        }
     }
 
     private fun launchRun(memoryId: String) {
@@ -210,10 +220,10 @@ class MemoryConsolidationScheduler(
         run(memoryId, fullReview = false)
     }
 
-    // 只整理给定的对话集合（做梦范围=项目包/单对话时使用）
-    private suspend fun runScoped(memoryId: String, conversationIds: Set<Uuid>) {
+    // 只整理给定的对话集合（做梦范围=项目包/单对话时使用；scope: 1=项目包内 / 2=当前对话）
+    private suspend fun runScoped(memoryId: String, conversationIds: Set<Uuid>, scope: Int) {
         cancelTimer(memoryId)
-        run(memoryId, fullReview = false, conversationIds = conversationIds)
+        run(memoryId, fullReview = false, conversationIds = conversationIds, scope = scope)
     }
 
     // 整理这个记忆库下所有待整理的对话
@@ -222,6 +232,8 @@ class MemoryConsolidationScheduler(
         fullReview: Boolean,
         // v5.0.16：显式限定整理面（null=记忆库下全部待整理对话）
         conversationIds: Set<Uuid>? = null,
+        // v5.0.82 做梦范围硬隔离：0=整个助手 / 1=项目包内 / 2=当前对话（默认助手级=旧行为）
+        scope: Int = 0,
     ): MemoryConsolidationRun? = synchronized(lock) { runLocks.getOrPut(memoryId) { Mutex() } }.withLock {
         val ids = synchronized(lock) {
             // 失败后不自动重试，免得模型一直出错时每次切走应用、离开对话都再调用一遍；
@@ -237,7 +249,7 @@ class MemoryConsolidationScheduler(
         val started = TimeSource.Monotonic.markNow()
         try {
             val result = try {
-                worker.consolidate(memoryId, ids, fullReview)
+                worker.consolidate(memoryId, ids, fullReview, scope)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

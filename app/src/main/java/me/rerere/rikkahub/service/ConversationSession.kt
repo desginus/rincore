@@ -93,8 +93,10 @@ class ConversationSession(
      */
     suspend fun initialize(load: suspend () -> Conversation) {
         initializationMutex.withLock {
+            // v5.0.83：只以 READY 为"已加载"判据（initialized 字段不再由空壳置真）；
+            // 另一并发调用者会在 Mutex 上等待首个加载完成，返回时 phase=READY 直接跳过。
             synchronized(stateLock) {
-                if (initialized || _phase.value == SessionPhase.LOADING) return
+                if (_phase.value == SessionPhase.READY) return
                 _phase.value = SessionPhase.LOADING
             }
             val loaded: Conversation = try {
@@ -133,28 +135,48 @@ class ConversationSession(
      * 与写回之间存在竞态窗口，是流式落库覆盖归属/消息的结构性来源）。
      * LOADING 期间自动排队，load 完成后按序重放。
      */
+    /**
+     * v5.0.83 ★★结构性修复（数据丢失级 bug）：
+     *
+     * 旧实现的致命缺陷：`NEW`（空壳 session，initial = Conversation.ofId 空对话）阶段
+     * 也走写 state 分支并 `initialized = true` → 空壳被任何一次 apply 污染成"已加载"
+     * → `initialize()` 开头 `if (initialized) return` → **DB 权威数据永不加载**
+     * → 会话永久空壳 → `sendQueuedMessage` 读到空壳、拼出"空壳+1条消息"→ 落库 **覆盖历史**
+     * （= 用户实测"重启后两个对话内容全部消失"）。
+     *
+     * 新语义：**只有 READY 才能写 state**。NEW/LOADING/FAILED 一律排队，等 initialize
+     * 完成后按序重放。空壳永远不可能冒充"已加载"。
+     */
     fun apply(update: (Conversation) -> Conversation): Conversation = synchronized(stateLock) {
-        if (_phase.value == SessionPhase.LOADING) {
+        if (_phase.value != SessionPhase.READY) {
+            // NEW（空壳）/LOADING（加载中）/FAILED（加载失败）都不得写 state —— 排队等重放
             pendingUpdates.addLast(update)
             return _state.value
         }
         val next = update(_state.value)
         _state.value = next
-        initialized = true
         next
     }
 
-    /** 整对象写入（保留兼容；内部同为 stateLock 原子）。 */
+    /** 整对象写入（保留兼容；v5.0.83 起未就绪时排队，且**拒绝空壳覆盖非空历史**）。 */
     fun updateConversation(conversation: Conversation) {
         require(conversation.id == id)
         synchronized(stateLock) {
-            _state.value = conversation
-            initialized = true
-            if (_phase.value != SessionPhase.LOADING) {
-                _phase.value = SessionPhase.READY
+            // ★数据事故防御：空 messageNodes 不许覆盖非空 state（清空对话需走显式路径）
+            if (conversation.messageNodes.isEmpty() && _state.value.messageNodes.isNotEmpty() && _phase.value == SessionPhase.READY) {
+                Log.e(TAG, "updateConversation BLOCKED empty overwrite id=$id (state=${_state.value.messageNodes.size} nodes)")
+                return
             }
+            if (_phase.value != SessionPhase.READY) {
+                pendingUpdates.addLast { conversation }
+                return
+            }
+            _state.value = conversation
         }
     }
+
+    /** v5.0.83：只有 READY 才允许读取/写入/派发 —— 空壳一律视为"未定义"。 */
+    val isReady: Boolean get() = _phase.value == SessionPhase.READY
 
     /** 4.8.27: 是否已完成 DB 加载 — 发送路径归属同步守卫。 */
     fun isInitialized(): Boolean = initialized
@@ -185,8 +207,18 @@ class ConversationSession(
             conversation
         }
 
-    // 原子引用计数
+    // 引用计数（原子防抖）
     private val refCount = AtomicInteger(0)
+
+    /**
+     * v5.0.83：衰减到 0 触发空闲回收计时；**clamp ≥0** —— UI（ChatVM）此前从不 acquire
+     * 却在 onCleared release，旧实现 0 → -1 产生负计数（回收判定虽宽容但计数语义崩坏）。
+     */
+    internal fun release(): Int {
+        val after = refCount.updateAndGet { (it - 1).coerceAtLeast(0) }
+        if (after == 0) scheduleIdleCheck()
+        return after
+    }
 
     // 处理状态（如 OCR 识别中）
     val processingStatus = MutableStateFlow<String?>(null)
@@ -212,10 +244,6 @@ class ConversationSession(
 
     internal fun acquire(): Int = refCount.incrementAndGet().also {
         cancelIdleCheck()
-    }
-
-    internal fun release(): Int = refCount.decrementAndGet().also {
-        if (it <= 0) scheduleIdleCheck()
     }
 
     @Synchronized

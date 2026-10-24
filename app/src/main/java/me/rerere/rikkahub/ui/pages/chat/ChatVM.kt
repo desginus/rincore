@@ -155,6 +155,7 @@ class ChatVM(
         // 预热器内部再带 60s 防抖窗（proot 走热是秒级 IO，频繁重复毫无意义，60s 内合并）。
         // 旧启动预热（App.onCreate）已删 —— 启动期抢 IO，用户实测拖慢启动且收益有限。
         viewModelScope.launch {
+            // v5.0.78 ★触发式沙箱预热（用户指令"改为每次开始在输入框中输入的时候进行一次"）
             snapshotFlow { inputState.latestText.isNotEmpty() }
                 .distinctUntilChanged()
                 .collect { hasText ->
@@ -163,6 +164,9 @@ class ChatVM(
                     }
                 }
         }
+        // v5.0.83：持有会话引用（消 pin/unpin）—— 前台期间 session 绝不被空闲回收，
+        // flow 绑定稳定；离开页面（onCleared）由 removeConversationReference 配对释放。
+        chatService.pinConversationReference(_conversationId)
 
         // 初始化对话
         viewModelScope.launch {
