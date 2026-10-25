@@ -33,6 +33,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -309,11 +310,12 @@ internal fun ModelField(
 @Composable
 fun ModelListSheet(
     state: ModelListState,
-    onSelect: (Model) -> Unit,
     /** v5.1.4：0=普通 1=快速 2=极致（当前选中态） */
     routing: Int = 0,
     /** v5.1.4：null = **不显示**这两项（除主对话页外的所有调用点零影响） */
     onSelectRouting: ((Int) -> Unit)? = null,
+    // ★onSelect 必须保持为最后一个参数：既有 5 处调用都用尾随 lambda
+    onSelect: (Model) -> Unit,
 ) {
     if (!state.visible) return
 

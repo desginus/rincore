@@ -21,7 +21,9 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.cancelChildren
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -93,7 +95,17 @@ object ModelRacer {
                     val provider = model.findProvider(settings.providers, checkOverwrite = false)
                         ?: return@runCatching
                     withTimeout(PROBE_TIMEOUT_MS) {
-                        ProviderManager.getProviderByType(provider).generateText(
+                        // v5.1.4：ProviderManager 没有 getProviderByType（CI 实证 Unresolved），
+                        // 按其注册名分发；Provider<*> 星投影用显式转型后传 ProviderSetting。
+                        @Suppress("UNCHECKED_CAST")
+                        val impl = ProviderManager.getProvider(
+                            when (provider) {
+                                is ProviderSetting.OpenAI -> "openai"
+                                is ProviderSetting.Google -> "google"
+                                is ProviderSetting.Claude -> "claude"
+                            }
+                        ) as Provider<ProviderSetting>
+                        impl.generateText(
                             provider,
                             listOf(
                                 UIMessage(

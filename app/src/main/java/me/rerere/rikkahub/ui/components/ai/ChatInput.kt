@@ -442,9 +442,9 @@ fun ChatInput(
 
     ModelListSheet(
         state = modelListState,
-        onSelect = onUpdateChatModel,
         routing = modelRouting,
         onSelectRouting = onSelectModelRouting,
+        onSelect = onUpdateChatModel,
     )
 }
 
