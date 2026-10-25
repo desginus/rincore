@@ -141,6 +141,12 @@ fun ChatExportSheet(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(text = stringResource(id = R.string.chat_page_export_format))
+                // v5.0.93（用户定案）：导出范围必须一眼可见 —— 只含你在对话里勾选的消息
+                Text(
+                    text = "本次仅导出已勾选的 ${selectedMessages.size} 条消息（未勾选的内容不会出现在文件里）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth()
@@ -224,12 +230,23 @@ fun ChatExportSheet(
 
                 OutlinedCard(
                     onClick = {
-                        exportToPlainText(context, conversation, selectedMessages)
-                        toaster.show(
-                            plainTextSuccessMessage,
-                            type = ToastType.Success
-                        )
-                        onDismissRequest()
+                        // v5.0.93：TXT 也遵循"导出思维过程"开关 + 真落盘 + 真实结果反馈
+                        scope.launch {
+                            exportToPlainText(context, conversation, selectedMessages, exportOptions)
+                                .onSuccess { savedPath ->
+                                    toaster.show(
+                                        "$plainTextSuccessMessage（已保存到 $savedPath）",
+                                        type = ToastType.Success
+                                    )
+                                }
+                                .onFailure { e ->
+                                    toaster.show(
+                                        "TXT 导出失败：${e.message ?: e::class.simpleName}",
+                                        type = ToastType.Error
+                                    )
+                                }
+                            onDismissRequest()
+                        }
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -244,6 +261,42 @@ fun ChatExportSheet(
                        ) {
                            Text(stringResource(id = R.string.chat_page_export_plain_text))
                        }
+                }
+
+                // v5.0.93 ★新增：PDF 文档（原生 PdfDocument 排版，A4；思维过程跟随上方开关）
+                val pdfSuccessMessage =
+                    stringResource(id = R.string.chat_page_export_success, "PDF")
+                OutlinedCard(
+                    onClick = {
+                        scope.launch {
+                            exportToPdf(context, conversation, selectedMessages, exportOptions)
+                                .onSuccess { savedPath ->
+                                    toaster.show(
+                                        "$pdfSuccessMessage（已保存到 $savedPath）",
+                                        type = ToastType.Success
+                                    )
+                                }
+                                .onFailure { e ->
+                                    toaster.show(
+                                        "PDF 导出失败：${e.message ?: e::class.simpleName}",
+                                        type = ToastType.Error
+                                    )
+                                }
+                            onDismissRequest()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    ListItem(
+                        supportingContent = {
+                            Text("A4 文档（自动分页、中文正常），只含勾选消息的正文")
+                        },
+                        leadingContent = {
+                            Icon(HugeIcons.File02, contentDescription = null)
+                        },
+                    ) {
+                        Text("PDF 文档")
+                    }
                 }
 
                 OutlinedCard(
@@ -324,11 +377,12 @@ fun ChatExportSheet(
     }
 }
 
-private fun exportToPlainText(
+private suspend fun exportToPlainText(
     context: Context,
     conversation: Conversation,
-    messages: List<UIMessage>
-) {
+    messages: List<UIMessage>,
+    options: ExportOptions,
+): Result<String> = runCatching {
     val filename = "chat-export-${LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))}.txt"
 
     val sb = buildString {
@@ -355,7 +409,10 @@ private fun exportToPlainText(
                         appendLine("[Audio]")
                     }
                     is UIMessagePart.Reasoning -> {
-                        appendLine("[Thinking: ${stripMarkdown(part.reasoning)}]")
+                        // v5.0.93 ★用户定案：未勾选"导出思维过程"时，任何格式都不得出现思考内容
+                        if (options.includeReasoning) {
+                            appendLine("[Thinking: ${stripMarkdown(part.reasoning)}]")
+                        }
                     }
                     is UIMessagePart.Tool -> {
                         appendLine("[Tool: ${part.toolName}]")
@@ -372,17 +429,24 @@ private fun exportToPlainText(
         }
     }
 
-    try {
-        val dir = context.appTempFolder
-        val file = dir.resolve(filename)
-        if (!file.exists()) file.createNewFile()
-        else { file.delete(); file.createNewFile() }
-        FileOutputStream(file).use { it.write(sb.toByteArray()) }
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        shareFile(context, uri, "text/plain")
-    } catch (e: Exception) {
-        e.printStackTrace()
+    // v5.0.93：先真落盘（下载/RinCore），再拉起分享（分享失败不影响"已保存"事实）
+    val savedPath = withContext(Dispatchers.IO) {
+        saveBytesToDownloads(context, filename, "text/plain", sb.toByteArray(Charsets.UTF_8))
     }
+    // 分享用的临时副本在 IO 线程写，startActivity 必须回主线程
+    val shareUri = withContext(Dispatchers.IO) {
+        runCatching {
+            val dir = context.appTempFolder
+            val file = dir.resolve(filename)
+            if (file.exists()) file.delete()
+            FileOutputStream(file).use { it.write(sb.toByteArray(Charsets.UTF_8)) }
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        }.getOrNull()
+    }
+    withContext(Dispatchers.Main) {
+        runCatching { shareUri?.let { shareFile(context, it, "text/plain") } }
+    }
+    savedPath
 }
 
 /** 去除 Markdown 格式标记, 保留纯文本, 适合分享到社交软件 */
@@ -546,6 +610,130 @@ private fun shareAsText(
     context.startActivity(chooser)
 }
 
+/**
+ * v5.0.93 ★新增 PDF 导出（用户定案：像 markdowntoword.io 那样把 Markdown 简单变成文档，
+ * 不需要复杂排版）。实现 = **Android 原生 PdfDocument + StaticLayout**，零第三方依赖、完全离线：
+ *  - A4 595×842pt，页边距 44pt；标题 16pt 加粗、正文 11pt、页脚页码 9pt
+ *  - 逐行 StaticLayout（自动换行、中文走系统字体），超出页底自动翻页
+ *  - 内容只来自入参 messages（= 用户在对话里勾选的消息），**绝不读 conversation.messageNodes**
+ *  - 思维过程严格跟随 includeReasoning：未勾选时导出正文里不会出现任何思考内容
+ */
+private suspend fun exportToPdf(
+    context: Context,
+    conversation: Conversation,
+    messages: List<UIMessage>,
+    options: ExportOptions,
+): Result<String> = runCatching {
+    val filename = "chat-export-${
+        LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
+    }.pdf"
+
+    val blocks = buildList {
+        add(PdfBlock(conversation.title, true))
+        add(PdfBlock("导出时间：${LocalDateTime.now().toLocalString()}", false))
+        add(PdfBlock(" ", false))
+        messages.forEach { message ->
+            add(PdfBlock(if (message.role == MessageRole.USER) "用户" else "助手", true))
+            message.parts.forEach { part ->
+                when (part) {
+                    is UIMessagePart.Text -> {
+                        stripMarkdown(part.text).split("\n").forEach { add(PdfBlock(it, false)) }
+                        add(PdfBlock(" ", false))
+                    }
+
+                    is UIMessagePart.Reasoning -> if (options.includeReasoning) {
+                        add(PdfBlock("[思考]", false))
+                        stripMarkdown(part.reasoning).split("\n").forEach { add(PdfBlock(it, false)) }
+                        add(PdfBlock(" ", false))
+                    }
+
+                    is UIMessagePart.Tool -> add(PdfBlock("[工具: ${part.toolName}]", false))
+                    is UIMessagePart.Image -> add(PdfBlock("[图片]", false))
+                    is UIMessagePart.Video -> add(PdfBlock("[视频]", false))
+                    is UIMessagePart.Audio -> add(PdfBlock("[音频]", false))
+                    is UIMessagePart.Document -> add(PdfBlock("[文件: ${part.fileName}]", false))
+                    else -> {}
+                }
+            }
+            add(PdfBlock(" ", false))
+        }
+    }
+
+    val bytes = withContext(Dispatchers.IO) { renderPdfBytes(blocks) }
+    withContext(Dispatchers.IO) {
+        saveBytesToDownloads(context, filename, "application/pdf", bytes)
+    }
+}
+
+private data class PdfBlock(val text: String, val bold: Boolean)
+
+private fun renderPdfBytes(blocks: List<PdfBlock>): ByteArray {
+    val pageW = 595
+    val pageH = 842
+    val margin = 44f
+    val contentW = (pageW - margin * 2).toInt()
+
+    val body = android.text.TextPaint().apply {
+        textSize = 11f
+        color = android.graphics.Color.BLACK
+        isAntiAlias = true
+    }
+    val head = android.text.TextPaint().apply {
+        textSize = 16f
+        isFakeBoldText = true
+        color = android.graphics.Color.BLACK
+        isAntiAlias = true
+    }
+    val footer = android.text.TextPaint().apply {
+        textSize = 9f
+        color = android.graphics.Color.GRAY
+        isAntiAlias = true
+    }
+
+    val doc = android.graphics.pdf.PdfDocument()
+    var pageNo = 0
+    var page: android.graphics.pdf.PdfDocument.Page? = null
+    var canvas: android.graphics.Canvas? = null
+    var y = margin
+
+    fun startPage() {
+        page?.let { doc.finishPage(it) }
+        pageNo += 1
+        val p = doc.startPage(
+            android.graphics.pdf.PdfDocument.PageInfo.Builder(pageW, pageH, pageNo).create()
+        )
+        page = p
+        canvas = p.canvas
+        y = margin
+    }
+
+    startPage()
+    blocks.forEach { block ->
+        val paint = if (block.bold) head else body
+        val text = block.text.ifEmpty { " " }
+        val layout = android.text.StaticLayout.Builder
+            .obtain(text, 0, text.length, paint, contentW)
+            .setIncludePad(false)
+            .build()
+        val h = layout.height.toFloat()
+        if (y + h > pageH - margin - 18f) startPage()
+        canvas?.let { c ->
+            c.save()
+            c.translate(margin, y)
+            layout.draw(c)
+            c.restore()
+        }
+        y += h + 3f
+    }
+    canvas?.let { c -> c.drawText("$pageNo", pageW / 2f, pageH - 20f, footer) }
+    page?.let { doc.finishPage(it) }
+
+    val out = java.io.ByteArrayOutputStream()
+    doc.writeTo(out)
+    doc.close()
+    return out.toByteArray()
+}
+
 private suspend fun exportToMarkdown(
     context: Context,
     conversation: Conversation,
@@ -693,12 +881,20 @@ private suspend fun exportToMarkdown(
  * v5.0.88：把导出内容真正写入手机存储（下载/RinCore）。
  * API 29+ 走 MediaStore.Downloads（无需任何权限）；更低版本写公共 Downloads。
  */
-private fun saveMarkdownToDownloads(context: Context, filename: String, content: String): String {
-    val bytes = content.toByteArray(Charsets.UTF_8)
+private fun saveMarkdownToDownloads(context: Context, filename: String, content: String): String =
+    saveBytesToDownloads(context, filename, "text/markdown", content.toByteArray(Charsets.UTF_8))
+
+/** v5.0.93：任意类型导出文件的统一下载落点（Markdown / TXT / PDF 共用）。 */
+private fun saveBytesToDownloads(
+    context: Context,
+    filename: String,
+    mimeType: String,
+    bytes: ByteArray,
+): String {
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
         val values = android.content.ContentValues().apply {
             put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
-            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/markdown")
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mimeType)
             put(
                 android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
                 android.os.Environment.DIRECTORY_DOWNLOADS + "/RinCore"
@@ -820,7 +1016,9 @@ private suspend fun exportToImage(
 }
 
 data class ExportOptions(
-    val includeReasoning: Boolean = true,
+    // v5.0.93 ★用户定案：默认**不导出**思维过程（导出默认只要正文；
+    // 需要思考链时手动打开上方开关）。关闭时 Markdown/TXT/PDF/图片四种格式全部不出现思考内容。
+    val includeReasoning: Boolean = false,
     val expandReasoning: Boolean = false,
 )
 
