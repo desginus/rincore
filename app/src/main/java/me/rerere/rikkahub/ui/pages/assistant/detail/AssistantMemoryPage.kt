@@ -802,8 +802,11 @@ private fun MemoryMemoriesTab(
     memoryDialogState.EditStateContent { memory, update ->
         // v5.1.3 ★用户要求：每条记忆可改归属到**项目包**（此前只有助手级/单对话两档）。
         val folderRepo: me.rerere.rikkahub.data.repository.FolderRepository = org.koin.compose.koinInject()
-        val folderList by remember(assistant.id) {
-            folderRepo.getFoldersOfAssistant(assistant.id)
+        val settingsStoreForFolders: me.rerere.rikkahub.data.datastore.SettingsStore = org.koin.compose.koinInject()
+        // 该 lambda 不捕获外层 Composable 的 assistant（CI 实证 Unresolved reference）→ 直接读当前助手
+        val folderOwnerId = settingsStoreForFolders.settingsFlow.value.assistantId
+        val folderList by remember(folderOwnerId) {
+            folderRepo.getFoldersOfAssistant(folderOwnerId)
         }.collectAsStateWithLifecycle(initialValue = emptyList())
         var showFolderPicker by remember { mutableStateOf(false) }
         AlertDialog(
