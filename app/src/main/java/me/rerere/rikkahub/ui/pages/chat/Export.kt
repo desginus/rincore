@@ -269,7 +269,7 @@ fun ChatExportSheet(
                 OutlinedCard(
                     onClick = {
                         scope.launch {
-                            exportToPdf(context, conversation, selectedMessages, exportOptions)
+                            exportConversationPdf(context, conversation, selectedMessages, exportOptions)
                                 .onSuccess { savedPath ->
                                     toaster.show(
                                         "$pdfSuccessMessage（已保存到 $savedPath）",
@@ -610,129 +610,7 @@ private fun shareAsText(
     context.startActivity(chooser)
 }
 
-/**
- * v5.0.93 ★新增 PDF 导出（用户定案：像 markdowntoword.io 那样把 Markdown 简单变成文档，
- * 不需要复杂排版）。实现 = **Android 原生 PdfDocument + StaticLayout**，零第三方依赖、完全离线：
- *  - A4 595×842pt，页边距 44pt；标题 16pt 加粗、正文 11pt、页脚页码 9pt
- *  - 逐行 StaticLayout（自动换行、中文走系统字体），超出页底自动翻页
- *  - 内容只来自入参 messages（= 用户在对话里勾选的消息），**绝不读 conversation.messageNodes**
- *  - 思维过程严格跟随 includeReasoning：未勾选时导出正文里不会出现任何思考内容
- */
-private suspend fun exportToPdf(
-    context: Context,
-    conversation: Conversation,
-    messages: List<UIMessage>,
-    options: ExportOptions,
-): Result<String> = runCatching {
-    val filename = "chat-export-${
-        LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
-    }.pdf"
-
-    val blocks = buildList {
-        add(PdfBlock(conversation.title, true))
-        add(PdfBlock("导出时间：${LocalDateTime.now().toLocalString()}", false))
-        add(PdfBlock(" ", false))
-        messages.forEach { message ->
-            add(PdfBlock(if (message.role == MessageRole.USER) "用户" else "助手", true))
-            message.parts.forEach { part ->
-                when (part) {
-                    is UIMessagePart.Text -> {
-                        stripMarkdown(part.text).split("\n").forEach { add(PdfBlock(it, false)) }
-                        add(PdfBlock(" ", false))
-                    }
-
-                    is UIMessagePart.Reasoning -> if (options.includeReasoning) {
-                        add(PdfBlock("[思考]", false))
-                        stripMarkdown(part.reasoning).split("\n").forEach { add(PdfBlock(it, false)) }
-                        add(PdfBlock(" ", false))
-                    }
-
-                    is UIMessagePart.Tool -> add(PdfBlock("[工具: ${part.toolName}]", false))
-                    is UIMessagePart.Image -> add(PdfBlock("[图片]", false))
-                    is UIMessagePart.Video -> add(PdfBlock("[视频]", false))
-                    is UIMessagePart.Audio -> add(PdfBlock("[音频]", false))
-                    is UIMessagePart.Document -> add(PdfBlock("[文件: ${part.fileName}]", false))
-                    else -> {}
-                }
-            }
-            add(PdfBlock(" ", false))
-        }
-    }
-
-    val bytes = withContext(Dispatchers.IO) { renderPdfBytes(blocks) }
-    withContext(Dispatchers.IO) {
-        saveBytesToDownloads(context, filename, "application/pdf", bytes)
-    }
-}
-
-private data class PdfBlock(val text: String, val bold: Boolean)
-
-private fun renderPdfBytes(blocks: List<PdfBlock>): ByteArray {
-    val pageW = 595
-    val pageH = 842
-    val margin = 44f
-    val contentW = (pageW - margin * 2).toInt()
-
-    val body = android.text.TextPaint().apply {
-        textSize = 11f
-        color = android.graphics.Color.BLACK
-        isAntiAlias = true
-    }
-    val head = android.text.TextPaint().apply {
-        textSize = 16f
-        isFakeBoldText = true
-        color = android.graphics.Color.BLACK
-        isAntiAlias = true
-    }
-    val footer = android.text.TextPaint().apply {
-        textSize = 9f
-        color = android.graphics.Color.GRAY
-        isAntiAlias = true
-    }
-
-    val doc = android.graphics.pdf.PdfDocument()
-    var pageNo = 0
-    var page: android.graphics.pdf.PdfDocument.Page? = null
-    var canvas: android.graphics.Canvas? = null
-    var y = margin
-
-    fun startPage() {
-        page?.let { doc.finishPage(it) }
-        pageNo += 1
-        val p = doc.startPage(
-            android.graphics.pdf.PdfDocument.PageInfo.Builder(pageW, pageH, pageNo).create()
-        )
-        page = p
-        canvas = p.canvas
-        y = margin
-    }
-
-    startPage()
-    blocks.forEach { block ->
-        val paint = if (block.bold) head else body
-        val text = block.text.ifEmpty { " " }
-        val layout = android.text.StaticLayout.Builder
-            .obtain(text, 0, text.length, paint, contentW)
-            .setIncludePad(false)
-            .build()
-        val h = layout.height.toFloat()
-        if (y + h > pageH - margin - 18f) startPage()
-        canvas?.let { c ->
-            c.save()
-            c.translate(margin, y)
-            layout.draw(c)
-            c.restore()
-        }
-        y += h + 3f
-    }
-    canvas?.let { c -> c.drawText("$pageNo", pageW / 2f, pageH - 20f, footer) }
-    page?.let { doc.finishPage(it) }
-
-    val out = java.io.ByteArrayOutputStream()
-    doc.writeTo(out)
-    doc.close()
-    return out.toByteArray()
-}
+/* v5.0.94：PDF 渲染整体迁到 ExportPdf.kt（真 Markdown 渲染 / 图片内嵌 / 工具调用过滤） */
 
 private suspend fun exportToMarkdown(
     context: Context,
@@ -885,7 +763,7 @@ private fun saveMarkdownToDownloads(context: Context, filename: String, content:
     saveBytesToDownloads(context, filename, "text/markdown", content.toByteArray(Charsets.UTF_8))
 
 /** v5.0.93：任意类型导出文件的统一下载落点（Markdown / TXT / PDF 共用）。 */
-private fun saveBytesToDownloads(
+internal fun saveBytesToDownloads(
     context: Context,
     filename: String,
     mimeType: String,
