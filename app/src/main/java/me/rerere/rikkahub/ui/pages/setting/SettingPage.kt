@@ -112,10 +112,17 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     // v5.0.14 回贴: 工具矩阵 / 内置工具 内嵌页（我方功能, 上游无此入口）
     var showDomainPage by remember { mutableStateOf(false) }
     var showBuiltinToolsPage by remember { mutableStateOf(false) }
+    // v5.1.4：快速/极致模型池配置页（1=快速 2=极致）
+    var showModelPoolPage by remember { mutableStateOf<Int?>(null) }
 
 
     if (showBuiltinToolsPage) {
         SettingBuiltinToolsPage(onBack = { showBuiltinToolsPage = false })
+        return
+    }
+
+    showModelPoolPage?.let { mode ->
+        SettingModelPoolPage(mode = mode, onBack = { showModelPoolPage = null })
         return
     }
 
@@ -201,6 +208,19 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { CardGroupIcon(HugeIcons.Brain02, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_providers_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_providers)) },
+                    )
+                    // v5.1.4 ★快速 / 极致 模型池（用户要求：主对话页可切，客户端选最快的）
+                    item(
+                        onClick = { showModelPoolPage = 1 },
+                        leadingContent = { CardGroupIcon(HugeIcons.AiMagic, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("并发探测，挑响应最快的回答") },
+                        headlineContent = { Text("快速模型配置") },
+                    )
+                    item(
+                        onClick = { showModelPoolPage = 2 },
+                        leadingContent = { CardGroupIcon(HugeIcons.Brain02, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("强模型池，同样按响应速度竞速") },
+                        headlineContent = { Text("极致模型配置") },
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingSearch) },

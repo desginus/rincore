@@ -25,7 +25,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = 9999
-        versionName = "5.1.3"
+        versionName = "5.1.4"
 
         // v4.8.179: 开发者版本开关 — true=开发者版(含“开发者调试”入口/面板); 正式版=false
         buildConfigField("Boolean", "DEVELOPER_BUILD", "false")

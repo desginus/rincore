@@ -63,6 +63,16 @@ data class Settings(
 
     /** v5.1.3（用户要求）：输入栏是否显示「思考程度键」 */
     val showReasoningButton: Boolean = true,
+
+    /**
+     * v5.1.4 ★「快速」模型池（用户要求：主对话页可切快速/极致，客户端从池里挑响应最快的）。
+     * 与既有 `fastModelId`（标题/元数据用的单模型）**完全无关**，不要混用。
+     * 空 = 未配置 → 选择「快速」时静默回退普通模型。
+     */
+    val fastChatModelIds: List<Uuid> = emptyList(),
+
+    /** v5.1.4 ★「极致」模型池（同上；空 = 未配置 → 回退普通模型）。 */
+    val ultraChatModelIds: List<Uuid> = emptyList(),
     val providers: List<ProviderSetting> = DEFAULT_PROVIDERS,
     val assistants: List<Assistant> = DEFAULT_ASSISTANTS,
     val assistantTags: List<Tag> = emptyList(),

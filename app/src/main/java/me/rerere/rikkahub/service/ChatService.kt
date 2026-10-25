@@ -113,6 +113,7 @@ import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.resolveRoutedModel
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -802,7 +803,8 @@ class ChatService(
         val initialConversation = getConversationFlow(conversationId).value
         val assistant = settings.getAssistantById(initialConversation.assistantId)
             ?: settings.getCurrentAssistant()
-        val model = settings.findModelById(assistant.chatModelId ?: settings.chatModelId) ?: return
+        // v5.1.4：经「快速/极致」路由解析（未配置时与原行为完全一致）
+        val model = settings.resolveRoutedModel(assistant) ?: return
 
         // v4.8.34: 当前 provider 心跳确保 — 工具执行期间连接禁止空闲冷却
         // (此前仅 opencode/CC host 有心跳; DeepSeek 等直连 provider 在长工具

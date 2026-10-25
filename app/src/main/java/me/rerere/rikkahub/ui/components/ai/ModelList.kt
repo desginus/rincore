@@ -310,6 +310,10 @@ internal fun ModelField(
 fun ModelListSheet(
     state: ModelListState,
     onSelect: (Model) -> Unit,
+    /** v5.1.4：0=普通 1=快速 2=极致（当前选中态） */
+    routing: Int = 0,
+    /** v5.1.4：null = **不显示**这两项（除主对话页外的所有调用点零影响） */
+    onSelectRouting: ((Int) -> Unit)? = null,
 ) {
     if (!state.visible) return
 
@@ -339,6 +343,37 @@ fun ModelListSheet(
                 .imePadding(),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            if (onSelectRouting != null) {
+                // v5.1.4 ★「快速 / 极致」不是真实模型，是两条路由：
+                // 选中后不改 chatModelId（记住普通模型），只切 assistant.modelRouting，
+                // 生成时由 ModelRacer 从对应池里挑响应最快的。
+                listOf(1 to "快速", 2 to "极致").forEach { (mode, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onSelectRouting.invoke(mode)
+                                dismiss()
+                            }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = if (routing == mode) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            if (routing == mode) "当前" else "竞速选最快",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                HorizontalDivider()
+            }
             ModelList(
                 currentModel = state.modelId,
                 providers = state.filteredProviders,

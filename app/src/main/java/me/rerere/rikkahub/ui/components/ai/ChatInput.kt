@@ -167,6 +167,9 @@ fun ChatInput(
     // v5.1.2（用户要求）：偏好设置 → 主题 控制输入栏这两个键是否显示
     showSendButton: Boolean = true,
     showReasoningButton: Boolean = true,
+    // v5.1.4（用户要求）：主对话页模型选择器里的「快速 / 极致」路由
+    modelRouting: Int = 0,
+    onSelectModelRouting: (Int) -> Unit = {},
 ) {
     val toaster = LocalToaster.current
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -440,6 +443,8 @@ fun ChatInput(
     ModelListSheet(
         state = modelListState,
         onSelect = onUpdateChatModel,
+        routing = modelRouting,
+        onSelectRouting = onSelectModelRouting,
     )
 }
 

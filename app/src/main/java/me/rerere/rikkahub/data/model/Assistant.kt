@@ -19,6 +19,12 @@ data class Assistant(
     val allowConversationPromptInjection: Boolean = false,
     val id: Uuid = Uuid.random(),
     val chatModelId: Uuid? = null, // 如果为null, 使用全局默认模型
+
+    /**
+     * v5.1.4 ★主对话模型路由：0=普通（用 chatModelId）/ 1=快速池 / 2=极致池。
+     * 选择"快速/极致"时不改动 chatModelId（记住普通模型），只切这个开关。
+     */
+    val modelRouting: Int = 0,
     val name: String = "",
     val avatar: Avatar = Avatar.Dummy,
     val useAssistantAvatar: Boolean = false, // 使用助手头像替代模型头像

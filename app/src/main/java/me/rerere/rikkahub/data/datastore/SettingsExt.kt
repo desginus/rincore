@@ -15,6 +15,26 @@ fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
  *
  * @param fallback [uuid] 为空或已找不到对应模型时改用的模型 ID
  */
+/**
+ * v5.1.4 ★主对话模型路由（用户要求「快速 / 极致」）：
+ *   - 普通模式 或 池未配置 → **完全走原路径**（零行为变化）；
+ *   - 快速/极致 → 让 ModelRacer 并发竞速挑最快的，失败/超时一律回退池首，再失败回退普通模型。
+ * 整段被 runCatching 包住：**这个功能彻底坏掉，最坏结果也只是用普通模型**。
+ */
+suspend fun Settings.resolveRoutedModel(assistant: me.rerere.rikkahub.data.model.Assistant): Model? {
+    val normal = findModelById(assistant.chatModelId ?: chatModelId)
+    val pool = when (assistant.modelRouting) {
+        1 -> fastChatModelIds
+        2 -> ultraChatModelIds
+        else -> return normal
+    }
+    if (pool.isEmpty()) return normal
+    return runCatching {
+        val winner = me.rerere.rikkahub.data.ai.ModelRacer.pickFastest(this, pool)
+        findModelById(winner ?: pool.first()) ?: normal
+    }.getOrNull() ?: normal
+}
+
 fun Settings.findModelById(uuid: Uuid?, fallback: Uuid? = null): Model? {
     if (uuid == null && fallback == null) return null
     return uuid?.let { this.providers.findModelById(it) }

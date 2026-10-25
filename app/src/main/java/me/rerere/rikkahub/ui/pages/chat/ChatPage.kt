@@ -593,6 +593,17 @@ private fun ChatPageContent(
                     // v5.1.2：主题设置控制这两个键的显示
                     showSendButton = setting.showSendButton,
                     showReasoningButton = setting.showReasoningButton,
+                    // v5.1.4：快速 / 极致 路由（0=普通，1=快速池，2=极致池）
+                    modelRouting = assistant.modelRouting,
+                    onSelectModelRouting = { mode ->
+                        vm.updateSettings { st ->
+                            st.copy(
+                                assistants = st.assistants.map { a ->
+                                    if (a.id == assistant.id) a.copy(modelRouting = mode) else a
+                                }
+                            )
+                        }
+                    },
                     onStartVoiceMode = onStartVoiceMode,
                     voiceState = voiceState,
                     onStopVoiceMode = vm.voiceSession::stop,
