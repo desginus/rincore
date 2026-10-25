@@ -367,7 +367,7 @@ class ChatService(
         // 若 session 已有数据 (已从 DB 加载过, 或正在生成中),
         // 不再用 DB 覆盖内存态, 防止切出切回时丢失未落库的回复。
         // 2.5.3: initialize 互斥一次加载 — 加载挂起期间写入的更新状态不会被覆盖
-        session.initialize {
+        session.initialize(load = {
             val conversation = conversationRepo.getConversationById(conversationId)
             if (conversation != null) {
                 settingsStore.updateAssistant(conversation.assistantId)
@@ -389,7 +389,7 @@ class ChatService(
                     folderId = folderId,  // 当前焦点文件夹 → 新对话默认存储位置
                 ).updateCurrentMessages(assistant.presetMessages)
             }
-        }
+        })
 
         // v5.0.95 ★空壳自愈（用户实测 bug 的闭环）：
         // 若加载完成后内存里 0 条消息，但 DB 明确有节点 → 说明这次加载不完整（曾因

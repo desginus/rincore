@@ -42,6 +42,7 @@ class ConversationRepository(
     private val messageFtsManager: MessageFtsManager,
 ) {
     companion object {
+        private const val TAG = "ConversationRepository"
         private const val PAGE_SIZE = 20
         private const val INITIAL_LOAD_SIZE = 40
     }
