@@ -712,6 +712,9 @@ private fun ChatPageContent(
                     // getConversationById ?: return 直接静默退出, 且 updateAssistant 藏在该
                     // 分支内 → 点击"只点亮不切换"。修复 = ①直切全局助手 (设置层, 永远生效)
                     // ②会话归属内存态同步 (空对话发送时随 saveConversation 入库)。
+                    // v5.0.97 ★切助手必须清掉项目包选区（用户实测：切助手后旧包标签还在、
+                    // 新消息还被归到旧助手的项目包里）
+                    ProjectPackSelection.clearSelection()
                     vm.updateSettings(setting.copy(assistantId = id))
                     vm.updateConversation(conversation.copy(assistantId = id, folderId = null))
                     vm.saveConversationAsync()

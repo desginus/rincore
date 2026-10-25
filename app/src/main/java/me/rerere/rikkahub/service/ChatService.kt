@@ -1687,7 +1687,13 @@ class ChatService(
                     return@withLock // 仍是空对话，不落库
                 }
                 conversationRepo.insertConversation(conversation)
-                sessionManager.get(conversationId)?.initialize(load = { conversation })
+                // v5.0.97 ★★★绝不能在这里调用 suspend 的 session.initialize ——
+                // 它会去抢 initializationMutex，而 initializeConversation 持有该锁时会
+                // 进入 dispatchNextQueuedMessage → sendQueuedMessage → 需要 saveLock，
+                // 与"本函数持 saveLock 等 initializationMutex"反向加锁 → **死锁**。
+                // 用户实测症状：消息发不出去、气泡不出现、过一会提示发送失败。
+                // 改为非挂起的 apply（立即写内存，不碰任何锁的挂起点）。
+                sessionManager.get(conversationId)?.apply { conversation }
                 Log.i(
                     TAG,
                     "saveConversation: new conversation persisted id=$conversationId " +

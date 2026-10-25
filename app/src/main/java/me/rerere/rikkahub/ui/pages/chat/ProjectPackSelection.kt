@@ -34,4 +34,22 @@ object ProjectPackSelection {
     fun recordEntered(assistantId: Uuid, folderId: Uuid) {
         enteredFolderIdByAssistant[assistantId] = folderId
     }
+
+    /**
+     * v5.0.97 ★「切到另一个助手发消息，旧项目包的标签还在、消息还归到旧包」根修（一）：
+     * 记录每个项目包属于哪个助手 —— 取用时据此校验，跨助手的残留选区一律不采用。
+     */
+    private val folderOwner = java.util.concurrent.ConcurrentHashMap<Uuid, Uuid>()
+
+    fun recordFolderOwner(folderId: Uuid, assistantId: Uuid) {
+        folderOwner[folderId] = assistantId
+    }
+
+    /** 未知归属时返回 null（调用方按"不阻断"处理，避免误伤正常路径）。 */
+    fun ownerOf(folderId: Uuid): Uuid? = folderOwner[folderId]
+
+    /** v5.0.97 ★切助手时清空当前选区（否则新助手会沿用上一个助手的项目包）。 */
+    fun clearSelection() {
+        selectedFolderId.value = null
+    }
 }

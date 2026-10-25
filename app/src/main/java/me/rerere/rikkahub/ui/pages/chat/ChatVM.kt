@@ -467,7 +467,12 @@ class ChatVM(
         // 始终归该项目包, 之后切换选区不改写 — 用户实证根修); 快照为空 (聊天
         // 下打开) 或已有归属时维持既有逻辑 (当前选区 / 已定归属不改)。
         val targetFolder = if (conv.folderId == null) {
-            packAtOpen ?: ProjectPackSelection.selectedFolderId.value
+            // v5.0.97 ★归属校验（根修二）：选区是全局单例，可能残留上一个助手的项目包。
+            // 只有"归属未知"或"确属当前助手"的包才采用，否则视为未选包（落到助手级）。
+            val candidate = packAtOpen ?: ProjectPackSelection.selectedFolderId.value
+            candidate?.takeIf { folderId ->
+                ProjectPackSelection.ownerOf(folderId)?.let { it == conv.assistantId } ?: true
+            }
         } else {
             conv.folderId
         }

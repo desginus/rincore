@@ -245,6 +245,11 @@ class ChatDrawerVM(
         _selectedFolderId.value = folderId
         savedStateHandle["selectedFolderId"] = folderId?.toString()
         ProjectPackSelection.selectedFolderId.value = folderId
+        // v5.0.97 ★记录项目包归属助手 —— ChatVM 取用选区时据此校验，
+        // 彻底堵住"切助手后仍沿用上个助手的项目包"（用户实测：标签还在、消息归到旧包）。
+        folderId?.let { fid ->
+            ProjectPackSelection.recordFolderOwner(fid, settingsStore.settingsFlow.value.assistantId)
+        }
     }
 
     /** v4.8.58/63: 记录一次项目包点击 (真统计) — 追加时间戳 + 过期剪枝。
