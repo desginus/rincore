@@ -231,7 +231,12 @@ private fun EcoPackageCard(
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                Switch(checked = pkg.enabled, onCheckedChange = onToggle)
+                // v5.1.0：内置工具包属于"静默储备期"，开关永久禁用（不可开启）
+                Switch(
+                    checked = pkg.enabled,
+                    onCheckedChange = onToggle,
+                    enabled = !OperitBuiltinPackages.isBuiltin(pkg),
+                )
                 if (onUninstall != null) {
                     Spacer(Modifier.width(8.dp))
                     TextButton(onClick = onUninstall) {

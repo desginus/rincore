@@ -158,43 +158,11 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             }
 
             item("generalSettings") {
-                var colorMode by rememberColorMode()
                 val containerColor = MaterialTheme.colorScheme.primaryContainer
                 val contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 CardGroup(
                     title = { Text(stringResource(R.string.setting_page_general_settings)) },
                 ) {
-                    formItem {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        ) {
-                            CardGroupIcon(colorMode.icon(), containerColor = containerColor, contentColor = contentColor)
-                            Text(stringResource(R.string.setting_page_color_mode))
-                        }
-                        ConnectedChoiceButtons(
-                            options = ColorMode.entries,
-                            selected = colorMode,
-                            onSelect = {
-                                colorMode = it
-                                navController.navigate(Screen.Setting) {
-                                    popUpTo(Screen.Setting) {
-                                        inclusive = true
-                                    }
-                                }
-                            },
-                        ) { mode, selected ->
-                            ConnectedChoiceLabel(
-                                text = when (mode) {
-                                    ColorMode.SYSTEM -> stringResource(R.string.setting_page_color_mode_system)
-                                    ColorMode.LIGHT -> stringResource(R.string.setting_page_color_mode_light)
-                                    ColorMode.DARK -> stringResource(R.string.setting_page_color_mode_dark)
-                                },
-                                selected = selected,
-                                icon = mode.icon(),
-                            )
-                        }
-                    }
                     item(
                         onClick = { navController.navigate(Screen.SettingPreferences) },
                         leadingContent = { CardGroupIcon(HugeIcons.Settings03, containerColor = containerColor, contentColor = contentColor) },
@@ -257,12 +225,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { CardGroupIcon(HugeIcons.McpServer, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_mcp_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_mcp)) },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingWeb) },
-                        leadingContent = { CardGroupIcon(HugeIcons.ServerStack01, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_web_server)) },
                     )
                     // v5.0.14 回贴: Agent Skills / 插件（我方能力模块）
                     item(
@@ -379,6 +341,66 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
                 }
             }
+
+            // v5.1.0 ★设置项清洗（用户要求）：
+            //   ① 颜色模式从「通用设置」里挪出来 —— 它属于外观，不属于"通用行为"；
+            //   ② Web 服务器这类常年不用的，一并挪到页面靠后。
+            item("appearance") {
+                var colorMode by rememberColorMode()
+                val containerColor = MaterialTheme.colorScheme.primaryContainer
+                val contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                CardGroup(
+                    title = { Text("外观") },
+                ) {
+                    formItem {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            CardGroupIcon(colorMode.icon(), containerColor = containerColor, contentColor = contentColor)
+                            Text(stringResource(R.string.setting_page_color_mode))
+                        }
+                        ConnectedChoiceButtons(
+                            options = ColorMode.entries,
+                            selected = colorMode,
+                            onSelect = {
+                                colorMode = it
+                                navController.navigate(Screen.Setting) {
+                                    popUpTo(Screen.Setting) {
+                                        inclusive = true
+                                    }
+                                }
+                            },
+                        ) { mode, selected ->
+                            ConnectedChoiceLabel(
+                                text = when (mode) {
+                                    ColorMode.SYSTEM -> stringResource(R.string.setting_page_color_mode_system)
+                                    ColorMode.LIGHT -> stringResource(R.string.setting_page_color_mode_light)
+                                    ColorMode.DARK -> stringResource(R.string.setting_page_color_mode_dark)
+                                },
+                                selected = selected,
+                                icon = mode.icon(),
+                            )
+                        }
+                    }
+                }
+            }
+
+            item("advanced") {
+                val containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                CardGroup(
+                    title = { Text("高级") },
+                ) {
+                    item(
+                        onClick = { navController.navigate(Screen.SettingWeb) },
+                        leadingContent = { CardGroupIcon(HugeIcons.ServerStack01, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_web_server)) },
+                    )
+                }
+            }
+
 
             item("aboutSettings") {
                 val context = LocalContext.current

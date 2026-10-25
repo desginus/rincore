@@ -17,8 +17,12 @@ object OperitBuiltinPackages {
      *  v2 (v4.6.5): 增强记忆 / 增强HTTP 默认开启 (升级时对这两个包强制开一次) */
     private const val SEED_VERSION = 2
 
-    /** 默认开启白名单 (首次播种即开; 种子升级时强制开一次, 之后尊重用户开关) */
-    private val DEFAULT_ENABLED_PACKAGES = setOf("extended_memory_tools", "extended_http_tools")
+    /**
+     * v5.1.0 ★用户定案（2026-10-26）：Operit 内置工具包**全部默认关闭，且不提供任何开启方式**
+     * ——它们属于"静默储备期"，只在生态页可见、供日后启用，不允许注册进「插件」域。
+     * 原白名单 `extended_memory_tools` / `extended_http_tools` 已清空。
+     */
+    private val DEFAULT_ENABLED_PACKAGES = emptySet<String>()
     private const val ASSET_DIR = "operit-packages"
     private const val ENTRY_PREFIX = "builtin:"
 
@@ -82,11 +86,8 @@ object OperitBuiltinPackages {
             val baseName = fileName.removeSuffix(".js")
             val isDefaultOn = baseName in DEFAULT_ENABLED_PACKAGES
             val versionBumped = existing != null && existing.version != builtinVersion()
-            val enabled = when {
-                isDefaultOn && (existing == null || versionBumped) -> true
-                existing != null -> existing.enabled
-                else -> meta.enabledByDefault || isDefaultOn
-            }
+            // v5.1.0：内置包一律关闭（忽略 meta.enabledByDefault），不可开启
+            val enabled = false
 
             store.upsert(
                 InstalledPackage(
@@ -106,6 +107,14 @@ object OperitBuiltinPackages {
             changed++
         }
         if (newlySeeded.isNotEmpty()) store.addSeededEntries(newlySeeded)
+
+        // v5.1.0 ★强制复位：老版本把 extended_memory_tools / extended_http_tools 默认开过，
+        // 库里的 enabled=true 必须一并压回 false —— 用户要求"不能以任何形式开启"。
+        runCatching {
+            store.listInstalled()
+                .filter { it.entryId.startsWith(ENTRY_PREFIX) && it.enabled }
+                .forEach { store.setEnabled(it.entryId, false) }
+        }
         return changed
     }
 

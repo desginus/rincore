@@ -150,6 +150,9 @@ object PermissionInventory {
     }
 
     private fun classify(context: Context, perm: String): Row? {
+        // v5.1.0 ★用户要求删除：PACKAGE_USAGE_STATS（界面上显示为 "Package Usage Stats"）。
+        // 双保险：manifest 声明已删；这里再挡一层，防止任何路径重新声明时又冒出来。
+        if (perm == "android.permission.PACKAGE_USAGE_STATS") return null
         // 已在显式行处理的权限跳过
         if (perm in listOf(
                 Manifest.permission.SYSTEM_ALERT_WINDOW,
