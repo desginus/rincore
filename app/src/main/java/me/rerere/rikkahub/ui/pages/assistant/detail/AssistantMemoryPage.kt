@@ -882,7 +882,7 @@ private fun MemoryMemoriesTab(
         if (showFolderPicker) {
             AlertDialog(
                 onDismissRequest = { showFolderPicker = false },
-                title = { Text("归属项目包") },
+                title = { Text("归属项目包（当前助手）") },
                 text = {
                     if (folderList.isEmpty()) {
                         Text(

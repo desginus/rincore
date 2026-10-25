@@ -39,10 +39,10 @@ object ModelRacer {
     private const val TAG = "ModelRacer"
 
     /** 单个探针的硬超时（首包慢于这个就不算"快"） */
-    private const val PROBE_TIMEOUT_MS = 8_000L
+    private const val PROBE_TIMEOUT_MS = 3_000L
 
     /** 竞速结果缓存：同一组候选 60s 内复用上次赢家，避免每轮都打 N 个探针 */
-    private const val CACHE_TTL_MS = 60_000L
+    private const val CACHE_TTL_MS = 300_000L
 
     private data class CacheEntry(val key: String, val modelId: Uuid, val at: Long)
 
@@ -56,12 +56,15 @@ object ModelRacer {
     suspend fun pickFastest(
         settings: Settings,
         ids: List<Uuid>,
-        timeoutMs: Long = 10_000L,
+        timeoutMs: Long = 3_000L,
     ): Uuid? = runCatching {
         if (ids.isEmpty()) return@runCatching null
         if (ids.size == 1) return@runCatching ids.first()
 
-        val key = ids.joinToString(",")
+        // v5.1.5 ★核验发现：竞速是"生成前"的阻塞调用，最坏情况会拖慢发送。
+        // 三重收敛：探针 8s→3s、整体 10s→3s、候选上限 8（用户配 20 个也只测前 8 个）。
+        val candidates = ids.take(8)
+        val key = candidates.joinToString(",")
         val now = System.currentTimeMillis()
         cache?.let { entry ->
             if (entry.key == key && now - entry.at < CACHE_TTL_MS) {
@@ -70,7 +73,7 @@ object ModelRacer {
             }
         }
 
-        val winnerId = race(settings, ids, timeoutMs)
+        val winnerId = race(settings, candidates, timeoutMs)
         if (winnerId != null) {
             cache = CacheEntry(key, winnerId, now)
             Log.d(TAG, "race winner=${winnerId} (candidates=${ids.size})")

@@ -90,7 +90,8 @@ fun SettingModelPoolPage(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         ) {
             settings.providers.forEach { provider ->
-                if (provider.models.isEmpty()) return@forEach
+                // v5.1.5 ★核验：禁用的提供商的模型不该进池（选了也调不通）
+                if (!provider.enabled || provider.models.isEmpty()) return@forEach
                 item(key = "h_" + provider.id) {
                     Column(Modifier.padding(top = 12.dp, bottom = 4.dp)) {
                         Text(

@@ -403,6 +403,9 @@ class ChatVM(
                     assistants = settings.assistants.map {
                         if (it.id == assistant.id) {
                             it.copy(
+                                // v5.1.5 ★核验发现：选真实模型必须**同时清零路由**，
+                                // 否则 UI 显示新模型、实际仍走快速/极致池（用户会以为没生效）。
+                                modelRouting = 0,
                                 chatModelId = model.id
                             )
                         } else {
