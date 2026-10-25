@@ -1745,8 +1745,24 @@ class ChatService(
             if (!exists && conversation.title.isBlank() && conversation.messageNodes.isEmpty()) {
                 return@withLock // 新会话且为空时不保存
             }
-            // 入参合并进内存（原子 apply），随后以 session.state 为唯一权威落库
-            session.apply { conversation }
+            // v5.0.99 ★两道修正（都是 v5.0.96 放宽条件后打开的窗口）：
+            //  (1) **未加载的既有对话绝不能用内存态写库** —— 内存可能只是"空壳 + 刚到的几条"，
+            //      写库 = 用几条覆盖 DB 里的完整历史（v5.0.83 同族事故）。跳过并补加载。
+            //  (2) 入参不再无条件覆盖内存 —— 调用方可能持有**挂起点之前读的旧快照**，
+            //      整对象 apply 会把流式期间写入内存的新数据盖掉（v5.0.60 同类 lost update）。
+            //      只在内存为空（空壳）时用入参补种，其余一律以内存为准。
+            if (!session.isInitialized()) {
+                Log.w(
+                    TAG,
+                    "saveConversation: not loaded yet — skip write + heal id=$conversationId " +
+                        "(incoming=${conversation.messageNodes.size} nodes)",
+                )
+                appScope.launch { runCatching { initializeConversation(conversationId) } }
+                return@withLock
+            }
+            if (session.state.value.messageNodes.isEmpty() && conversation.messageNodes.isNotEmpty()) {
+                session.updateConversation(conversation)
+            }
             val snapshot = session.state.value
             if (!exists) {
                 conversationRepo.insertConversation(snapshot)

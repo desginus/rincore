@@ -194,13 +194,15 @@ class ConversationSession(
 
     /**
      * v5.0.96：就绪 = **有可派发的权威数据**（不再用 phase 当门禁）。
-     * 三种情况都算就绪：DB 已加载 / 内存已有消息 / 这是一个刚创建的新对话。
-     * （若只认 initialized，消息会在"加载还没开始"的窗口里永远躺在队列里。）
+     * v5.0.99 ★修正 v5.0.96 的过宽判据：**"内存里有消息"绝不等于"已加载"** ——
+     * 空壳 session 被写入 1 条消息时，若算作就绪，dispatch 会立刻派发，
+     * sendQueuedMessage 就会拿这 1 条消息当权威落库，**覆盖 DB 里的完整历史**
+     * （v5.0.83 同族事故的复发窗口）。
+     * 现在只认两种真正的"就绪"：DB 已加载 / 这是一个 DB 里本来就不存在的新对话。
+     * 未就绪时消息留在队列，由 dispatch 的自愈（phase != LOADING → 重试加载）续上。
      */
     val isReady: Boolean
-        get() = initialized ||
-            _state.value.messageNodes.isNotEmpty() ||
-            _state.value.newConversation
+        get() = initialized || _state.value.newConversation
 
     /** 4.8.27: 是否已完成 DB 加载 — 发送路径归属同步守卫。 */
     fun isInitialized(): Boolean = initialized
