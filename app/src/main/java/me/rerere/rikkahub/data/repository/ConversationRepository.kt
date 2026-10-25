@@ -31,6 +31,7 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
 import java.time.Instant
 import kotlin.uuid.Uuid
+import android.util.Log
 
 class ConversationRepository(
     private val conversationDAO: ConversationDAO,
@@ -317,6 +318,10 @@ class ConversationRepository(
         } else null
     }
 
+    /** v5.0.95：消息节点数量 —— 用于"加载结果为空"的一致性校验（DB 有节点却读出 0 条 = 加载失败）。 */
+    suspend fun countMessageNodes(conversationId: Uuid): Int =
+        messageNodeDAO.countByConversation(conversationId.toString())
+
     suspend fun existsConversationById(uuid: Uuid): Boolean {
         return conversationDAO.existsById(uuid.toString())
     }
@@ -520,7 +525,7 @@ class ConversationRepository(
             .mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }
             .toSet()
 
-        return database.withTransaction {
+        val loaded: List<MessageNode> = database.withTransaction {
             val nodes = mutableListOf<MessageNode>()
             var offset = 0
             val pageSize = 64
@@ -528,14 +533,34 @@ class ConversationRepository(
                 val page = try {
                     messageNodeDAO.getNodesOfConversationPaged(conversationId, pageSize, offset)
                 } catch (e: SQLiteBlobTooBigException) {
-                    e.printStackTrace()
-                    offset += pageSize
-                    continue
-                } catch (e: IllegalStateException) {
-                    e.printStackTrace()
-                    offset += pageSize
-                    continue
+                    // v5.0.95 ★历史遗留陷阱（用户 2026-10-25 实测「切到任何对话都没内容、
+                    // 重试无效、重启才恢复」的根因之一）：
+                    // 旧实现 offset += 64 直接把**整页**丢掉 —— 一条超 CursorWindow 的
+                    // blob 会让 64 条消息一起消失；若第一页就抛，loadMessageNodes 返回
+                    // **空列表** → 会话被标记 READY 的空壳 → UI 显示空对话（星轨）、
+                    // initialize 因 READY 永久跳过、重试无效，只能重启重建 session。
+                    // 现在改为**逐条降级**：只放弃真正读不出的那一条，其余照常加载。
+                    Log.w(TAG, "blob too big in page offset=$offset, degrade per-row", e)
+                    val recovered = mutableListOf<MessageNodeEntity>()
+                    for (i in offset until offset + pageSize) {
+                        val single = try {
+                            messageNodeDAO.getNodesOfConversationPaged(conversationId, 1, i)
+                        } catch (_: SQLiteBlobTooBigException) {
+                            emptyList()
+                        }
+                        recovered += single
+                    }
+                    if (recovered.isEmpty()) {
+                        // 整页都不可读：推进一页继续（绝不再多吞数据）
+                        offset += pageSize
+                        continue
+                    }
+                    recovered
                 }
+                // v5.0.95 ★IllegalStateException 不再吞：它不是"某条数据坏"，而是
+                // 事务失效 / 连接池关闭 / 数据库状态错误。吞掉 = 返回空对话 + READY
+                // 空壳 = 用户看到的"切到任何对话都没内容、重启才恢复"。
+                // 抛出后 initialize 会把 phase 置为 FAILED，下次进入自动重试。
                 if (page.isEmpty()) break
                 page.forEach { entity ->
                     val messages = JsonInstant.decodeFromString<List<UIMessage>>(entity.messages)
@@ -549,10 +574,22 @@ class ConversationRepository(
                         )
                     )
                 }
-                offset += page.size
+                // v5.0.95：固定推进 pageSize（降级分支返回的 recovered 可能少于 64 条，
+                // 按 page.size 推进会与数据库行号错位、重复读取）
+                offset += pageSize
             }
             nodes
         }
+        // v5.0.95 ★空结果一致性校验：DB 里明明有节点却加载成 0 条 → 明确失败，
+        // 让 initialize 把 phase 置为 FAILED（下次进入自动重试），
+        // **绝不当成"空对话"标记 READY**（那会让 UI 永久空、只能重启）。
+        if (loaded.isEmpty()) {
+            val total = runCatching { messageNodeDAO.countByConversation(conversationId) }.getOrDefault(0)
+            if (total > 0) {
+                error("loadMessageNodes(conversationId=$conversationId) 返回 0 条，但 DB 有 $total 条")
+            }
+        }
+        return loaded
     }
 
     private suspend fun saveMessageNodes(conversationId: String, nodes: List<MessageNode>) {

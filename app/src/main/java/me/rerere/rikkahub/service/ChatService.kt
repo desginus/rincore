@@ -373,6 +373,12 @@ class ChatService(
                 settingsStore.updateAssistant(conversation.assistantId)
                 conversation
             } else {
+                // v5.0.95 ★区分"真的不存在"与"查询异常返回 null"：
+                // 后者若被当成新对话，会得到一个 **READY 的空壳** → UI 永久空（星轨）、
+                // 重试无效、只能重启（用户 2026-10-25 实测）。存在但读不出 = 明确失败。
+                if (conversationRepo.existsConversationById(conversationId)) {
+                    error("conversation $conversationId 在 DB 中存在但加载为 null（疑似查询失败）")
+                }
                 // 新建对话, 并添加预设消息 (作为 load 返回值 — initialize 内部完成状态写入)
                 val currentSettings = settingsStore.settingsFlowRaw.first()
                 val assistant = currentSettings.getCurrentAssistant()
@@ -384,8 +390,43 @@ class ChatService(
                 ).updateCurrentMessages(assistant.presetMessages)
             }
         }
+
+        // v5.0.95 ★空壳自愈（用户实测 bug 的闭环）：
+        // 若加载完成后内存里 0 条消息，但 DB 明确有节点 → 说明这次加载不完整（曾因
+        // 底层吞异常而静默返回空）。此时 force 重载一次；仍失败则 phase=FAILED，
+        // 下次进入会重新尝试，绝不把空壳当成"空对话"永久展示。
+        if (session.state.value.messageNodes.isEmpty() && !session.state.value.newConversation) {
+            val total = runCatching { conversationRepo.countMessageNodes(conversationId) }.getOrDefault(0)
+            if (total > 0) {
+                Log.w(TAG, "initializeConversation($conversationId): 内存 0 条但 DB 有 $total 条 → force reload")
+                session.initialize(
+                    load = {
+                        conversationRepo.getConversationById(conversationId)
+                            ?: error("conversation $conversationId 二次加载仍为 null（DB 有 $total 条节点）")
+                    },
+                    force = true,
+                )
+                Log.w(TAG, "initializeConversation($conversationId): reload 后 ${session.state.value.messageNodes.size} 条")
+            }
+        }
+
         // v5.0.83：加载完成后主动派发排队中的消息（未就绪期间 dispatch 被挡住，队列不受损）
         dispatchNextQueuedMessage(conversationId)
+    }
+
+    /**
+     * v5.0.95 ★强制重载会话（绕过 "READY 即跳过"）。只用于自愈：
+     * 内存 0 条消息但 DB 明确有节点的情况（READY 空壳）。
+     */
+    suspend fun reloadConversation(conversationId: Uuid) {
+        val session = sessionManager.getOrCreate(conversationId)
+        session.initialize(
+            load = {
+                conversationRepo.getConversationById(conversationId)
+                    ?: error("reloadConversation($conversationId): DB 中已不存在")
+            },
+            force = true,
+        )
     }
 
     // ---- 发送消息 ----

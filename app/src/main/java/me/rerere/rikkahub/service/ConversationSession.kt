@@ -91,12 +91,17 @@ class ConversationSession(
      *   2. load 结果**必定**进入内存（DB 权威），随后按序重放排队修改；
      *   3. load 失败 → phase=FAILED 并抛出（由调用方 toast），**绝不静默吞掉**。
      */
-    suspend fun initialize(load: suspend () -> Conversation) {
+    suspend fun initialize(load: suspend () -> Conversation, force: Boolean = false) {
         initializationMutex.withLock {
             // v5.0.83：只以 READY 为"已加载"判据（initialized 字段不再由空壳置真）；
             // 另一并发调用者会在 Mutex 上等待首个加载完成，返回时 phase=READY 直接跳过。
+            //
+            // v5.0.95 ★`force=true` 的存在理由（用户 2026-10-25 实测 bug）：
+            // 一旦某次 load 因底层异常返回了**空壳**并被标记 READY，旧的"READY 即返回"
+            // 会让这个空壳**永久生效** —— UI 永远是初始星轨页、重试无效、只能重启。
+            // 现在上层（ChatService）检测到"内存为空但 DB 有节点"时用 force 重载。
             synchronized(stateLock) {
-                if (_phase.value == SessionPhase.READY) return
+                if (!force && _phase.value == SessionPhase.READY) return
                 _phase.value = SessionPhase.LOADING
             }
             val loaded: Conversation = try {

@@ -59,6 +59,8 @@ import java.util.Locale
 import kotlin.uuid.Uuid
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import android.util.Log
+import kotlinx.coroutines.flow.filter
 
 private const val TAG = "ChatVM"
 
@@ -127,8 +129,11 @@ class ChatVM(
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     init {
-        // 添加对话引用
-        chatService.addConversationReference(_conversationId)
+        // v5.0.95 ★删除这里的 addConversationReference：
+        // 它与下面的 pinConversationReference 是**同一件事**（都 = manager.acquire），
+        // 而 onCleared 只 release 一次 → refCount 永久 +1 泄漏 → session 永不回收
+        // （长期运行内存增长，且"空闲回收"形同虚设）。
+        // 唯一引用点 = pinConversationReference / removeConversationReference 配对。
 
         // v4.8.70: 会话草稿持久化 — VM 重建/进程重启后恢复 (仅输入为空时注入);
         // 输入变化 1s 防抖落盘 (collectLatest 取消式, 连续输入只落最终值); onCleared 兜底 flush
@@ -168,7 +173,39 @@ class ChatVM(
 
         // 初始化对话
         viewModelScope.launch {
-            chatService.initializeConversation(_conversationId, folderId)
+            // v5.0.95 ★初始化必须有兜底：旧实现是裸 launch —— 一旦 initialize 抛异常，
+            // 这条加载链就静默断掉（没有日志、没有重试），UI 永远停在空壳星轨页。
+            runCatching { chatService.initializeConversation(_conversationId, folderId) }
+                .onFailure { e ->
+                    Log.e(TAG, "initializeConversation(${_conversationId}) failed, retry once", e)
+                    kotlinx.coroutines.delay(600)
+                    runCatching { chatService.initializeConversation(_conversationId, folderId) }
+                        .onFailure { e2 ->
+                            Log.e(TAG, "initializeConversation(${_conversationId}) retry failed", e2)
+                        }
+                }
+        }
+
+        // v5.0.95 ★空态自愈（一次性）：会话被判定已加载却 0 条消息，而 DB 明确有节点
+        // → 强制重载一次。这是"READY 空壳永久生效、只能重启"这条历史死结的兜底闭环。
+        viewModelScope.launch {
+            var tried = false
+            conversation
+                .map { it.messageNodes.isEmpty() && !it.newConversation }
+                .distinctUntilChanged()
+                .filter { it }
+                .collect {
+                    if (tried) return@collect
+                    tried = true
+                    kotlinx.coroutines.delay(700)
+                    val total = runCatching { conversationRepo.countMessageNodes(_conversationId) }
+                        .getOrDefault(0)
+                    if (total > 0) {
+                        Log.w(TAG, "empty-state self-heal: DB has $total nodes → force reload")
+                        runCatching { chatService.reloadConversation(_conversationId) }
+                            .onFailure { e -> Log.e(TAG, "self-heal reload failed", e) }
+                    }
+                }
         }
 
         // v4.8.59: 捕获"开启时归属" (仅一次; 待 DB 加载完成判定可靠 — 加载
