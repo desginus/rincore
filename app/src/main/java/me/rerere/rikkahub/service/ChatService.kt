@@ -531,7 +531,10 @@ class ChatService(
         // 后台补一次加载；完成后 initializeConversation 内的补派发会把队列续上。
         // 不再存在"消息永远躺在队列里无人派发"的路径。
         if (!session.isReady) {
-            if (session.phase.value == SessionPhase.NEW) {
+            // v5.0.98 ★「消息永远发不出去」的最后一处门禁：原实现只对 NEW 自愈，
+            // FAILED（加载失败一次）就被永久钉死 —— 队列永远不派发，用户看到"发送失败"。
+            // 现在只要不是 LOADING（正在加载中，等它完成后自己补派发）就重试加载。
+            if (session.phase.value != SessionPhase.LOADING) {
                 appScope.launch {
                     runCatching { initializeConversation(conversationId) }
                 }
@@ -1508,8 +1511,10 @@ class ChatService(
 
     private fun updateConversation(conversationId: Uuid, conversation: Conversation) {
         if (conversation.id != conversationId) return
-        // v5.0.83：不创建空壳（get）；未就绪时由 session 内部排队
-        val session = sessionManager.get(conversationId) ?: return
+        // v5.0.98 ★原 get ?: return：session 被回收时内存更新被静默丢弃（分支切换/翻译
+        // 改完再打开发现没变）。改为 getOrCreate —— 写入立即生效；若随后才加载，
+        // v5.0.96 的重放日志会以 DB 为基底把这笔修改重放上去，不会丢也不会覆盖历史。
+        val session = sessionManager.getOrCreate(conversationId)
         checkFilesDelete(conversation, session.state.value)
         session.updateConversation(conversation)
     }
@@ -1538,6 +1543,11 @@ class ChatService(
             val session = sessionManager.get(conversationId)
             if (session == null || !session.isReady) {
                 Log.w(TAG, "persistConversationState: session not ready, skip id=$conversationId")
+                // v5.0.98 ★"跳过"必须配一个"稍后补上"，否则就是静默丢数据：
+                // 只要不是 LOADING，就后台补一次加载（完成后由调用方/信号补齐保存）。
+                if (session != null && session.phase.value != SessionPhase.LOADING) {
+                    appScope.launch { runCatching { initializeConversation(conversationId) } }
+                }
                 return@withLock
             }
             val snapshot = session.state.value
@@ -1701,7 +1711,25 @@ class ChatService(
                 )
                 return@withLock
             }
-            val session = sessionManager.get(conversationId) ?: return@withLock
+            val session = sessionManager.get(conversationId)
+            if (session == null) {
+                // v5.0.98 ★session 被空闲回收后仍可能有保存请求（后台任务完成/编辑落库）。
+                // 旧实现直接 return → **静默丢数据**。现在按 DB 权威直写（无内存态可用）。
+                if (conversation.title.isBlank() && conversation.messageNodes.isEmpty()) {
+                    return@withLock
+                }
+                if (conversationRepo.existsConversationById(conversationId)) {
+                    conversationRepo.updateConversation(conversation)
+                } else {
+                    conversationRepo.insertConversation(conversation)
+                }
+                Log.w(
+                    TAG,
+                    "saveConversation: session absent — wrote DB directly id=$conversationId " +
+                        "nodes=${conversation.messageNodes.size}",
+                )
+                return@withLock
+            }
             // v5.0.96：不再要求 session.isReady —— 就绪与否由"内存是否已有数据 +
             // 空壳总闸"共同判定，不用 phase 当门禁（那会让"未加载但用户已发消息"被丢弃）。
             // ★数据事故总闸：空壳（空 messageNodes）永远不许覆盖非空历史（v5.0.19 B201 教训的制度化）
