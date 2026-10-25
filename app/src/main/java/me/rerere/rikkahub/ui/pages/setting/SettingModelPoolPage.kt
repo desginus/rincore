@@ -33,9 +33,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import org.koin.compose.koinInject
-import java.util.Uuid
 
 /**
  * @param mode 1 = 快速池，2 = 极致池
