@@ -68,11 +68,14 @@ private fun formatTs(ts: Long): String =
     SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date(ts))
 
 /** 导出 Markdown 文件, 返回可分享的 content:// Uri; sessionId=null 导出全部, 否则导出该轮 */
-private fun exportSessionsMarkdown(context: Context, sessionId: String? = null): Uri? {
+// v5.1.6 ★全量体检（第五次）发现：这是**普通函数**、由 UI 直接调用，
+// 里面用 runBlocking 调 suspend 的导出（读文件+序列化）→ 主线程阻塞。
+// 改为 suspend + IO 调度，调用方用 scope.launch 即可（不再阻塞 UI 线程）。
+private suspend fun exportSessionsMarkdown(context: Context, sessionId: String? = null): Uri? {
     val md = if (sessionId == null) {
-        runBlocking { LogSessionStore.exportMarkdown() }
+        withContext(Dispatchers.IO) { LogSessionStore.exportMarkdown() }
     } else {
-        runBlocking { LogSessionStore.exportSessionMarkdown(sessionId) } ?: return null
+        withContext(Dispatchers.IO) { LogSessionStore.exportSessionMarkdown(sessionId) } ?: return null
     }
     return runCatching {
         val dir = File(context.filesDir, "exports").apply { mkdirs() }
