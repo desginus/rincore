@@ -233,6 +233,7 @@ private fun decodeLocalImage(url: String): Bitmap? {
         decoded
     }.onFailure { Log.d("ExportPdf", "decode failed: ${it.message}") }
         .getOrNull()
+}
 
 /** data URI 图不超过 1600px（PDF 正文宽度 507pt，1600px 已远超印刷需要）。 */
 private fun shrinkForPdf(bitmap: Bitmap): Bitmap {
@@ -247,7 +248,6 @@ private fun shrinkForPdf(bitmap: Bitmap): Bitmap {
     )
     if (scaled !== bitmap) bitmap.recycle()
     return scaled
-}
 }
 
 private fun renderPdfDocument(nodes: List<PdfNode>): ByteArray {
