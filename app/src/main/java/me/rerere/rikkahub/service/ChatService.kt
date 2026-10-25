@@ -581,13 +581,27 @@ class ChatService(
                 val processedContent = preprocessUserInputParts(content, assistant)
 
                 // 添加消息到列表
-                val newConversation = currentConversation.copy(
-                    messageNodes = currentConversation.messageNodes + UIMessage(
-                        role = MessageRole.USER,
-                        parts = processedContent,
-                    ).toMessageNode(),
-                )
-                saveConversation(conversationId, newConversation)
+                // v5.1.1 ★★★根治「第二轮消息被吞」（用户实测：第一轮正常→第二轮消息没了→只剩等待→退出后消失）。
+                //
+                // 旧写法（错误结构）：
+                //   val currentConversation = session.state.value   ← 读快照
+                //   val settings = settingsStore.settingsFlow.first()  ← **挂起点**
+                //   currentConversation.copy(messageNodes = 旧的 + 新消息)  ← 用**过期快照**
+                //   saveConversation(id, 新快照)                    ← 整对象写回
+                // 挂起期间任何写入（上一轮落库/编辑/归属同步）都会让快照过期；
+                // 再叠加"只在内存为空时合并入参"的判据 → 新消息直接被丢弃。
+                //
+                // 新结构（原子追加，挂起点之后不使用任何旧快照）：
+                //   挂起点全部提前（settings/assistant 解析）→ apply 原子读改写 → 原子落库。
+                session.apply { current ->
+                    current.copy(
+                        messageNodes = current.messageNodes + UIMessage(
+                            role = MessageRole.USER,
+                            parts = processedContent,
+                        ).toMessageNode(),
+                    )
+                }
+                persistConversationState(conversationId)
                 session.submittingMessage = null
 
                 // 开始补全
@@ -1760,8 +1774,32 @@ class ChatService(
                 appScope.launch { runCatching { initializeConversation(conversationId) } }
                 return@withLock
             }
-            if (session.state.value.messageNodes.isEmpty() && conversation.messageNodes.isNotEmpty()) {
-                session.updateConversation(conversation)
+            // v5.1.1 ★★★v5.0.99 这里写反了，直接导致「第二轮消息被吞」：
+            // 旧写法只在「内存为空」时才把入参写进内存 —— 而正常对话第一轮结束后内存非空，
+            // 于是**第二轮带新消息的入参被完全忽略**，落库的是旧内存，消息既没进内存也没进库，
+            // UI 只剩等待标志，退出重进消息消失（用户实测，第 N 次同类事故）。
+            //
+            // 正确判据：**入参是"内存的超集"（新增了消息）或"同集合"（编辑/分支切换）时以入参为准**；
+            // 只有"入参缺少内存里已有的消息节点"才判定为旧快照并保留内存（防 lost update）。
+            session.apply { current ->
+                val incomingIds = conversation.messageNodes.mapTo(HashSet()) { it.id }
+                val currentIds = current.messageNodes.mapTo(HashSet()) { it.id }
+                val incomingIsNewer = conversation.messageNodes.size >= current.messageNodes.size ||
+                    incomingIds == currentIds
+                val currentIsSubset = currentIds.all { it in incomingIds }
+                if (incomingIsNewer || currentIsSubset) {
+                    conversation.copy(
+                        // 新对话标记不可被入参抹掉（否则 isReady 会掉回 false，队列卡死）
+                        newConversation = current.newConversation || conversation.newConversation,
+                    )
+                } else {
+                    Log.w(
+                        TAG,
+                        "saveConversation: incoming is stale (in=${conversation.messageNodes.size}, " +
+                            "mem=${current.messageNodes.size}) — keep memory id=$conversationId",
+                    )
+                    current
+                }
             }
             val snapshot = session.state.value
             if (!exists) {
