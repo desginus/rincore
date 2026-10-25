@@ -570,6 +570,9 @@ private fun ChatPageContent(
                 val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
                 ChatInput(
                     hazeState = hazeState,
+                    // v5.0.92（用户定案）：每次打开输入栏就预热当前模型连接
+                    // （只对 Opencode go 订阅 / CommandCode 生效；幂等，零重复开销）
+                    onRequestProviderWarm = { vm.warmProviderConnection() },
                     onStartVoiceMode = onStartVoiceMode,
                     voiceState = voiceState,
                     onStopVoiceMode = vm.voiceSession::stop,

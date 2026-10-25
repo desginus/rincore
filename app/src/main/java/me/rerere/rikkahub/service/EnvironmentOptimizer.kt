@@ -95,14 +95,15 @@ object ConnectionWarmer {
         val trimmed = baseUrl.trimEnd('/')
         if (trimmed.isBlank()) return
         val host = runCatching { java.net.URI(trimmed).host }.getOrNull() ?: return
-        val isLongLived = host == "opencode.ai" || host == "api.commandcode.ai"
-        val client = if (isLongLived) {
-            me.rerere.ai.provider.ProviderManager.opencodeClient ?: mainClient
-        } else {
-            mainClient ?: runCatching {
-                org.koin.core.context.GlobalContext.get().get<okhttp3.OkHttpClient>()
-            }.getOrNull()
-        } ?: return
+        // v5.0.92 ★用户定案：预热只针对 Opencode（go 订阅）与 CommandCode 两个提供商，
+        // **不再顺带给其它 provider 起心跳**（同时预热多个会白占进程与连接槽）。
+        // 其它 provider 只在"生成开始时"由 ChatService 对当前这一个起心跳（新鲜度保障）。
+        val isOcCc = host == "opencode.ai" || host == "api.commandcode.ai"
+        if (!isOcCc) return
+        // 必须是主请求用的长保活池 —— 预热进错池等于没做（v3.10.5/v3.17.0 两次踩过）
+        val client = me.rerere.ai.provider.ProviderManager.opencodeClient
+            ?: mainClient
+            ?: return
         ensureProviderKeepAlive(appScope, client, trimmed, apiKey)
     }
 
@@ -179,6 +180,14 @@ object ConnectionWarmer {
     //  额外延迟来源之一)。按 host 幂等管理, 同 host 不重复起 job。
     private val keepAliveJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
 
+    // v5.0.92 ★收益熔断（用户定案："一定要稳定可靠地缩短时间，不能保证缩短时间的话可以放弃"）：
+    // 心跳 ping 连续 3 次耗时 > 800ms（含失败）说明网关慢或预热本身成了负担，
+    // 暂停该 host 的心跳 30 分钟，让节奏回到真实请求上；恢复后重新评估。
+    private val keepAliveSlowStreak = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val keepAlivePausedUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private const val KEEPALIVE_SLOW_MS = 800L
+    private const val KEEPALIVE_PAUSE_MS = 30 * 60_000L
+
     /**
      * v4.8.34: 确保某个 provider baseUrl 有 60s 心跳 (幂等; v4.8.35 起 60s)。
      * 由生成开始时调用 (当前对话确定的 provider) — 工具执行期间连接保持新鲜,
@@ -204,6 +213,11 @@ object ConnectionWarmer {
             // 用户定版场景 (前台使用/生成) 行为不变; 仅消除"熄屏挂后台空转心跳"的耗电。
             var lastForegroundEpoch = AppForegroundState.foregroundEpoch
             while (isActive) {
+                // v5.0.92 熔断期直接睡过（不 ping）
+                if ((keepAlivePausedUntil[trimmed] ?: 0L) > System.currentTimeMillis()) {
+                    kotlinx.coroutines.delay(60_000L)
+                    continue
+                }
                 val epoch = AppForegroundState.foregroundEpoch
                 if (AppForegroundState.isBackground &&
                     !GenerationForegroundService.hasActiveGeneration() &&
@@ -216,6 +230,7 @@ object ConnectionWarmer {
                 // v4.8.71 (用户定版): 先 ping 后计时 — 启动/生成开始即建立热连接
                 // ("开应用直接拉心跳, 首次延迟不是连接延迟"), 首 ping 不再等 60s;
                 // 之后 60s 间隔维持 (服务端空闲断连窗口 ~100s, 60s 留 40s 余量)。
+                val pingStart = android.os.SystemClock.elapsedRealtime()
                 val warmOk = runCatching {
                     val warmClient = client.newBuilder()
                         .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
@@ -231,9 +246,26 @@ object ConnectionWarmer {
                 }.onFailure {
                     Log.w(TAG, "keepalive(ensure) $host: ${it.message}")
                 }.isSuccess
+                val pingCost = android.os.SystemClock.elapsedRealtime() - pingStart
                 // v4.8.98: 心跳成功打点 — 轮首探活据此判断"最近热", 热则零等待放行
                 if (warmOk) markWarm(trimmed)
-                Log.d(TAG, "keepalive(ensure) $host ok (pool fresh)")
+                // v5.0.92 熔断判定：慢 ping（>800ms）或失败都记一次；连续 3 次 → 暂停 30 分钟
+                if (warmOk && pingCost <= KEEPALIVE_SLOW_MS) {
+                    keepAliveSlowStreak[trimmed] = 0
+                } else {
+                    val streak = (keepAliveSlowStreak[trimmed] ?: 0) + 1
+                    keepAliveSlowStreak[trimmed] = streak
+                    if (streak >= 3) {
+                        keepAlivePausedUntil[trimmed] = System.currentTimeMillis() + KEEPALIVE_PAUSE_MS
+                        keepAliveSlowStreak[trimmed] = 0
+                        Log.w(
+                            TAG,
+                            "keepalive $host 连续 $streak 次慢/失败（本次 ${pingCost}ms，阈值 ${KEEPALIVE_SLOW_MS}ms）" +
+                                " → 判定预热未带来稳定收益，暂停 30 分钟",
+                        )
+                    }
+                }
+                Log.d(TAG, "keepalive(ensure) $host ok=$warmOk ping=${pingCost}ms (pool fresh)")
                 kotlinx.coroutines.delay(60_000L)
             }
         }

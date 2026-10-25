@@ -161,6 +161,8 @@ fun ChatInput(
     onPickFile: () -> Unit = {},
     // v5.0.52：5.0.31 UI 版补回工具矩阵选择器数据源（@/ 提及用；由 ChatPage 提供）
     toolPickerProvider: (suspend () -> me.rerere.rikkahub.ui.components.ai.ToolMatrixPickerData?)? = null,
+    // v5.0.92（用户定案）：输入栏获得焦点即预热（仅 Opencode go / CommandCode）
+    onRequestProviderWarm: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -292,6 +294,7 @@ fun ChatInput(
                         completionProviders = completionProviders,
                         onSendMessage = { sendMessage() },
                         toolPickerProvider = toolPickerProvider,
+                        onRequestProviderWarm = onRequestProviderWarm,
                     )
 
                     Row(
@@ -554,6 +557,8 @@ private fun TextInputRow(
     onSendMessage: () -> Unit,
     // v5.0.64: /@ 触发工具矩阵选择器 —— 数据源由 ChatInput 外层传入（内层函数看不到外层参数）
     toolPickerProvider: (suspend () -> ToolMatrixPickerData?)? = null,
+    // v5.0.92（用户定案）：输入栏一获得焦点就预热当前模型连接（Opencode go / CommandCode）
+    onRequestProviderWarm: () -> Unit = {},
 ) {
     val settings = LocalSettings.current
     val filesManager: FilesManager = koinInject()
@@ -827,6 +832,11 @@ private fun TextInputRow(
                 .contentReceiver(receiveContentListener)
                 .onFocusChanged {
                     isFocused = it.isFocused
+                    // v5.0.92（用户定案）：每次打开输入栏（获得焦点）就预热一次。
+                    // 幂等：同 baseUrl 已有常驻心跳时直接返回；只对 Opencode/CommandCode 生效。
+                    if (it.isFocused) {
+                        runCatching { onRequestProviderWarm() }
+                    }
                 },
             shape = MaterialTheme.shapes.largeIncreased,
             lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),

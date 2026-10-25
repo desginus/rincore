@@ -86,8 +86,10 @@ data class Settings(
     val opencodeApiKey: String = "",
     val opencodeApiKeys: List<String> = emptyList(),
     val usageViewMode: String = "cards",
-    val opencodeWarmEnabled: Boolean = false,
-    val commandCodeWarmEnabled: Boolean = false,
+    // v5.0.92 用户定案：默认预热 Opencode(go 订阅) 与 CommandCode 两个提供商。
+    // 默认 true = 启动即起双 host 常驻心跳（60s，同池；输入栏打开时立即刷新）。
+    val opencodeWarmEnabled: Boolean = true,
+    val commandCodeWarmEnabled: Boolean = true,
     val ccImageCompat: Boolean = false,
     val imageUploadMode: String = "classic",
     val fileUploadMode: String = "compat",

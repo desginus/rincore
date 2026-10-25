@@ -154,47 +154,12 @@ class ChatVM(
         // 触发点 = "从空到非空"的**输入沿**（distinctUntilChanged，不逐键触发）；
         // 预热器内部再带 60s 防抖窗（proot 走热是秒级 IO，频繁重复毫无意义，60s 内合并）。
         // 旧启动预热（App.onCreate）已删 —— 启动期抢 IO，用户实测拖慢启动且收益有限。
-        // v5.0.91 ★预热触发点 ①：进对话 / 切换模型即预热（用户进对话到真正发送之间通常有几秒，
-        // 这几次输入之前就把 DNS/TCP/TLS 建好；30s 节流由预热器内部合并）。
-        viewModelScope.launch {
-            // 注意：currentChatModel 是 StateFlow（不是 Compose snapshot 状态），
-            // 用 snapshotFlow 观察不到它的变化 → 必须走 Flow 的 map/distinctUntilChanged。
-            currentChatModel.map { it?.id }
-                .distinctUntilChanged()
-                .collect {
-                    me.rerere.rikkahub.data.ai.LlmConnectionPrewarmer.warmAsync(
-                        appScope,
-                        resolveModelBaseUrl(settingsStore.settingsFlow.value, currentChatModel.value),
-                    )
-                }
-        }
-        // v5.0.91 ★keep-alive：对话页停留期间每 60s 刷新一次池内连接（最多 5 次 = 5 分钟），
-        // 解决"预热完、用户想了很久才发送 → 连接已被 180s idle 回收"的问题。
-        // 生命周期由 viewModelScope 兜住：离开对话/清栈即自动取消，不会泄漏。
-        viewModelScope.launch {
-            repeat(5) {
-                kotlinx.coroutines.delay(60_000)
-                me.rerere.rikkahub.data.ai.LlmConnectionPrewarmer.keepAliveAsync(
-                    appScope,
-                    resolveModelBaseUrl(settingsStore.settingsFlow.value, currentChatModel.value),
-                )
-            }
-        }
         viewModelScope.launch {
             // v5.0.78 ★触发式沙箱预热（用户指令"改为每次开始在输入框中输入的时候进行一次"）
             snapshotFlow { inputState.latestText.isNotEmpty() }
                 .distinctUntilChanged()
                 .collect { hasText ->
-                    if (hasText) {
-                        // v5.0.90 ★预热分工重构（用户质疑"预热对首字到底有没有效"）：
-                        // 旧实现在这里预热沙箱（proot + officecli 34MB），它只服务"首个工具调用"，
-                        // 与首字毫无关系，却恰好和"打完字立刻发送"抢 IO/CPU → 首字更慢。
-                        // 输入沿改为预热 LLM 端点连接（DNS + TCP + TLS，发送时直接复用连接池）。
-                        me.rerere.rikkahub.data.ai.LlmConnectionPrewarmer.warmAsync(
-                            appScope,
-                            resolveModelBaseUrl(settingsStore.settingsFlow.value, currentChatModel.value),
-                        )
-                    }
+                    if (hasText) { /* v5.0.92: 预热已改到输入栏打开时（见 warmProviderConnection） */ }
                 }
         }
         // v5.0.83：持有会话引用（消 pin/unpin）—— 前台期间 session 绝不被空闲回收，
@@ -407,36 +372,25 @@ class ChatVM(
      * @param answer 是否触发消息生成，如果为false，则仅添加消息到消息列表中
      */
     /**
-     * v5.0.90：当前对话模型的端点 URL —— 供 LLM 连接预热使用。
-     * `ProviderSetting` 是 sealed class，baseUrl 只在具体子类上（接口无此属性），
-     * 因此按三个主要子类取；其它自定义类型直接不预热（无害）。
+     * v5.0.92 ★预热入口（用户定案：每次打开输入栏就开始预热）。
+     *
+     * 委托既有 `ProviderWarmup.warmCurrentChatModel()`：
+     *  - 它走 `ConnectionWarmer.ensureProviderKeepAliveAuto`，自动选池
+     *    （opencode.ai / api.commandcode.ai → 与主请求同一个 `opencodeClient` 长保活池）；
+     *  - 幂等：同 baseUrl 已有心跳 job 直接返回，不会重复占进程；
+     *  - 首 ping 立即执行（"先 ping 后计时"），不是等 60s。
+     *
+     * 绝不在发送时调用：生成前预热会与主请求同 key 串行化（v3.12.6/v4.1.3 已证伪）。
      */
-    private fun resolveModelBaseUrl(
-        setting: me.rerere.rikkahub.data.datastore.Settings,
-        model: me.rerere.ai.provider.Model?,
-    ): String? {
-        if (model == null) return null
-        // Model 本身不带 providerId —— 模型归属由 ProviderSetting.models 表达；
-        // providerOverwrite（模型级覆盖）优先。
-        val provider = model.providerOverwrite
-            ?: setting.providers.firstOrNull { p -> p.models.any { it.id == model.id } }
-            ?: return null
-        return when (provider) {
-            is me.rerere.ai.provider.ProviderSetting.OpenAI -> provider.baseUrl
-            is me.rerere.ai.provider.ProviderSetting.Google -> provider.baseUrl
-            is me.rerere.ai.provider.ProviderSetting.Claude -> provider.baseUrl
-            else -> null
-        }
+    fun warmProviderConnection() {
+        me.rerere.rikkahub.service.ProviderWarmup.warmCurrentChatModel()
     }
 
     fun handleMessageSend(content: List<UIMessagePart>,answer: Boolean = true) {
         if (content.isEmptyInputMessage()) return
-        // v5.0.91 ★预热触发点 ④：发送瞬间兜底（若距上次预热已超 30s 会重新建连；
-        // 未超则被节流直接跳过，零开销）。这是最贴近真实请求的一次预热。
-        me.rerere.rikkahub.data.ai.LlmConnectionPrewarmer.warmAsync(
-            appScope,
-            resolveModelBaseUrl(settingsStore.settingsFlow.value, currentChatModel.value),
-        )
+        // v5.0.92 ★发送时**不再**预热：v4.1.3 已实证"生成前预热"与主请求同 key 会被
+        // 网关串行化，预热挂在慢网关上时主请求反而排队等它（v3.12.6 用户实测）。
+        // 连接新鲜度由 ConnectionWarmer 的 60s 常驻心跳 + 输入栏打开时的即时刷新保证。
         // v5.0.90 ★沙箱预热改在"发送之后"（用户实证：旧输入沿预热与首字请求抢 IO，
         // 预热没什么用还越等越久）。此时 LLM 请求已发出，proot/officecli 走热与
         // 服务端 TTFB 并行，只为"首个工具调用"服务，不再影响首字。
