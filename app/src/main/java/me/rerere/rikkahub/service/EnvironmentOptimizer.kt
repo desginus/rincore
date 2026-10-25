@@ -185,8 +185,13 @@ object ConnectionWarmer {
     // 暂停该 host 的心跳 30 分钟，让节奏回到真实请求上；恢复后重新评估。
     private val keepAliveSlowStreak = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private val keepAlivePausedUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
-    private const val KEEPALIVE_SLOW_MS = 800L
-    private const val KEEPALIVE_PAUSE_MS = 30 * 60_000L
+    // v5.0.96 ★修正 v5.0.92 的过激熔断（用户："预热甚至还不如 5.0.12"的真因）：
+    // 旧值 800ms / 连续 3 次 → 移动网首次冷连（TLS 握手 + CF 冷启动 0.8~2.5s 属正常）
+    // 三次就判死 30 分钟 → **实际上长期处于熔断期 = 等于没有预热**。
+    // 现在：2500ms 才认为"慢"，连续 4 次才暂停，暂停 10 分钟后自动重试。
+    // 判读：冷连慢是预热在替用户付成本（有价值）；只有"反复 2.5s+"才是真的没收益。
+    private const val KEEPALIVE_SLOW_MS = 2_500L
+    private const val KEEPALIVE_PAUSE_MS = 10 * 60_000L
 
     /**
      * v4.8.34: 确保某个 provider baseUrl 有 60s 心跳 (幂等; v4.8.35 起 60s)。
@@ -255,13 +260,13 @@ object ConnectionWarmer {
                 } else {
                     val streak = (keepAliveSlowStreak[trimmed] ?: 0) + 1
                     keepAliveSlowStreak[trimmed] = streak
-                    if (streak >= 3) {
+                    if (streak >= 4) {
                         keepAlivePausedUntil[trimmed] = System.currentTimeMillis() + KEEPALIVE_PAUSE_MS
                         keepAliveSlowStreak[trimmed] = 0
                         Log.w(
                             TAG,
                             "keepalive $host 连续 $streak 次慢/失败（本次 ${pingCost}ms，阈值 ${KEEPALIVE_SLOW_MS}ms）" +
-                                " → 判定预热未带来稳定收益，暂停 30 分钟",
+                                " → 判定预热未带来稳定收益，暂停 10 分钟（冷连慢不计入新一轮）",
                         )
                     }
                 }

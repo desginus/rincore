@@ -101,7 +101,9 @@ class ConversationSession(
             // 会让这个空壳**永久生效** —— UI 永远是初始星轨页、重试无效、只能重启。
             // 现在上层（ChatService）检测到"内存为空但 DB 有节点"时用 force 重载。
             synchronized(stateLock) {
-                if (!force && _phase.value == SessionPhase.READY) return
+                // v5.0.96：判据改为 initialized（与 isReady 单一事实源），
+                // 不再用 phase —— 避免"phase 与 initialized 不一致"再造出空壳死结。
+                if (!force && initialized) return
                 _phase.value = SessionPhase.LOADING
             }
             val loaded: Conversation = try {
@@ -153,35 +155,52 @@ class ConversationSession(
      * 完成后按序重放。空壳永远不可能冒充"已加载"。
      */
     fun apply(update: (Conversation) -> Conversation): Conversation = synchronized(stateLock) {
-        if (_phase.value != SessionPhase.READY) {
-            // NEW（空壳）/LOADING（加载中）/FAILED（加载失败）都不得写 state —— 排队等重放
+        // v5.0.96 ★★★从最基础重写（用户："不要打补丁，哪里有问题直接重写"）。
+        //
+        // 历史两起事故是一对矛盾，根源都是"用队列去占位"：
+        //   A. v5.0.76 事故：load 期间写入把 initialized 置真 → DB 权威数据被丢弃 → 会话变空。
+        //   B. v5.0.95 事故：为避免 A，改成"非 READY 一律排队不写" → 空壳被钉成 READY →
+        //      UI 永久空（切任何对话都没内容、重试无效、只能重启）。
+        //
+        // 正解（写入立即生效 + 重放日志）：
+        //   1. **任何时刻都写 _state**（UI 立刻看到数据，不存在"空壳占位"这个状态）；
+        //   2. 若加载还没完成，同时把这次修改记入 replay 日志；
+        //   3. initialize 拿到 DB 数据后，以 **DB 为基底重放** 这些修改 →
+        //      A（丢 DB）与 B（钉空壳）同时不可能发生。
+        if (!initialized) {
             pendingUpdates.addLast(update)
-            return _state.value
         }
         val next = update(_state.value)
         _state.value = next
         next
     }
 
-    /** 整对象写入（保留兼容；v5.0.83 起未就绪时排队，且**拒绝空壳覆盖非空历史**）。 */
+    /** 整对象写入：v5.0.96 起**任何时刻立即生效**（与 apply 同语义），仅保留空壳护闸。 */
     fun updateConversation(conversation: Conversation) {
         require(conversation.id == id)
         synchronized(stateLock) {
-            // ★数据事故防御：空 messageNodes 不许覆盖非空 state（清空对话需走显式路径）
-            if (conversation.messageNodes.isEmpty() && _state.value.messageNodes.isNotEmpty() && _phase.value == SessionPhase.READY) {
+            // ★数据事故总闸（唯一保留的守卫，且不依赖 phase）：
+            // 空 messageNodes 不许覆盖非空 state（清空对话必须走显式路径）
+            if (conversation.messageNodes.isEmpty() && _state.value.messageNodes.isNotEmpty()) {
                 Log.e(TAG, "updateConversation BLOCKED empty overwrite id=$id (state=${_state.value.messageNodes.size} nodes)")
                 return
             }
-            if (_phase.value != SessionPhase.READY) {
+            if (!initialized) {
                 pendingUpdates.addLast { conversation }
-                return
             }
             _state.value = conversation
         }
     }
 
-    /** v5.0.83：只有 READY 才允许读取/写入/派发 —— 空壳一律视为"未定义"。 */
-    val isReady: Boolean get() = _phase.value == SessionPhase.READY
+    /**
+     * v5.0.96：就绪 = **有可派发的权威数据**（不再用 phase 当门禁）。
+     * 三种情况都算就绪：DB 已加载 / 内存已有消息 / 这是一个刚创建的新对话。
+     * （若只认 initialized，消息会在"加载还没开始"的窗口里永远躺在队列里。）
+     */
+    val isReady: Boolean
+        get() = initialized ||
+            _state.value.messageNodes.isNotEmpty() ||
+            _state.value.newConversation
 
     /** 4.8.27: 是否已完成 DB 加载 — 发送路径归属同步守卫。 */
     fun isInitialized(): Boolean = initialized

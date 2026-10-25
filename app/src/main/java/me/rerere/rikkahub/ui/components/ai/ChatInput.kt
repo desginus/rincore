@@ -127,6 +127,7 @@ import kotlin.time.Duration.Companion.seconds
 import me.rerere.rikkahub.ui.pages.chat.VoicePhase
 import me.rerere.rikkahub.ui.pages.chat.VoiceSessionState
 import kotlin.uuid.Uuid
+import androidx.compose.runtime.DisposableEffect
 
 @Composable
 fun ChatInput(
@@ -197,6 +198,15 @@ fun ChatInput(
 
     val asr = LocalASRState.current
     val asrState by asr.state.collectAsState()
+
+    // v5.0.96 ★「输入栏凭空出现陌生文字」修法之三：
+    // ASR 是 **Activity 级共享实例**（RouteActivity 里 LocalASRState provides asr），
+    // 而转写回调 `onTranscriptChange` 捕获的是**本页**的 ChatInputState。
+    // 离开页面时不停止录音 → 残留/迟到的转写回调继续把文本写进旧（甚至新）输入框；
+    // 这就是"碎片文本串行"的来源之一。离开即停、开始新录音前先停上一轮。
+    DisposableEffect(Unit) {
+        onDispose { runCatching { asr.stop() } }
+    }
     val hapticFeedback = LocalHapticFeedback.current
     val soundEffectPlayer: SoundEffectPlayer = koinInject()
     LaunchedEffect(Unit) {
@@ -379,6 +389,8 @@ fun ChatInput(
                                             if (!asrPermission.allRequiredPermissionsGranted) {
                                                 asrPermission.requestPermissions()
                                             } else {
+                                                // v5.0.96：先停掉上一轮（清回调/缓冲），防旧转写残留串进新文本
+                                                runCatching { asr.stop() }
                                                 asrBaseText = state.textContent.text.toString()
                                                 asr.start { transcript ->
                                                     val spacer =

@@ -107,6 +107,16 @@ class ChatVM(
     // 导致"已完成发送的分享文档幽灵重现"。
     var shareArgsConsumed by mutableStateOf(false)
 
+    /**
+     * v5.0.96 ★「输入栏凭空出现从没见过的文字」修法之一：
+     * 分享回灌（其他应用把文本分享进 RinCore）的内容**不写入草稿**。
+     * 旧行为：回灌 → 1s 防抖 → 存进 DraftStore → 用户切走/重启后再进这个对话，
+     * 那段他从没手打过的文字就从草稿里冒出来（看起来就是"缓存文本串进输入框"）。
+     * 一次性标记：只跳过紧随回灌的那一次防抖保存，用户后续手动输入照常保存。
+     */
+    @Volatile
+    var suppressNextDraftSave: Boolean = false
+
     // 聊天输入状态 - 保存在 ViewModel 中避免 TransactionTooLargeException
     val inputState = ChatInputState()
 
@@ -151,6 +161,11 @@ class ChatVM(
                     // v5.0.72: 每次变化先同步非 Compose 镜像（onCleared 只认它）
                     inputState.syncMirror()
                     if (text.isEmpty()) return@collectLatest
+                    // v5.0.96：分享回灌的那一次不落草稿（见 suppressNextDraftSave 注释）
+                    if (suppressNextDraftSave) {
+                        suppressNextDraftSave = false
+                        return@collectLatest
+                    }
                     delay(1000)
                     draftStore.save(_conversationId, text)
                 }

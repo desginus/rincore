@@ -1664,19 +1664,40 @@ class ChatService(
         //  ③ 任何 getOrCreate（14 处）+ apply 可把空壳污染成 initialized → DB 权威数据永不加载。
         //
         // 新契约：等待在**锁外**；写库权威=**session.state**；空 messageNodes 严禁覆盖非空历史。
-        if (!awaitConversationLoaded(conversationId)) {
-            Log.w(
-                TAG,
-                "saveConversation: skipped — session not ready (no shell creation), id=$conversationId",
-            )
-            return
-        }
+        // v5.0.96 ★★★创建分支/新建对话不落库的根因（用户实测：选某条消息建分支 → 新聊天空白星轨）：
+        // 旧实现无条件 awaitConversationLoaded(8s) —— fork 出的对话在 DB 里**还没有记录**，
+        // 也就永远不会有 session 被 initialize → 8 秒后超时 → 直接 return（跳过保存）。
+        // 结果：分支只存在于返回值里，DB 里啥都没有；UI 导航到新 id → 查库为 null →
+        // 当新对话建空壳并置 READY → 星轨空白，且重试无效。
+        // 现在：await 只针对"DB 中已存在、session 尚未加载"的场景；新对话直接放行。
+        // v5.0.96 ★回到 4.8.190 语义：**保存不再等加载、不再看 phase**。
+        // 旧实现的 awaitConversationLoaded(8s) + isReady 门禁是两起事故的直接来源：
+        //   · fork/新建对话（DB 里还没有记录）永远等不到 session 加载 → 8s 后 skip
+        //     → 分支对话从未落库 → 打开就是空壳星轨（用户 2026-10-25 实测）；
+        //   · 任何一次"保存时机早于加载完成"都会静默丢弃写入。
+        // 现在只依赖两层真实保护：per-conversation saveLock（防并发覆盖）+ 空壳总闸。
         saveLockFor(conversationId).withLock {
-            val session = sessionManager.get(conversationId) ?: return@withLock
-            if (!session.isReady) {
-                Log.w(TAG, "saveConversation: skipped — session not READY, id=$conversationId")
+            val existsNow = conversationRepo.existsConversationById(conversationId)
+            // v5.0.96 ★注意：必须先判"DB 是否存在"，再取 session ——
+            // fork 出来的新对话**没有 session**（UI 还没打开它），旧顺序会在这里
+            // `?: return@withLock` 直接跳过落库（这才是分支空白的真凶）。
+            if (!existsNow) {
+                // 新对话（fork/导入）：入参就是权威，直接落库；session 存在则就绪。
+                if (conversation.title.isBlank() && conversation.messageNodes.isEmpty()) {
+                    return@withLock // 仍是空对话，不落库
+                }
+                conversationRepo.insertConversation(conversation)
+                sessionManager.get(conversationId)?.initialize(load = { conversation })
+                Log.i(
+                    TAG,
+                    "saveConversation: new conversation persisted id=$conversationId " +
+                        "nodes=${conversation.messageNodes.size}",
+                )
                 return@withLock
             }
+            val session = sessionManager.get(conversationId) ?: return@withLock
+            // v5.0.96：不再要求 session.isReady —— 就绪与否由"内存是否已有数据 +
+            // 空壳总闸"共同判定，不用 phase 当门禁（那会让"未加载但用户已发消息"被丢弃）。
             // ★数据事故总闸：空壳（空 messageNodes）永远不许覆盖非空历史（v5.0.19 B201 教训的制度化）
             if (conversation.messageNodes.isEmpty() && session.state.value.messageNodes.isNotEmpty()) {
                 Log.e(

@@ -252,10 +252,27 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
     //   ② 附件/文本追加到现有输入, 不覆盖 (修复"分享文档抹除输入框已有内容")。
     val shareToaster = LocalToaster.current
     val shareContext = LocalContext.current
+    // v5.0.96 ★分享参数消费标记持久化（"输入栏凭空出现陌生文字"修法之二）：
+    // 旧实现只有 vm.shareArgsConsumed（内存态）→ VM 重建（切对话/内存压力）或
+    // 进程重启后，同一份导航参数会被**再次消费**，把上次分享的文本重新灌进输入框。
+    // 现在用 SharedPreferences 记录参数指纹（内容 hash），跨 VM/跨进程只消费一次。
+    val sharePrefs = remember {
+        shareContext.getSharedPreferences("share_args_v1", android.content.Context.MODE_PRIVATE)
+    }
     LaunchedEffect(files, text) {
         if (vm.shareArgsConsumed) return@LaunchedEffect
         if (files.isEmpty() && text.isNullOrEmpty()) return@LaunchedEffect
+        val fingerprint = ("${text.orEmpty()}|${files.joinToString("|") { it.toString() }}").hashCode().toString()
+        if (sharePrefs.contains(fingerprint)) {
+            android.util.Log.i("ChatPage", "share args already consumed (fp=$fingerprint) — skip")
+            vm.shareArgsConsumed = true
+            return@LaunchedEffect
+        }
+        if (sharePrefs.all.size > 100) sharePrefs.edit().clear().apply()
+        sharePrefs.edit().putLong(fingerprint, System.currentTimeMillis()).apply()
         vm.shareArgsConsumed = true
+        // 回灌内容不落草稿（否则重启后会从草稿里再冒出来）
+        vm.suppressNextDraftSave = true
         if (files.isNotEmpty()) {
             // v4.8.112 (空分享加固): 导入异常/零产物不得静默 — 旧实现异常即中断消费，
             // 产物为空时用户只看到"跳转过来但什么都没有"。
