@@ -57,6 +57,12 @@ data class Settings(
     val ocrModelId: Uuid = Uuid.random(),
     val ocrPrompt: String = DEFAULT_OCR_PROMPT,
     val assistantId: Uuid = DEFAULT_ASSISTANT_ID,
+
+    /** v5.1.3（用户要求）：输入栏是否显示「发送键 / 终止键」（同位置动态切换） */
+    val showSendButton: Boolean = true,
+
+    /** v5.1.3（用户要求）：输入栏是否显示「思考程度键」 */
+    val showReasoningButton: Boolean = true,
     val providers: List<ProviderSetting> = DEFAULT_PROVIDERS,
     val assistants: List<Assistant> = DEFAULT_ASSISTANTS,
     val assistantTags: List<Tag> = emptyList(),
@@ -205,12 +211,6 @@ data class DisplaySetting(
     val showAssistantBubble: Boolean = false,
     val bubbleOpacity: Float = 1.0f,
     val showModelIcon: Boolean = true,
-
-    /** v5.1.2（用户要求）：输入栏是否显示「发送键 / 终止键」（同一个位置动态切换） */
-    val showSendButton: Boolean = true,
-
-    /** v5.1.2（用户要求）：输入栏是否显示「思考程度键」 */
-    val showReasoningButton: Boolean = true,
     val showModelName: Boolean = true,
     val showDateTimeInMessage: Boolean = false,
     val showTokenUsage: Boolean = true,

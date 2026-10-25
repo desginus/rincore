@@ -895,7 +895,7 @@ private fun MemoryMemoriesTab(
                             folderList.forEach { folder ->
                                 TextButton(
                                     onClick = {
-                                        update(memory.copy(folderId = folder.id, conversationId = null))
+                                        update(memory.copy(folderId = folder.id.toString(), conversationId = null))
                                         showFolderPicker = false
                                     },
                                 ) { Text(folder.name) }
