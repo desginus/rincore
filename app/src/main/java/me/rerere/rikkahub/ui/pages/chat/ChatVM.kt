@@ -154,6 +154,32 @@ class ChatVM(
         // 触发点 = "从空到非空"的**输入沿**（distinctUntilChanged，不逐键触发）；
         // 预热器内部再带 60s 防抖窗（proot 走热是秒级 IO，频繁重复毫无意义，60s 内合并）。
         // 旧启动预热（App.onCreate）已删 —— 启动期抢 IO，用户实测拖慢启动且收益有限。
+        // v5.0.91 ★预热触发点 ①：进对话 / 切换模型即预热（用户进对话到真正发送之间通常有几秒，
+        // 这几次输入之前就把 DNS/TCP/TLS 建好；30s 节流由预热器内部合并）。
+        viewModelScope.launch {
+            // 注意：currentChatModel 是 StateFlow（不是 Compose snapshot 状态），
+            // 用 snapshotFlow 观察不到它的变化 → 必须走 Flow 的 map/distinctUntilChanged。
+            currentChatModel.map { it?.id }
+                .distinctUntilChanged()
+                .collect {
+                    me.rerere.rikkahub.data.ai.LlmConnectionPrewarmer.warmAsync(
+                        appScope,
+                        resolveModelBaseUrl(settingsStore.settingsFlow.value, currentChatModel.value),
+                    )
+                }
+        }
+        // v5.0.91 ★keep-alive：对话页停留期间每 60s 刷新一次池内连接（最多 5 次 = 5 分钟），
+        // 解决"预热完、用户想了很久才发送 → 连接已被 180s idle 回收"的问题。
+        // 生命周期由 viewModelScope 兜住：离开对话/清栈即自动取消，不会泄漏。
+        viewModelScope.launch {
+            repeat(5) {
+                kotlinx.coroutines.delay(60_000)
+                me.rerere.rikkahub.data.ai.LlmConnectionPrewarmer.keepAliveAsync(
+                    appScope,
+                    resolveModelBaseUrl(settingsStore.settingsFlow.value, currentChatModel.value),
+                )
+            }
+        }
         viewModelScope.launch {
             // v5.0.78 ★触发式沙箱预热（用户指令"改为每次开始在输入框中输入的时候进行一次"）
             snapshotFlow { inputState.latestText.isNotEmpty() }
@@ -405,6 +431,12 @@ class ChatVM(
 
     fun handleMessageSend(content: List<UIMessagePart>,answer: Boolean = true) {
         if (content.isEmptyInputMessage()) return
+        // v5.0.91 ★预热触发点 ④：发送瞬间兜底（若距上次预热已超 30s 会重新建连；
+        // 未超则被节流直接跳过，零开销）。这是最贴近真实请求的一次预热。
+        me.rerere.rikkahub.data.ai.LlmConnectionPrewarmer.warmAsync(
+            appScope,
+            resolveModelBaseUrl(settingsStore.settingsFlow.value, currentChatModel.value),
+        )
         // v5.0.90 ★沙箱预热改在"发送之后"（用户实证：旧输入沿预热与首字请求抢 IO，
         // 预热没什么用还越等越久）。此时 LLM 请求已发出，proot/officecli 走热与
         // 服务端 TTFB 并行，只为"首个工具调用"服务，不再影响首字。
