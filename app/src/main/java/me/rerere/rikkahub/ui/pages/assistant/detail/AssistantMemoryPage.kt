@@ -800,6 +800,12 @@ private fun MemoryMemoriesTab(
 
     // 记忆编辑/新建对话框
     memoryDialogState.EditStateContent { memory, update ->
+        // v5.1.3 ★用户要求：每条记忆可改归属到**项目包**（此前只有助手级/单对话两档）。
+        val folderRepo: me.rerere.rikkahub.data.repository.FolderRepository = org.koin.compose.koinInject()
+        val folderList by remember(assistant.id) {
+            folderRepo.getFoldersOfAssistant(assistant.id)
+        }.collectAsStateWithLifecycle(initialValue = emptyList())
+        var showFolderPicker by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { memoryDialogState.dismiss() },
             title = { Text(stringResource(R.string.assistant_page_manage_memory_title)) },
@@ -832,6 +838,11 @@ private fun MemoryMemoriesTab(
                             label = { Text("助手级") },
                         )
                         FilterChip(
+                            selected = memory.folderId != null && memory.conversationId == null,
+                            onClick = { showFolderPicker = true },
+                            label = { Text("项目包") },
+                        )
+                        FilterChip(
                             selected = memory.conversationId != null,
                             onClick = {
                                 // 已属于某对话 → 保持；未归属 → 提示走新建入口
@@ -862,6 +873,44 @@ private fun MemoryMemoriesTab(
                 }
             },
         )
+
+        // v5.1.3 ★选项目包归属：选中即 folderId 落位、conversationId 清空
+        // → 该记忆对**这个项目包下的全部对话**可见（注入链 getMemoriesOfFolder + sibling 已支持）
+        if (showFolderPicker) {
+            AlertDialog(
+                onDismissRequest = { showFolderPicker = false },
+                title = { Text("归属项目包") },
+                text = {
+                    if (folderList.isEmpty()) {
+                        Text(
+                            "该助手还没有项目包。先在抽屉里新建一个项目包，再回来设置归属。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            folderList.forEach { folder ->
+                                TextButton(
+                                    onClick = {
+                                        update(memory.copy(folderId = folder.id, conversationId = null))
+                                        showFolderPicker = false
+                                    },
+                                ) { Text(folder.name) }
+                            }
+                            TextButton(
+                                onClick = {
+                                    update(memory.copy(folderId = null, conversationId = null))
+                                    showFolderPicker = false
+                                },
+                            ) { Text("取消归属（回到助手级）") }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showFolderPicker = false }) { Text("关闭") }
+                },
+            )
+        }
     }
 
     // v4.8.92: 新建单对话记忆 → 先选归属对话

@@ -231,6 +231,31 @@ object ConnectionWarmer {
                     kotlinx.coroutines.delay(15_000L)
                     continue
                 }
+                // v5.1.2 ★★★「越预热，等待越久」的真根因修复（用户实测 + 代码级实证）：
+                //
+                // 心跳 ping 与主对话请求**共用同一个 OkHttpClient（opencodeClient）**——
+                // 这是对的（否则预热进错池等于白做），但也意味着：
+                //   · 主请求是 SSE 长流（几十秒~几分钟）
+                //   · 心跳每 60s 在同一条 HTTP/2 连接上打一次 GET /models
+                //   · 该请求会占用连接流控窗口/带宽，且慢 ping（阈值内 2.5s 都算"正常"）
+                //     正好压在首字或流式 chunk 上 → 用户看到的就是**越预热越慢**
+                //
+                // 唯一正确的做法：**正在生成时不预热** —— 连接此时本来就在被使用，
+                // 预热无任何收益，只会与主请求抢同一条路。
+                if (GenerationForegroundService.hasActiveGeneration()) {
+                    // v5.1.3 ★v5.1.2 这里"生成中完全停心跳"用力过猛，制造了新的慢：
+                    // 一次对话含「输出 → 调工具(几十秒~几分钟) → 回传 → 继续输出」多段，
+                    // 整个 job 都算"生成中"→ 工具执行那段连接**被放冷** → 第二次请求要重做
+                    // TLS 握手（移动网 0.5~2.5s）= 用户实测"工具回来就卡"。
+                    //
+                    // 改为：生成中**降频保活**（180s 一次）而不是完全停 ——
+                    // 流式通常远短于 180s，不会打扰 SSE；长工具期间连接保持热。
+                    val sinceLastWarm = System.currentTimeMillis() - (lastWarmAtMs[trimmed] ?: 0L)
+                    if (sinceLastWarm < 180_000L) {
+                        kotlinx.coroutines.delay(30_000L)
+                        continue
+                    }
+                }
                 lastForegroundEpoch = epoch
                 // v4.8.71 (用户定版): 先 ping 后计时 — 启动/生成开始即建立热连接
                 // ("开应用直接拉心跳, 首次延迟不是连接延迟"), 首 ping 不再等 60s;

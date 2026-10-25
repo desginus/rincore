@@ -590,6 +590,9 @@ private fun ChatPageContent(
                     // v5.0.92（用户定案）：每次打开输入栏就预热当前模型连接
                     // （只对 Opencode go 订阅 / CommandCode 生效；幂等，零重复开销）
                     onRequestProviderWarm = { vm.warmProviderConnection() },
+                    // v5.1.2：主题设置控制这两个键的显示
+                    showSendButton = setting.showSendButton,
+                    showReasoningButton = setting.showReasoningButton,
                     onStartVoiceMode = onStartVoiceMode,
                     voiceState = voiceState,
                     onStopVoiceMode = vm.voiceSession::stop,

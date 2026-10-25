@@ -80,6 +80,25 @@ fun SettingPreferencesThemePage(vm: SettingVM = koinViewModel()) {
                     )
                 }
             }
+            // v5.1.2（用户要求）：主对话页输入栏的两个键显隐
+            item {
+                CardGroup(
+                    title = { Text("输入栏按钮") },
+                ) {
+                    switchItem(
+                        checked = settings.showSendButton,
+                        onCheckedChange = { vm.updateSettings { latest -> latest.copy(showSendButton = it) } },
+                        supportingContent = { Text("关闭后输入栏不再显示发送键与终止键（语音模式与快捷键不受影响）") },
+                        headlineContent = { Text("显示发送 / 终止键") },
+                    )
+                    switchItem(
+                        checked = settings.showReasoningButton,
+                        onCheckedChange = { vm.updateSettings { latest -> latest.copy(showReasoningButton = it) } },
+                        supportingContent = { Text("关闭后输入栏不再显示思考程度键（可在助手设置里调整）") },
+                        headlineContent = { Text("显示思考程度键") },
+                    )
+                }
+            }
         }
     }
 }

@@ -164,6 +164,9 @@ fun ChatInput(
     toolPickerProvider: (suspend () -> me.rerere.rikkahub.ui.components.ai.ToolMatrixPickerData?)? = null,
     // v5.0.92（用户定案）：输入栏获得焦点即预热（仅 Opencode go / CommandCode）
     onRequestProviderWarm: () -> Unit = {},
+    // v5.1.2（用户要求）：偏好设置 → 主题 控制输入栏这两个键是否显示
+    showSendButton: Boolean = true,
+    showReasoningButton: Boolean = true,
 ) {
     val toaster = LocalToaster.current
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -357,7 +360,9 @@ fun ChatInput(
                             }
 
                             // v5.0.17：思考程度回到左侧（模型旁）
-                            if (chatModel?.abilities?.contains(ModelAbility.REASONING) == true) {
+                            if (showReasoningButton &&
+                                chatModel?.abilities?.contains(ModelAbility.REASONING) == true
+                            ) {
                                 ReasoningButton(
                                     reasoningLevel = assistant.reasoningLevel,
                                     onUpdateReasoningLevel = {
@@ -413,7 +418,8 @@ fun ChatInput(
 
 
                         AnimatedVisibility(
-                            visible = !asrState.isRecording,
+                            // v5.1.2：主题设置里可关闭「发送键 / 终止键」
+                            visible = !asrState.isRecording && showSendButton,
                             enter = fadeIn() + scaleIn(),
                             exit = fadeOut() + scaleOut(),
                         ) {

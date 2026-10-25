@@ -205,6 +205,12 @@ data class DisplaySetting(
     val showAssistantBubble: Boolean = false,
     val bubbleOpacity: Float = 1.0f,
     val showModelIcon: Boolean = true,
+
+    /** v5.1.2（用户要求）：输入栏是否显示「发送键 / 终止键」（同一个位置动态切换） */
+    val showSendButton: Boolean = true,
+
+    /** v5.1.2（用户要求）：输入栏是否显示「思考程度键」 */
+    val showReasoningButton: Boolean = true,
     val showModelName: Boolean = true,
     val showDateTimeInMessage: Boolean = false,
     val showTokenUsage: Boolean = true,
