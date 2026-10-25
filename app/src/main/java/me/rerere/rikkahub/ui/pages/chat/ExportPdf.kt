@@ -205,16 +205,20 @@ private fun decodeLocalImage(url: String): Bitmap? {
     if (trimmed.startsWith("data:image", ignoreCase = true)) {
         val comma = trimmed.indexOf(',')
         if (comma < 0) return null
-        return runCatching {
+        // 显式类型参数：decodeByteArray 是平台类型(Bitmap!)，K2 对 runCatching 的 R 推断会断链
+        return runCatching<Bitmap?> {
             val bytes = Base64.decode(trimmed.substring(comma + 1), Base64.DEFAULT)
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { shrinkForPdf(it) }
+            val decoded: Bitmap? = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            decoded?.let { shrinkForPdf(it) }
         }.getOrNull()
     }
 
-    val file = runCatching { me.rerere.rikkahub.utils.resolveLocalImageFile(trimmed) }.getOrNull()
+    val file = runCatching<java.io.File?> {
+        me.rerere.rikkahub.utils.resolveLocalImageFile(trimmed)
+    }.getOrNull()
         ?: return null
     if (!file.isFile) return null
-    return runCatching {
+    return runCatching<Bitmap?> {
         // 先只读尺寸算采样率（多张 20MP 原图直接解码必 OOM）
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
@@ -222,10 +226,11 @@ private fun decodeLocalImage(url: String): Bitmap? {
         while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 1600) {
             sample *= 2
         }
-        BitmapFactory.decodeFile(
+        val decoded: Bitmap? = BitmapFactory.decodeFile(
             file.absolutePath,
             BitmapFactory.Options().apply { inSampleSize = sample },
         )
+        decoded
     }.onFailure { Log.d("ExportPdf", "decode failed: ${it.message}") }
         .getOrNull()
 
