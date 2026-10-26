@@ -271,7 +271,18 @@ internal fun ModelSelectorButton(
                 state.open()
             },
         ) {
-            if (model != null) {
+            // v5.1.8 ★用户实测"快速还是没对应图标"的真因：
+            // 输入栏用的是 onlyIcon=true 分支，v5.1.7 我只改了 !onlyIcon 分支 → 完全没生效，
+            // 这里仍然画 AutoAIIcon(model.modelId) = "上一个用过的模型的图标"。
+            // 现在按路由优先显示专属图标。
+            if (modelRouting == 1 || modelRouting == 2) {
+                Icon(
+                    imageVector = if (modelRouting == 1) HugeIcons.Zap else HugeIcons.AiMagic,
+                    contentDescription = if (modelRouting == 1) "快速（竞速）" else "极致（竞速）",
+                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            } else if (model != null) {
                 AutoAIIcon(
                     modifier = Modifier.size(36.dp),
                     name = model.modelId,
@@ -381,12 +392,29 @@ fun ModelListSheet(
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = if (routing == mode) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurface,
+                        // v5.1.8：两行必须有自己的图标（v5.1.7 只有文字 = 用户实测"还是没图标"）
+                        Icon(
+                            imageVector = if (mode == 1) HugeIcons.Zap else HugeIcons.AiMagic,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .padding(end = 10.dp)
+                                .size(22.dp),
+                            tint = if (routing == mode) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Column {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = if (routing == mode) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                if (mode == 1) "从快速池里挑最快的" else "从极致池里挑最快的",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         Spacer(Modifier.weight(1f))
                         Text(
                             if (routing == mode) "当前" else "竞速选最快",

@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.components.message
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -301,6 +303,10 @@ fun ChatMessageActionsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // v5.1.8 ★用户实测"某条消息删不掉"的真因：这是 ModalBottomSheet，
+                // 默认高度受限；操作项有 7~8 个（复制/重新生成/朗读/翻译/收藏/更多…），
+                // 删除是**最后一项** → 没有滚动时它直接落在可视区之外，用户根本点不到。
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
