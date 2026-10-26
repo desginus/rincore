@@ -209,12 +209,12 @@ class MemoryRepository(
     fun getMemoriesOfFolderFlow(folderId: String): Flow<List<AssistantMemory>> =
         memoryDAO.getMemoriesOfFolderFlow(folderId).map { entities -> entities.map { it.toModel() } }
 
-    suspend fun getMemoriesOfFolder(folderId: String): List<AssistantMemory> {
-        return memoryDAO.getMemoriesOfFolder(folderId).map { it.toModel() }
+    suspend fun getMemoriesOfFolder(folderId: String, assistantId: String? = null): List<AssistantMemory> {
+        return memoryDAO.getMemoriesOfFolder(folderId, assistantId).map { it.toModel() }
     }
 
-    suspend fun getMemoriesOfConversation(conversationId: String): List<AssistantMemory> {
-        return memoryDAO.getMemoriesOfConversation(conversationId).map { it.toModel() }
+    suspend fun getMemoriesOfConversation(conversationId: String, assistantId: String? = null): List<AssistantMemory> {
+        return memoryDAO.getMemoriesOfConversation(conversationId, assistantId).map { it.toModel() }
     }
 
     /**
@@ -252,6 +252,20 @@ class MemoryRepository(
             }
         } else {
             memoryDAO.deleteDreamMemories(assistantId, folderId, conversationId)
+            // v5.1.13 ★跨 scope 重复治理（用户报"整个记忆系统存在大量重复"）：
+            // 同一主题在对话层/包层/助手层各生成过一次，而旧删除只精确匹配
+            // (assistantId, folderId, conversationId) 三元组 → 换 scope 后旧的永不删，
+            // 每层各留一份 = 同一主题堆成 N 条。这里按**主题**清掉其它 scope 的旧副本。
+            val currentTitles = files.map { it.title.trim() }.filter { it.isNotBlank() }.toSet()
+            if (currentTitles.isNotEmpty()) {
+                val stale = memoryDAO.getActiveDreamMemories(assistantId).filter { entity ->
+                    entryTitleOf(entity.content) in currentTitles &&
+                        (entity.folderId != folderId || entity.conversationId != conversationId)
+                }
+                if (stale.isNotEmpty()) {
+                    memoryDAO.deleteMemoriesByIds(stale.map { it.id })
+                }
+            }
         }
         // v5.0.87：同主题已有主动条目（非做梦）时，不再生成做梦副本 ——
         // 否则模型会同时收到"修改后的主动条目 + 修改前的做梦条目"（用户亲见的现象）。
@@ -321,9 +335,9 @@ class MemoryRepository(
         if (content.startsWith("【")) content.substringBefore('】').removePrefix("【").trim() else ""
 
     /** v5.0.67：一批对话的对话级记忆（项目包互通：同包所有对话的记忆互相可见） */
-    suspend fun getMemoriesOfConversations(conversationIds: List<String>): List<AssistantMemory> {
+    suspend fun getMemoriesOfConversations(conversationIds: List<String>, assistantId: String? = null): List<AssistantMemory> {
         if (conversationIds.isEmpty()) return emptyList()
-        return memoryDAO.getMemoriesOfConversations(conversationIds).map { it.toModel() }
+        return memoryDAO.getMemoriesOfConversations(conversationIds, assistantId).map { it.toModel() }
     }
 
     /** 某助手（或全局桶）名下的全部单对话记忆（管理页「单对话记忆」视图用） */
@@ -338,6 +352,23 @@ class MemoryRepository(
     /** v4.8.92: 对话删除时的级联清理（单对话记忆随对话销毁） */
     suspend fun deleteMemoriesOfConversation(conversationId: String) {
         memoryDAO.deleteMemoriesOfConversation(conversationId)
+    }
+
+    /**
+     * v5.1.13 ★只改归属（folderId / conversationId），不动内容。
+     * 规则：folderId 与 conversationId **互斥** —— 挂到项目包必须清空对话归属，
+     * 挂到单对话必须清空包归属，否则该条目不会被任何一条分层查询命中 = 用户视角消失。
+     */
+    suspend fun updateScope(id: Long, folderId: String?, conversationId: String?): AssistantMemory {
+        val old = memoryDAO.getMemoryById(id) ?: error("Memory record #$id not found")
+        val at = System.currentTimeMillis()
+        val normalizedFolder = if (conversationId != null) null else folderId
+        memoryDAO.updateScope(id, normalizedFolder, conversationId, at)
+        return old.copy(
+            folderId = normalizedFolder,
+            conversationId = conversationId,
+            updatedAt = at,
+        ).toModel()
     }
 
     suspend fun updateContent(id: Long, content: String): AssistantMemory {

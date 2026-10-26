@@ -307,30 +307,31 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                 //   项目包   = 助手级 + 包层 + 包内对话层
                 //   单对话   = 助手级 + 包层 + 本对话层
                 // v5.0.87：与注入链的挂载分离保持一致（1=仅助手级 / 2=项目包内 / 3=仅当前对话）
-                val mountAllowed: (me.rerere.rikkahub.data.model.AssistantMemory) -> Boolean = { m ->
-                    val level = if (m.source == "dream") assistant.dreamMemoryMount else assistant.manualMemoryMount
-                    when (level) {
-                        1 -> m.folderId == null && m.conversationId == null
-                        3 -> (m.folderId == null && m.conversationId == null) ||
-                            (conversationId != null && m.conversationId == conversationId)
-                        else -> true
-                    }
-                }
-                val scopedMemories = (assistantMemories + folderMemories)
-                    .filter(matchSource)
-                    .filter(mountAllowed)
-                    .distinctBy { it.id }
+                // v5.1.13 ★管理页不再受"挂载层级"过滤（用户报"设置到项目包后在用户视角消失"）：
+                // mountAllowed 是**注入**判据（当前上下文模型能看到什么），把它用在管理页会导致
+                // 「仅助手级 / 仅当前对话」档位下的项目包记忆**在管理页里彻底不可见**，
+                // 用户既看不到也改不了 → 只能认为"消失了"。管理页必须始终显示该助手的全部记忆。
+                //
+                // 三档真正分流（v5.0.87 的"都显示同一批"会让人觉得重复）：
+                //   助手记忆   = 助手级 + 全部项目包层（全集，保证任何一条都能被管理）
+                //   项目包记忆 = 只显示项目包层
+                //   单对话记忆 = 助手/包层清空，只显示下方按对话分组的对话层
+                val scopedMemories = when (memoryScope) {
+                    MemoryScope.ASSISTANT -> assistantMemories + folderMemories
+                    MemoryScope.FOLDER -> folderMemories
+                    MemoryScope.CONVERSATION -> emptyList()
+                }.filter(matchSource).distinctBy { it.id }
                 val scopedConversationMemories = when (memoryScope) {
-                    MemoryScope.ASSISTANT -> conversationMemories.filter(matchSource).filter(mountAllowed)
+                    MemoryScope.ASSISTANT -> conversationMemories.filter(matchSource)
                     MemoryScope.FOLDER -> conversationMemories
                         .filter { it.conversationId != null && it.conversationId in folderConvIds }
                         .filter(matchSource)
-                        .filter(mountAllowed)
+                    // 单对话档：没有对话上下文（从助手设置进入）时显示该助手全部对话层，
+                    // 否则只显示当前这条对话 —— 两种情况下都不再按 mount 层级隐藏。
                     MemoryScope.CONVERSATION -> conversationMemories
                         .filter { conversationId == null || it.conversationId == conversationId }
                         .filter(matchSource)
-                        .filter(mountAllowed)
-                }
+                }.distinctBy { it.id }
                 // v5.0.81 ★做梦状态卡（用户："点击做梦之后会在上面有提示、抽屉页也会出现提示，
                 // 你这个和其他的没对上"）—— 复用与设置 tab「立即整理」**同一个组件**，
                 // 状态/转圈/最近一次结果完全一致；onOrganize 分流：带对话 id = 主动做梦

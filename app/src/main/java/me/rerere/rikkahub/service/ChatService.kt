@@ -947,9 +947,19 @@ class ChatService(
                     } else {
                         memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
                     }
+                    // v5.1.13 ★跨助手泄漏修复（用户报"我这边看不到、模型能看到"）：
+                    // 项目包层/对话层查询以前**不带 assistant_id** —— 一条被错误挂到别的
+                    // 助手项目包下的记忆，对方助手记忆页（按 assistant_id 查）看不到，
+                    // 但一旦进入那个包的对话，它就会被注入 = 用户不可见、模型可见。
+                    // 现在三层一律带上当前记忆库作用域（全局桶用 GLOBAL_MEMORY_ID）。
+                    val memoryScopeId = if (assistant.useGlobalMemory) {
+                        me.rerere.rikkahub.data.repository.MemoryRepository.GLOBAL_MEMORY_ID
+                    } else {
+                        assistant.id.toString()
+                    }
                     // v5.0.24 三范围：助手级/全局（base） + 项目包 + 单对话
                     val folderMemories = conversation.folderId?.let { folderId ->
-                        runCatching { memoryRepository.getMemoriesOfFolder(folderId.toString()) }
+                        runCatching { memoryRepository.getMemoriesOfFolder(folderId.toString(), memoryScopeId) }
                             .getOrDefault(emptyList())
                     } ?: emptyList()
                     // v5.0.67 ★用户定案的「项目包记忆」真正语义：
@@ -959,11 +969,11 @@ class ChatService(
                     val siblingMemories = conversation.folderId?.let { fid ->
                         runCatching {
                             val ids = conversationRepo.getConversationIdsOfFolder(fid).map { it.toString() }
-                            memoryRepository.getMemoriesOfConversations(ids)
+                            memoryRepository.getMemoriesOfConversations(ids, memoryScopeId)
                         }.getOrDefault(emptyList())
                     } ?: emptyList()
                     val ownMemories = runCatching {
-                        memoryRepository.getMemoriesOfConversation(conversation.id.toString())
+                        memoryRepository.getMemoriesOfConversation(conversation.id.toString(), memoryScopeId)
                     }.getOrDefault(emptyList())
                     // 同包批量查询已包含本对话的记忆 → distinctBy 去重，避免 prompt 重复
                     // v5.0.86 ★挂载分离（用户定案）：主动写入与做梦记忆各有自己的挂载层级，

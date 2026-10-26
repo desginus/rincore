@@ -27,8 +27,8 @@ interface MemoryDAO {
     @Query("SELECT * FROM memoryentity WHERE folder_id = :folderId AND conversation_id IS NULL AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY id ASC")
     fun getMemoriesOfFolderFlow(folderId: String): Flow<List<MemoryEntity>>
 
-    @Query("SELECT * FROM memoryentity WHERE folder_id = :folderId AND conversation_id IS NULL AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY id ASC")
-    suspend fun getMemoriesOfFolder(folderId: String): List<MemoryEntity>
+    @Query("SELECT * FROM memoryentity WHERE folder_id = :folderId AND (:assistantId IS NULL OR assistant_id = :assistantId) AND conversation_id IS NULL AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY id ASC")
+    suspend fun getMemoriesOfFolder(folderId: String, assistantId: String? = null): List<MemoryEntity>
 
     // v5.0.25: 助手名下全部项目包记忆（按包分组展示）
     @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND folder_id IS NOT NULL AND conversation_id IS NULL AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY folder_id ASC, id ASC")
@@ -37,8 +37,8 @@ interface MemoryDAO {
     @Query("SELECT * FROM memoryentity WHERE conversation_id = :conversationId AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY id ASC")
     fun getMemoriesOfConversationFlow(conversationId: String): Flow<List<MemoryEntity>>
 
-    @Query("SELECT * FROM memoryentity WHERE conversation_id = :conversationId AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY id ASC")
-    suspend fun getMemoriesOfConversation(conversationId: String): List<MemoryEntity>
+    @Query("SELECT * FROM memoryentity WHERE conversation_id = :conversationId AND (:assistantId IS NULL OR assistant_id = :assistantId) AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY id ASC")
+    suspend fun getMemoriesOfConversation(conversationId: String, assistantId: String? = null): List<MemoryEntity>
 
     @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NOT NULL AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY conversation_id ASC, id ASC")
     fun getConversationMemoriesOfAssistantFlow(assistantId: String): Flow<List<MemoryEntity>>
@@ -47,8 +47,8 @@ interface MemoryDAO {
      * v5.0.67 ★项目包记忆的**真正实现**：取一批对话各自的「仅对话内可见」记忆。
      * 用户定案：项目包不是独立存储层，而是「该对话 + 同包所有对话」的对话级记忆集合。
      */
-    @Query("SELECT * FROM memoryentity WHERE conversation_id IN (:conversationIds) AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY conversation_id ASC, id ASC")
-    suspend fun getMemoriesOfConversations(conversationIds: List<String>): List<MemoryEntity>
+    @Query("SELECT * FROM memoryentity WHERE conversation_id IN (:conversationIds) AND (:assistantId IS NULL OR assistant_id = :assistantId) AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY conversation_id ASC, id ASC")
+    suspend fun getMemoriesOfConversations(conversationIds: List<String>, assistantId: String? = null): List<MemoryEntity>
 
     /** v5.0.67：删某 scope 下由做梦整理产生的条目（每次整理后全量重建，保证幂等） */
     @Query("DELETE FROM memoryentity WHERE assistant_id = :assistantId AND source = 'dream' AND folder_id IS :folderId AND conversation_id IS :conversationId")
@@ -103,6 +103,14 @@ interface MemoryDAO {
 
     @Update
     suspend fun updateMemory(memory: MemoryEntity)
+
+    /**
+     * v5.1.13 ★归属变更（用户报"设置到项目包后消失/无效"）：
+     * 旧实现 UI 只把新的 folderId/conversationId 交给 VM，而 VM 只调 updateContent
+     * → 归属改动被静默丢弃，退出重进即还原。这里提供只改归属的原子更新。
+     */
+    @Query("UPDATE memoryentity SET folder_id = :folderId, conversation_id = :conversationId, updated_at = :at WHERE id = :id")
+    suspend fun updateScope(id: Long, folderId: String?, conversationId: String?, at: Long)
 
     @Query("DELETE FROM memoryentity WHERE id = :id")
     suspend fun deleteMemory(id: Long)

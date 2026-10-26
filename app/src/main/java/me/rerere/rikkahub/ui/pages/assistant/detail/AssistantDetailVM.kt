@@ -94,9 +94,12 @@ class AssistantDetailVM(
         )
 
     /** v5.0.25：助手名下全部项目包记忆（记忆页「项目包」范围） */
+    // v5.1.13 ★真 bug：旧实现固定按 assistant.id 查，而 useGlobalMemory 打开后
+    // 所有记忆（含项目包层）都写在 GLOBAL_MEMORY_ID 桶里 —— 注入链用 global 桶能读到，
+    // 记忆页却按助手 id 查不到 = 用户视角消失、模型视角可见。
     val folderMemories = assistant
-        .map { it.id }
-        .flatMapLatest { id -> memoryRepository.getFolderMemoriesOfAssistantFlow(id.toString()) }
+        .map { current -> memoryIdOf(current) }
+        .flatMapLatest { scopeId -> memoryRepository.getFolderMemoriesOfAssistantFlow(scopeId) }
         .stateIn(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
         )
@@ -294,7 +297,14 @@ class AssistantDetailVM(
 
     fun updateMemory(memory: AssistantMemory) {
         viewModelScope.launch {
+            // v5.1.13 ★真 bug 修复：旧实现只写 content，归属（项目包/单对话）变更被静默丢弃
+            // → 用户"设置到项目包"看起来成功，退出重进还原（或按旧归属显示而像消失）。
             memoryRepository.updateContent(id = memory.id, content = memory.content)
+            memoryRepository.updateScope(
+                id = memory.id,
+                folderId = memory.folderId,
+                conversationId = memory.conversationId,
+            )
         }
     }
 
