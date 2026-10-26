@@ -138,9 +138,29 @@ class ChatVM(
         .getConversationJobs()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
+    // v5.1.10 ★崩溃修复（v5.1.9 启动即崩 NPE）：
+    // 这两个声明原本在文件 548 行之后，而 init 块在 141 行就启动协程、
+    // 在 collect 首次 emit 时立即读 pendingCompression →
+    // 此时 by mutableStateOf 的委托尚未初始化（null）→
+    // "Attempt to invoke interface method State.getValue() on a null object reference"。
+    // Kotlin 类体按声明顺序初始化 → 属性必须放在 init 之前。
+    /** v5.1.9（用户要求）：压缩任务的排队请求 */
+    data class PendingCompression(
+        val additionalPrompt: String,
+        val targetTokens: Int,
+        val keepRecentMessages: Int,
+    )
+
+    /** v5.1.9：生成中的压缩不报错，改为排队；生成结束后自动执行 */
+    var pendingCompression by androidx.compose.runtime.mutableStateOf<PendingCompression?>(null)
+        private set
+
     init {
         // v5.1.9：生成结束 → 若存在排队压缩则自动执行
         viewModelScope.launch {
+            // v5.1.10 加固：viewModelScope 是 Main.immediate，launch 会同步执行到第一个挂起点；
+            // yield() 让出一次，确保本类所有属性初始化完成后再读 pendingCompression。
+            kotlinx.coroutines.yield()
             snapshotFlow { chatService.isConversationGenerating(_conversationId) }
                 .distinctUntilChanged()
                 .collect { generating ->
@@ -543,17 +563,6 @@ class ChatVM(
      *  targetTokens=4000（我方默认档）、keepRecentMessages=0（自动推荐保留）。 */
     fun handleCompressContext(additionalPrompt: String): Job =
         handleCompressContext(additionalPrompt, 4000, 0)
-
-    /** v5.1.9（用户要求）：压缩任务的排队请求 */
-    data class PendingCompression(
-        val additionalPrompt: String,
-        val targetTokens: Int,
-        val keepRecentMessages: Int,
-    )
-
-    /** v5.1.9：生成中的压缩不报错，改为排队；生成结束后自动执行 */
-    var pendingCompression by androidx.compose.runtime.mutableStateOf<PendingCompression?>(null)
-        private set
 
     /** v5.1.9：取消排队的压缩 */
     fun cancelPendingCompression() {
