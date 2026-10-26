@@ -116,6 +116,9 @@ class SettingsStore internal constructor(
         val FAVORITE_MODELS = stringPreferencesKey("favorite_models")
         val SELECT_MODEL = stringPreferencesKey("chat_model")
         val FAST_MODEL = stringPreferencesKey("fast_model")
+        // v5.1.11 ★持久化修复：快速/极致模型池（v5.1.4 加了字段但漏进 SETTINGS_FIELDS → 重启即丢）
+        val FAST_CHAT_MODELS = stringPreferencesKey("fast_chat_models")
+        val ULTRA_CHAT_MODELS = stringPreferencesKey("ultra_chat_models")
         val FAST_MODEL_REASONING_LEVEL = stringPreferencesKey("fast_model_reasoning_level")
         val TRANSLATE_MODEL = stringPreferencesKey("translate_model")
         val ENABLE_SUGGESTION = booleanPreferencesKey("enable_suggestion")

@@ -70,6 +70,10 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
 
         // 模型选择
         json(FAVORITE_MODELS, Settings::favoriteModels) { copy(favoriteModels = it) },
+        // v5.1.11 ★v5.1.4 漏了这两行：Settings 走 DataStore<Preferences> 手动字段映射，
+        // 不在 SETTINGS_FIELDS 里的字段永远不落盘（内存有效、重启即丢）。
+        json(FAST_CHAT_MODELS, Settings::fastChatModelIds) { copy(fastChatModelIds = it) },
+        json(ULTRA_CHAT_MODELS, Settings::ultraChatModelIds) { copy(ultraChatModelIds = it) },
         uuid(SELECT_MODEL, Settings::chatModelId) { copy(chatModelId = it) },
         uuid(FAST_MODEL, Settings::fastModelId) { copy(fastModelId = it) },
         SettingsField(
