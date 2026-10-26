@@ -117,6 +117,7 @@ import me.rerere.rikkahub.ui.components.motion.RinGlass
 import me.rerere.rikkahub.ui.components.motion.rinGlass
 import me.rerere.rikkahub.ui.components.motion.rinGlassHighlight
 import me.rerere.rikkahub.ui.components.ai.ChatInput
+import me.rerere.rikkahub.ui.components.ai.QueueIndicator
 import me.rerere.rikkahub.ui.components.ai.SearchMode
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
@@ -585,6 +586,14 @@ private fun ChatPageContent(
             bottomBar = {
                 val messageQueue by vm.messageQueue.collectAsStateWithLifecycle()
                 val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
+                // v5.1.9（用户要求）：排队等候面板 —— 输出中/压缩中发的消息、以及输出中点的压缩，
+                // 都在这里排队；材质与输入框一致的玻璃。
+                QueueIndicator(
+                    queue = messageQueue,
+                    compressionPending = vm.pendingCompression != null,
+                    onRemove = { vm.removeQueuedMessage(it) },
+                    onCancelCompression = { vm.cancelPendingCompression() },
+                )
                 ChatInput(
                     hazeState = hazeState,
                     // v5.0.92（用户定案）：每次打开输入栏就预热当前模型连接
@@ -593,6 +602,8 @@ private fun ChatPageContent(
                     // v5.1.2：主题设置控制这两个键的显示
                     showSendButton = setting.showSendButton,
                     showReasoningButton = setting.showReasoningButton,
+                    // v5.1.9：交换发送/终止键与思考程度键的位置
+                    swapSendAndReasoning = setting.swapSendAndReasoning,
                     // v5.1.4：快速 / 极致 路由（0=普通，1=快速池，2=极致池）
                     modelRouting = assistant.modelRouting,
                     onSelectModelRouting = { mode ->

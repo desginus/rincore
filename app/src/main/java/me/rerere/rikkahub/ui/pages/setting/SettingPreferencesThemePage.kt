@@ -80,22 +80,17 @@ fun SettingPreferencesThemePage(vm: SettingVM = koinViewModel()) {
                     )
                 }
             }
-            // v5.1.2（用户要求）：主对话页输入栏的两个键显隐
+            // v5.1.9（用户定案）：这不是"显示/隐藏"，是**交换两个键的位置**。
+            // v5.1.3 我误做成两个显隐开关，用户明确纠正。
             item {
                 CardGroup(
                     title = { Text("输入栏按钮") },
                 ) {
                     switchItem(
-                        checked = settings.showSendButton,
-                        onCheckedChange = { vm.updateSettings { latest -> latest.copy(showSendButton = it) } },
-                        supportingContent = { Text("关闭后输入栏不再显示发送键与终止键（语音模式与快捷键不受影响）") },
-                        headlineContent = { Text("显示发送 / 终止键") },
-                    )
-                    switchItem(
-                        checked = settings.showReasoningButton,
-                        onCheckedChange = { vm.updateSettings { latest -> latest.copy(showReasoningButton = it) } },
-                        supportingContent = { Text("关闭后输入栏不再显示思考程度键（可在助手设置里调整）") },
-                        headlineContent = { Text("显示思考程度键") },
+                        checked = settings.swapSendAndReasoning,
+                        onCheckedChange = { vm.updateSettings { latest -> latest.copy(swapSendAndReasoning = it) } },
+                        supportingContent = { Text("开启：发送/终止键在左、思考程度键在右。关闭：恢复原位置（思考在左、发送在右）") },
+                        headlineContent = { Text("交换发送键与思考键位置") },
                     )
                 }
             }

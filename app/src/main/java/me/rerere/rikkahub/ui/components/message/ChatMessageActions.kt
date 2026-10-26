@@ -78,6 +78,8 @@ fun ColumnScope.ChatMessageActionButtons(
     onOpenActionSheet: () -> Unit,
     onTranslate: ((UIMessage, Locale) -> Unit)? = null,
     onClearTranslation: (UIMessage) -> Unit = {},
+    // v5.1.9（用户要求）：气泡下这一排的「语音播放」与「更多」里的「网页视图渲染」互换位置
+    onWebViewPreview: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val settings = LocalSettings.current
@@ -114,54 +116,23 @@ fun ColumnScope.ChatMessageActionButtons(
             },
         )
 
-        if (message.role == MessageRole.ASSISTANT) {
-            val tts = LocalTTSState.current
-            val isSpeaking by tts.isSpeaking.collectAsState()
-            val isAvailable by tts.isAvailable.collectAsState()
-            // 朗读中换成带底色的方角按钮
-            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-                IconToggleButton(
-                    checked = isSpeaking,
-                    onCheckedChange = { speak ->
-                        if (speak) {
-                            val text = message.toText()
-                            var textToSpeak = text
-                            if (settings.displaySetting.ttsOnlyReadQuoted) {
-                                textToSpeak = textToSpeak.extractQuotedContentAsText() ?: textToSpeak
-                            }
-                            if (settings.displaySetting.ttsOnlyReadOutsideBrackets) {
-                                textToSpeak = textToSpeak.removeBracketedContent() ?: textToSpeak
-                            }
-                            tts.speak(textToSpeak)
-                        } else {
-                            tts.stop()
-                        }
-                    },
-                    shapes = IconButtonDefaults.toggleableShapes(),
-                    modifier = Modifier.size(IconButtonDefaults.extraSmallContainerSize()),
-                    enabled = isAvailable,
-                    colors = IconButtonDefaults.iconToggleButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        checkedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        checkedContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    ),
-                ) {
-                    Icon(
-                        imageVector = if (isSpeaking) HugeIcons.StopCircle else HugeIcons.VolumeHigh,
-                        contentDescription = stringResource(R.string.tts),
-                        modifier = Modifier.size(ActionIconSize),
-                    )
-                }
-            }
+        // v5.1.9（用户要求）：此处原本是「语音播放」按钮，现与「更多」里的
+        // 「网页视图渲染」互换 —— 气泡下直接可点渲染，语音播放移到更多菜单里。
+        if (onWebViewPreview != null && message.role == MessageRole.ASSISTANT) {
+            ChatMessageActionButton(
+                icon = HugeIcons.WebDesign01,
+                contentDescription = "网页视图渲染",
+                onClick = onWebViewPreview,
+            )
+        }
 
-            // Translation button
-            if (onTranslate != null) {
-                ChatMessageActionButton(
-                    icon = HugeIcons.Translate,
-                    contentDescription = stringResource(R.string.translate),
-                    onClick = { showTranslateDialog = true },
-                )
-            }
+        // Translation button
+        if (onTranslate != null) {
+            ChatMessageActionButton(
+                icon = HugeIcons.Translate,
+                contentDescription = stringResource(R.string.translate),
+                onClick = { showTranslateDialog = true },
+            )
         }
 
         ChatMessageActionButton(
@@ -279,8 +250,32 @@ fun ChatMessageActionsSheet(
             .any { it.text.isNotBlank() }
         val actions = buildList {
             add(MessageSheetAction(HugeIcons.TextSelection, stringResource(R.string.select_and_copy), onClick = onSelectAndCopy))
-            if (hasTextContent) {
-                add(MessageSheetAction(HugeIcons.WebDesign01, stringResource(R.string.render_with_webview), onClick = onWebViewPreview))
+            // v5.1.9（用户要求）：原来这里是「网页视图渲染」，已与气泡下的
+            // 「语音播放」互换 —— 语音播放移进更多菜单，渲染放到气泡下。
+            if (message.role == MessageRole.ASSISTANT) {
+                val tts = LocalTTSState.current
+                val isSpeaking by tts.isSpeaking.collectAsState()
+                val isAvailable by tts.isAvailable.collectAsState()
+                add(
+                    MessageSheetAction(
+                        icon = if (isSpeaking) HugeIcons.StopCircle else HugeIcons.VolumeHigh,
+                        label = if (isSpeaking) "停止朗读" else "语音播放",
+                        onClick = {
+                            if (isSpeaking) {
+                                tts.stop()
+                            } else if (isAvailable) {
+                                var textToSpeak = message.toText()
+                                if (settings.displaySetting.ttsOnlyReadQuoted) {
+                                    textToSpeak = textToSpeak.extractQuotedContentAsText() ?: textToSpeak
+                                }
+                                if (settings.displaySetting.ttsOnlyReadOutsideBrackets) {
+                                    textToSpeak = textToSpeak.removeBracketedContent() ?: textToSpeak
+                                }
+                                tts.speak(textToSpeak)
+                            }
+                        },
+                    )
+                )
             }
             add(MessageSheetAction(HugeIcons.Edit01, stringResource(R.string.edit), onClick = onEdit))
             add(MessageSheetAction(HugeIcons.Share04, stringResource(R.string.share), onClick = onShare))

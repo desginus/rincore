@@ -139,6 +139,21 @@ class ChatVM(
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     init {
+        // v5.1.9：生成结束 → 若存在排队压缩则自动执行
+        viewModelScope.launch {
+            snapshotFlow { chatService.isConversationGenerating(_conversationId) }
+                .distinctUntilChanged()
+                .collect { generating ->
+                    if (!generating) {
+                        pendingCompression?.let { req ->
+                            pendingCompression = null
+                            handleCompressContext(
+                                req.additionalPrompt, req.targetTokens, req.keepRecentMessages
+                            )
+                        }
+                    }
+                }
+        }
         // v5.0.95 ★删除这里的 addConversationReference：
         // 它与下面的 pinConversationReference 是**同一件事**（都 = manager.acquire），
         // 而 onCleared 只 release 一次 → refCount 永久 +1 泄漏 → session 永不回收
@@ -529,19 +544,28 @@ class ChatVM(
     fun handleCompressContext(additionalPrompt: String): Job =
         handleCompressContext(additionalPrompt, 4000, 0)
 
+    /** v5.1.9（用户要求）：压缩任务的排队请求 */
+    data class PendingCompression(
+        val additionalPrompt: String,
+        val targetTokens: Int,
+        val keepRecentMessages: Int,
+    )
+
+    /** v5.1.9：生成中的压缩不报错，改为排队；生成结束后自动执行 */
+    var pendingCompression by androidx.compose.runtime.mutableStateOf<PendingCompression?>(null)
+        private set
+
+    /** v5.1.9：取消排队的压缩 */
+    fun cancelPendingCompression() {
+        pendingCompression = null
+    }
+
     fun handleCompressContext(additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int): Job {
-        // v4.8.32: 生成中禁止压缩 (用户定版) — 生成期间消息流式变化, 压缩会与
-        // 生成链写同一会话对象 (后写的全量保存覆盖对方), 且压缩本身是重操作,
-        // 与流式渲染抢占资源。UI 层按钮已随生成态灰化, 此处兜底 (对话框已打开
-        // 期间生成启动等边缘路径)。
+        // v5.1.9（用户要求）★原来生成中直接拒绝（v4.8.32 用户定版）；
+        // 现在改为**排队等候**：输出结束自动执行（排队 UI 在输入框上方，玻璃同材质）。
         if (chatService.isConversationGenerating(_conversationId)) {
-            return viewModelScope.launch {
-                chatService.addError(
-                    IllegalStateException("正在生成回复，生成期间无法压缩。请等待完成后再试。"),
-                    conversationId = _conversationId,
-                    title = context.getString(R.string.error_title_compress_conversation)
-                )
-            }
+            pendingCompression = PendingCompression(additionalPrompt, targetTokens, keepRecentMessages)
+            return viewModelScope.launch { /* 已入队，生成结束后执行 */ }
         }
         val job = viewModelScope.launch {
             _compressing.value = true

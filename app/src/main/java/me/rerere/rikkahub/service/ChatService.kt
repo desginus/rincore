@@ -2019,17 +2019,32 @@ class ChatService(
         messageId: Uuid,
         failIfMissing: Boolean = true,
     ) {
-        val currentConversation = getConversationFlow(conversationId).value
-        val updatedConversation = buildConversationAfterMessageDelete(currentConversation, messageId)
+        // v5.1.9 ★用户实测「更多里 7 项只有删除是废的」（其他 6 项都正常）——真根因：
+        // 原实现最后一步走 saveConversation，而 saveConversation 在 session 未就绪
+        // （!isReady，例如 session 被空闲回收后新建、或加载中原样）时会 await 后 **skip**：
+        // 内存不写、DB 不写 → 点删除**毫无反应**（不报错、消息还在），而其他 6 项
+        // 各自走自己的路径（编辑/分享/分支/收藏）所以不受影响。
+        // 删除是单条消息操作，不需要任何"合并/就绪"语义 → 改为 DB 权威直写三连：
+        //   DB(或已加载内存) 读 → 删除 → 内存 apply（立即刷新 UI）→ DB 直写。
+        val session = sessionManager.get(conversationId)
+        val base = session?.state?.value?.takeIf { it.messageNodes.isNotEmpty() }
+            ?: conversationRepo.getConversationById(conversationId)
 
-        if (updatedConversation == null) {
-            if (failIfMissing) {
-                throw NotFoundException("Message not found")
-            }
+        if (base == null) {
+            if (failIfMissing) throw NotFoundException("Conversation not found")
             return
         }
 
-        saveConversation(conversationId, updatedConversation)
+        val updatedConversation = buildConversationAfterMessageDelete(base, messageId)
+            ?: run {
+                if (failIfMissing) throw NotFoundException("Message not found")
+                return
+            }
+
+        // 内存先行（非挂起，UI 立刻消失）
+        session?.apply { updatedConversation }
+        // DB 直写（不经 saveConversation 的就绪守卫）
+        conversationRepo.updateConversation(updatedConversation)
     }
 
     suspend fun deleteMessage(

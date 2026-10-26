@@ -65,6 +65,12 @@ data class Settings(
     val showReasoningButton: Boolean = true,
 
     /**
+     * v5.1.9（用户定案）：**交换**「发送/终止键」与「思考程度键」的位置。
+     * 注意：v5.1.3 我误做成了两个"显示/不显示"开关，用户要的是位置互换 —— 默认已交换。
+     */
+    val swapSendAndReasoning: Boolean = true,
+
+    /**
      * v5.1.4 ★「快速」模型池（用户要求：主对话页可切快速/极致，客户端从池里挑响应最快的）。
      * 与既有 `fastModelId`（标题/元数据用的单模型）**完全无关**，不要混用。
      * 空 = 未配置 → 选择「快速」时静默回退普通模型。

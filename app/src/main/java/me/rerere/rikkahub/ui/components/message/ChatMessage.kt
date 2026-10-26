@@ -200,6 +200,22 @@ fun ChatMessage(
     val navController = LocalNavController.current
     val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
+    // v5.1.9：网页视图渲染动作（气泡下按钮与更多菜单共用同一实现）
+    val openWebViewPreview: () -> Unit = {
+        val textContent = message.parts
+            .filterIsInstance<UIMessagePart.Text>()
+            .joinToString("\n\n") { it.text }
+            .trim()
+        if (textContent.isNotBlank()) {
+            val htmlContent = buildMarkdownPreviewHtml(
+                context = context,
+                markdown = textContent,
+                colorScheme = colorScheme
+            )
+            val contentId = WebViewContentCache.store(context.cacheDir, htmlContent)
+            navController.navigate(Screen.WebView(contentId = contentId))
+        }
+    }
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start,
@@ -272,7 +288,8 @@ fun ChatMessage(
                         showActionsSheet = true
                     },
                     onTranslate = onTranslate,
-                    onClearTranslation = onClearTranslation
+                    onClearTranslation = onClearTranslation,
+                    onWebViewPreview = openWebViewPreview,
                 )
             }
         }
@@ -301,21 +318,7 @@ fun ChatMessage(
             },
             isFavorite = isFavorite,
             onToggleFavorite = onToggleFavorite,
-            onWebViewPreview = {
-                val textContent = message.parts
-                    .filterIsInstance<UIMessagePart.Text>()
-                    .joinToString("\n\n") { it.text }
-                    .trim()
-                if (textContent.isNotBlank()) {
-                    val htmlContent = buildMarkdownPreviewHtml(
-                        context = context,
-                        markdown = textContent,
-                        colorScheme = colorScheme
-                    )
-                    val contentId = WebViewContentCache.store(context.cacheDir, htmlContent)
-                    navController.navigate(Screen.WebView(contentId = contentId))
-                }
-            },
+            onWebViewPreview = openWebViewPreview,
             onDismissRequest = {
                 showActionsSheet = false
             }

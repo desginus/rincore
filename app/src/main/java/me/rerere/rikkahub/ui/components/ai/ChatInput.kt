@@ -167,6 +167,8 @@ fun ChatInput(
     // v5.1.2（用户要求）：偏好设置 → 主题 控制输入栏这两个键是否显示
     showSendButton: Boolean = true,
     showReasoningButton: Boolean = true,
+    // v5.1.9（用户定案）：交换「发送/终止键」与「思考程度键」的位置（默认已交换）
+    swapSendAndReasoning: Boolean = true,
     // v5.1.4（用户要求）：主对话页模型选择器里的「快速 / 极致」路由
     modelRouting: Int = 0,
     onSelectModelRouting: (Int) -> Unit = {},
@@ -363,8 +365,23 @@ fun ChatInput(
                                 }
                             }
 
+                            // v5.1.9（用户定案）：交换后，「发送/终止键」出现在原思考键的位置
+                            if (swapSendAndReasoning) {
+                                AnimatedVisibility(
+                                    visible = !asrState.isRecording && showSendButton,
+                                    enter = fadeIn() + scaleIn(),
+                                    exit = fadeOut() + scaleOut(),
+                                ) {
+                                    SendButton(
+                                        loading = loading,
+                                        empty = state.isEmpty(),
+                                        onClick = { sendMessage() },
+                                        onLongClick = { sendMessageWithoutAnswer() },
+                                    )
+                                }
+                            }
                             // v5.0.17：思考程度回到左侧（模型旁）
-                            if (showReasoningButton &&
+                            if (!swapSendAndReasoning && showReasoningButton &&
                                 chatModel?.abilities?.contains(ModelAbility.REASONING) == true
                             ) {
                                 ReasoningButton(
@@ -421,18 +438,33 @@ fun ChatInput(
 
 
 
-                        AnimatedVisibility(
-                            // v5.1.2：主题设置里可关闭「发送键 / 终止键」
-                            visible = !asrState.isRecording && showSendButton,
-                            enter = fadeIn() + scaleIn(),
-                            exit = fadeOut() + scaleOut(),
-                        ) {
-                            SendButton(
-                                loading = loading,
-                                empty = state.isEmpty(),
-                                onClick = { sendMessage() },
-                                onLongClick = { sendMessageWithoutAnswer() },
-                            )
+                        // v5.1.9（用户定案）：交换后，「思考程度键」出现在原发送键的位置
+                        if (swapSendAndReasoning) {
+                            if (showReasoningButton &&
+                                chatModel?.abilities?.contains(ModelAbility.REASONING) == true
+                            ) {
+                                ReasoningButton(
+                                    reasoningLevel = assistant.reasoningLevel,
+                                    onUpdateReasoningLevel = {
+                                        onUpdateAssistant(assistant.copy(reasoningLevel = it))
+                                    },
+                                    onlyIcon = true,
+                                )
+                            }
+                        } else {
+                            AnimatedVisibility(
+                                // v5.1.2：主题设置里可关闭「发送键 / 终止键」
+                                visible = !asrState.isRecording && showSendButton,
+                                enter = fadeIn() + scaleIn(),
+                                exit = fadeOut() + scaleOut(),
+                            ) {
+                                SendButton(
+                                    loading = loading,
+                                    empty = state.isEmpty(),
+                                    onClick = { sendMessage() },
+                                    onLongClick = { sendMessageWithoutAnswer() },
+                                )
+                            }
                         }
                     }
                 }
