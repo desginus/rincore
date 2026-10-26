@@ -56,7 +56,7 @@ fun QueueIndicator(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
             .rinGlass(hazeState = LocalHazeState.current, shape = glassShape)
-            .rinGlassHighlight()
+            .rinGlassHighlight(glassShape)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {

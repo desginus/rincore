@@ -241,6 +241,8 @@ fun ChatMessageActionsSheet(
     onWebViewPreview: () -> Unit,
     onDismissRequest: () -> Unit
 ) {
+    // v5.1.9：语音播放移到这里后需要读设置（引用/括号过滤）
+    val settings = LocalSettings.current
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
