@@ -28,6 +28,26 @@ import java.util.concurrent.ConcurrentHashMap
  * 用户的首次请求将跳过 DNS 查询和 TCP 握手, 延迟降低 200-500ms。
  */
 object ConnectionWarmer {
+
+    /**
+     * v5.1.12 ★用户定案（跨范围污染治理）：**只有显式打开「网络 → 密钥预热」里
+     * 对应那一个开关，才允许预热那一个 host**；其余 provider（含用户自建）一律不预热。
+     * 读不到设置（启动极早期 / Koin 未就绪）时按"不允许"处理 = 默认正常状态。
+     */
+    private fun isWarmAllowed(url: String): Boolean {
+        val host = runCatching { java.net.URI(url).host }.getOrNull() ?: return false
+        val settings = runCatching {
+            org.koin.core.context.GlobalContext.getOrNull()
+                ?.getOrNull<me.rerere.rikkahub.data.datastore.SettingsStore>()
+                ?.settingsFlow?.value
+        }.getOrNull() ?: return false
+        return when (host) {
+            "opencode.ai" -> settings.opencodeWarmEnabled
+            "api.commandcode.ai" -> settings.commandCodeWarmEnabled
+            else -> false
+        }
+    }
+
     // v4.7.18: 网络切换监听 — 网络可用性变化 (WiFi↔蜂窝切换/抖动恢复) 时
     // 清理连接池。用户实证: 电脑上同类断流与网卡有关; 手机对应场景 = 网络
     // 接口切换后旧连接已死, 复用即断流。
@@ -64,6 +84,8 @@ object ConnectionWarmer {
      * 不阻塞主线程。
      */
     fun warmHost(context: Context, host: String, port: Int = 443) {
+        // v5.1.12 ★开关未开 → 连 DNS 预热也不做
+        if (!isWarmAllowed("https://$host")) return
         if (!warmedHosts.add("$host:$port")) return // 已预热过则跳过
         Thread({
             try {
@@ -126,6 +148,8 @@ object ConnectionWarmer {
     private val lastWarmAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     fun warmWithOkHttp(client: OkHttpClient, baseUrl: String, opencodeClient: OkHttpClient? = null) {
+        // v5.1.12 ★开关未开 → 什么都不做（不 ping、不进池）
+        if (!isWarmAllowed(baseUrl)) return
         val safe = runCatching { baseUrl.trimEnd('/') + "/models" }.getOrNull() ?: return
         val host = runCatching { java.net.URI(baseUrl).host }.getOrNull() ?: return
         val now = System.currentTimeMillis()
@@ -206,6 +230,11 @@ object ConnectionWarmer {
     ) {
         val trimmed = baseUrl.trimEnd('/')
         if (trimmed.isBlank()) return
+        // v5.1.12 ★开关未开 → 不建心跳，并把可能残留的旧心跳停掉（改开关立即生效）
+        if (!isWarmAllowed(trimmed)) {
+            keepAliveJobs.remove(trimmed)?.cancel()
+            return
+        }
         val existing = keepAliveJobs[trimmed]
         if (existing?.isActive == true) return
         val host = runCatching { java.net.URI(trimmed).host }.getOrNull() ?: return
@@ -248,10 +277,17 @@ object ConnectionWarmer {
                     // 整个 job 都算"生成中"→ 工具执行那段连接**被放冷** → 第二次请求要重做
                     // TLS 握手（移动网 0.5~2.5s）= 用户实测"工具回来就卡"。
                     //
-                    // 改为：生成中**降频保活**（180s 一次）而不是完全停 ——
-                    // 流式通常远短于 180s，不会打扰 SSE；长工具期间连接保持热。
-                    val sinceLastWarm = System.currentTimeMillis() - (lastWarmAtMs[trimmed] ?: 0L)
-                    if (sinceLastWarm < 180_000L) {
+                    // 改为：生成中**降频保活**而不是完全停。
+                    // v5.1.12 ★真 bug 修复：markWarm() 写入的 key 是 **host**（如 opencode.ai），
+                    // 这里原来用 **trimmed**（完整 baseUrl，如 https://opencode.ai/zen/go/v1）去查 →
+                    // 永远取不到 → sinceLastWarm 恒为极大值 → 180s 降频**从未生效**，
+                    // 生成中仍然每 60s ping 一次 = v5.1.2 要修的"抢 SSE 连接"问题实际一直存在。
+                    val sinceLastWarm = System.currentTimeMillis() - (lastWarmAtMs[host] ?: 0L)
+                    // v5.1.12 ★180s 反而不保活：本文件下方注释自己写明"服务端空闲断连窗口 ~100s，
+                    // 60s 留 40s 余量"——设 180s 意味着长工具期间连接必然被服务端断掉，
+                    // 第二个请求仍要重做 TLS（就是用户说的"工具回来就卡"）。
+                    // 取 **80s**：< 100s 断连窗口（不断连），> 60s 常规节奏（频率降 25%，少抢 SSE）。
+                    if (sinceLastWarm < 80_000L) {
                         kotlinx.coroutines.delay(30_000L)
                         continue
                     }
@@ -313,6 +349,8 @@ object ConnectionWarmer {
     suspend fun pokeProviderHost(baseUrl: String, apiKey: String?): Boolean {
         val trimmed = baseUrl.trimEnd('/')
         if (trimmed.isBlank()) return false
+        // v5.1.12 ★开关未开 → 不探活（工具完成后的后台探活同样受控）
+        if (!isWarmAllowed(trimmed)) return false
         val isOcCc = trimmed.contains("opencode.ai") || trimmed.contains("commandcode.ai")
         val client = (if (isOcCc) me.rerere.ai.provider.ProviderManager.opencodeClient else null)
             ?: mainClient ?: return false
