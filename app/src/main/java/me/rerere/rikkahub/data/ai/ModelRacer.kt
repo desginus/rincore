@@ -42,7 +42,7 @@ object ModelRacer {
     private const val PROBE_TIMEOUT_MS = 3_000L
 
     /** 竞速结果缓存：同一组候选 60s 内复用上次赢家，避免每轮都打 N 个探针 */
-    private const val CACHE_TTL_MS = 300_000L
+    private const val CACHE_TTL_MS = 5_000L
 
     private data class CacheEntry(val key: String, val modelId: Uuid, val at: Long)
 

@@ -330,6 +330,7 @@ fun ChatInput(
                         ) {
                             // Model Picker
                             ModelSelectorButton(
+                                modelRouting = modelRouting,
                                 state = modelListState,
                                 onlyIcon = true,
                                 modifier = Modifier,

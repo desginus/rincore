@@ -2036,7 +2036,8 @@ class ChatService(
         conversationId: Uuid,
         message: UIMessage,
     ) {
-        deleteMessage(conversationId, message.id, failIfMissing = false)
+        // v5.1.7：UI 主动删除时找不到消息属于真异常，必须抛出（原来 false=静默无反应）
+        deleteMessage(conversationId, message.id, failIfMissing = true)
     }
 
     private fun buildConversationAfterMessageDelete(

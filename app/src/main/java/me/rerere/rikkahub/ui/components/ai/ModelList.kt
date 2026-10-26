@@ -75,6 +75,7 @@ import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.AiMagic
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.Brain02
@@ -82,6 +83,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.DragDropHorizontal
 import me.rerere.hugeicons.stroke.Favourite
 import me.rerere.hugeicons.stroke.Image03
+import me.rerere.hugeicons.stroke.Zap
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Text
 import me.rerere.hugeicons.stroke.Tools
@@ -205,6 +207,8 @@ internal fun ModelSelectorButton(
     onlyIcon: Boolean = false,
     allowClear: Boolean = false,
     onClear: () -> Unit = {},
+    /** v5.1.7：0=普通 1=快速 2=极致 —— 后两者显示自己的图标，不再借用"上次用过的模型" */
+    modelRouting: Int = 0,
 ) {
     val model = state.currentModel
 
@@ -218,6 +222,23 @@ internal fun ModelSelectorButton(
                 },
                 modifier = modifier
             ) {
+                if (modelRouting == 1 || modelRouting == 2) {
+                    Icon(
+                        imageVector = if (modelRouting == 1) HugeIcons.Zap else HugeIcons.AiMagic,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .size(36.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = if (modelRouting == 1) "快速（竞速）" else "极致（竞速）",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    return@TextButton
+                }
                 model?.modelId?.let {
                     AutoAIIcon(
                         it, Modifier
@@ -413,6 +434,10 @@ private fun ColumnScope.ModelList(
     }
 
     var searchKeywords by remember { mutableStateOf("") }
+    // v5.1.7：收藏集合预转 Set —— 原来每行都做 favoriteModels.contains (O(n))，长列表滑动时累加开销
+    val favoriteIdSet = remember(settings.value.favoriteModels) {
+        settings.value.favoriteModels.toSet()
+    }
 
     // 折叠的供应商（持久化），搜索时全部展开
     var collapsedProvidersPref by rememberSharedPreferenceString("model_list_collapsed_providers", "")
@@ -544,34 +569,7 @@ private fun ColumnScope.ModelList(
         }.toMap()
     }
 
-    Surface(
-        shape = RoundedCornerShape(50),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp),
-    ) {
-        OutlinedTextField(
-            value = searchKeywords,
-            onValueChange = { searchKeywords = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = {
-                Text(
-                    text = stringResource(R.string.model_list_search_placeholder),
-                )
-            },
-            shape = RoundedCornerShape(50),
-            colors = TextFieldDefaults.colors(
-                unfocusedIndicatorColor = Color.Transparent,
-                focusedIndicatorColor = Color.Transparent,
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-            ),
-            leadingIcon = {
-                Icon(HugeIcons.Search01, null)
-            },
-            maxLines = 1,
-        )
-    }
+    // v5.1.7（用户要求）：模型选择页的搜索栏已删除。
 
     LazyColumn(
         state = lazyListState,
@@ -614,9 +612,8 @@ private fun ColumnScope.ModelList(
                     ModelItem(
                         model = model,
                         onSelect = onSelect,
-                        modifier = Modifier
-                            .scale(if (isDragging) 0.95f else 1f)
-                            .animateItem(),
+                        // v5.1.7：animateItem 在长列表里每项维持动画状态 → 滑动卡顿，去掉
+                        modifier = Modifier.scale(if (isDragging) 0.95f else 1f),
                         providerSetting = provider,
                         select = model.id == currentModel,
                         onDismiss = {
@@ -701,11 +698,12 @@ private fun ColumnScope.ModelList(
                 items = visibleModelsByProvider[providerSetting.id].orEmpty(),
                 key = { it.id }
             ) { model ->
-                val favorite = settings.value.favoriteModels.contains(model.id)
+                val favorite = model.id in favoriteIdSet
                 ModelItem(
                     model = model,
                     onSelect = onSelect,
-                    modifier = Modifier.animateItem(),
+                    // v5.1.7：animateItem 在长列表里每项维持动画状态 → 滑动卡顿，去掉
+                    modifier = Modifier,
                     providerSetting = providerSetting,
                     select = currentModel == model.id,
                     onDismiss = {

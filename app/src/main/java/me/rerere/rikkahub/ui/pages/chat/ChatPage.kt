@@ -759,7 +759,13 @@ private fun ChatPageContent(
                     }
                 },
                 onDelete = {
-                    if (loadingJob != null) {
+                    // v5.1.7 ★用户实测「无法删除某一个气泡」：
+                    // 原来只要**整个对话**有 job 在跑就一律拦截（loadingJob != null）——
+                    // 而 loadingJob 在异常/残留时可能长时间非空，导致历史消息也删不掉。
+                    // 改为只拦「正在生成的那一条」，历史消息随时可删。
+                    val isGeneratingMessage = loadingJob != null &&
+                        it.id == conversation.currentMessages.lastOrNull()?.id
+                    if (isGeneratingMessage) {
                         vm.showDeleteBlockedWhileGeneratingError()
                     } else {
                         vm.deleteMessage(it)

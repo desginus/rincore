@@ -588,7 +588,16 @@ class ChatVM(
 
     fun deleteMessage(message: UIMessage) {
         viewModelScope.launch {
-            chatService.deleteMessage(_conversationId, message)
+            // v5.1.7 ★删除链路原来 failIfMissing=false → 找不到消息时**静默什么都不做**
+            // （用户点了删除毫无反应）。现在失败必须说出来。
+            val result = runCatching { chatService.deleteMessage(_conversationId, message) }
+            result.exceptionOrNull()?.let { e ->
+                chatService.addError(
+                    error = e,
+                    conversationId = _conversationId,
+                    title = "删除消息失败",
+                )
+            }
         }
     }
 
