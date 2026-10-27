@@ -1869,30 +1869,28 @@ class ChatService(
             // 正确判据：**入参是"内存的超集"（新增了消息）或"同集合"（编辑/分支切换）时以入参为准**；
             // 只有"入参缺少内存里已有的消息节点"才判定为旧快照并保留内存（防 lost update）。
             session.apply { current ->
-                val incomingIds = conversation.messageNodes.mapTo(HashSet()) { it.id }
-                val currentIds = current.messageNodes.mapTo(HashSet()) { it.id }
-                val incomingIsNewer = conversation.messageNodes.size >= current.messageNodes.size ||
-                    incomingIds == currentIds
-                val currentIsSubset = currentIds.all { it in incomingIds }
-                // v5.1.19 ★★★「压缩扣费但毫无变化」真根因：
-                // 压缩的产物**必然消息更少**（摘要节点 + 保留的最近若干条），
-                // 而上面的判据把"入参比内存少"一律当旧快照丢弃 —— 于是：
-                // 模型调用成功（扣费）、摘要生成成功、newConversation 构造成功，
-                // 最后在这里被静默丢掉，用户只看到"压缩中"弹窗结束、什么都没变。
-                // 结构性变更（forceReplace=true）必须放行。
-                if (forceReplace || incomingIsNewer || currentIsSubset) {
-                    conversation.copy(
-                        // 新对话标记不可被入参抹掉（否则 isReady 会掉回 false，队列卡死）
-                        newConversation = current.newConversation || conversation.newConversation,
-                    )
-                } else {
-                    Log.w(
-                        TAG,
-                        "saveConversation: incoming is stale (in=${conversation.messageNodes.size}, " +
-                            "mem=${current.messageNodes.size}) — keep memory id=$conversationId",
-                    )
-                    current
-                }
+                // v5.2.0 ★★★对齐 3.1.0 语义（用户定案：以原版 3.1.0 为唯一行为基准）：
+                //
+                // 3.1.0 的规则只有一条 —— **写入即权威**：
+                //     updateConversation(c) { _state.value = c; initialized = true }
+                // 它从不比较"入参比内存多还是少"，因此不可能误杀任何合法写入。
+                //
+                // 我在 v5.0.99/v5.1.1 加的"节点数/ID 子集"判据，本意是防"挂起点前的旧快照
+                // 覆盖新数据"，但它**无法区分「旧快照」与「合法的消息变少」**（压缩、清空、裁剪
+                // 都会让节点数下降）→ v5.1.19 压缩扣费却零结果的根因，以及 v5.1.1 之前
+                // 多次"第二轮消息被吞"的同类根因。
+                //
+                // 正确的做法不是让运行时去猜，而是让结构上不可能：
+                //   · 增量写入一律走 `session.apply { current.copy(...) }`（原子读改写，
+                //     v5.1.1 已把发消息/流式/编辑三条主路径改成这个形态）；
+                //   · 结构性替换（压缩/恢复/清空）由调用方显式构造完整新状态并传 forceReplace；
+                //   · 只保留唯一的数据安全总闸：空 messageNodes 不许覆盖非空历史（上方已判）。
+                // 因此这里**无条件采用入参**，不再比较节点数。
+                // 无条件采用入参（对齐 3.1.0「写入即权威」）
+                conversation.copy(
+                    // 新对话标记不可被入参抹掉（否则 isReady 会掉回 false，队列卡死）
+                    newConversation = current.newConversation || conversation.newConversation,
+                )
             }
             val snapshot = session.state.value
             if (!exists) {
