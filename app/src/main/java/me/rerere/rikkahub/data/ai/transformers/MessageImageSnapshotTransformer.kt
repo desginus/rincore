@@ -41,6 +41,26 @@ object MessageImageSnapshotTransformer : OutputMessageTransformer {
     override suspend fun onGenerationFinish(
         ctx: TransformerContext,
         messages: List<UIMessage>,
+    ): List<UIMessage> {
+        // v5.1.15 ★地址单一出口（用户需求单第 1 条）：
+        // 旧实现会把正文/工具结果里的 workspaces 真身地址**改写**成
+        // file:///.../files/chat-media/<conversationId>/<name> —— 消息一旦被改写，
+        // 模型在下一轮读历史看到的就是"会话快照目录"，而不是真文件。
+        // 于是出现两类事故（用户实测）：
+        //   · 文件名对、会话目录错（真文件在工作区，快照目录里没有）
+        //   · 同一张图在不同轮次拿到两套 scheme（chat-media / workspaces 交替）
+        // 这些地址的可靠性取决于"快照是否物化成功"，属于不可靠快照来源。
+        //
+        // 现在：**不再改写任何地址**。面向模型的地址一律是 workspaces 真身
+        // （由 buildRenderUrl 单点产出 + 验存），不随会话隔离/拷贝状态/会话删除失效。
+        // chat-media 降级为纯内部传输路径（保留 DIR/清理逻辑，供历史数据反查兜底）。
+        return messages
+    }
+
+    @Suppress("unused")
+    private suspend fun snapshotLegacy(
+        ctx: TransformerContext,
+        messages: List<UIMessage>,
     ): List<UIMessage> = runCatching {
         // 1) 全量收集候选地址 (Text 域, 含工具输出递归)
         val urls = LinkedHashSet<String>()

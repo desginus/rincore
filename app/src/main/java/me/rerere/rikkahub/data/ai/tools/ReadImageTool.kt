@@ -74,7 +74,14 @@ fun createReadImageTool(
             properties = buildJsonObject {
                 put("path", buildJsonObject {
                     put("type", "string")
-                    put("description", "图片文件完整路径 (file:// 开头或绝对路径), 见占位文本中标注的原路径")
+                    put("description", "图片文件完整路径 (file:// 开头或绝对路径)；mode=list 时可传目录。见占位文本中标注的原路径")
+                })
+                // v5.1.15 ★需求单第 9 条「助手侧校验通道」：模型可在回复前自校验地址，
+                // 从源头拦掉假地址（比渲染层报错更早一步）。
+                put("mode", buildJsonObject {
+                    put("type", "string")
+                    put("enum", buildJsonArray { add(JsonPrimitive("read")); add(JsonPrimitive("exists")); add(JsonPrimitive("list")) })
+                    put("description", "read=读取图片(默认) / exists=只查该路径是否存在及大小 / list=列出该目录下的图片文件")
                 })
             },
             required = listOf("path")
@@ -144,14 +151,56 @@ fun createReadImageTool(
         // v5.0.77 ★用户指令：**解除读取范围限制** —— 只要模型给的是正确地址码（任意绝对
         // 路径 / file:// / rootfs 语义路径），即可读取；不再用 allowedRoot 白名单拒收。
         // allowedRoot 参数保留仅为调用点签名兼容，不再参与判定。
-        if (!file.exists() || file.length() == 0L) {
-            // v5.0.65: 把两侧解析结果都报出来 —— 用户/模型一眼能看出是"路径形态不对"还是"文件真没了"
+        // v5.1.15 ★需求单第 4 条：**存在与空文件分开报** ——
+        // 旧文案把两者合并成一句"文件不存在或为空"，掩盖了真实问题
+        // （0 字节文件往往是上游写盘失败，不是路径错）。
+        val mode = runCatching {
+            input.jsonObject["mode"]?.jsonPrimitive?.contentOrNull
+        }.getOrNull()?.trim()?.lowercase().orEmpty()
+        if (mode == "exists" || mode == "list") {
+            val detail = listOfNotNull(
+                rootfsErr,
+                "宿主侧解析 = $canonical",
+            ).joinToString("；")
+            if (!file.exists()) {
+                return@Tool readImageError("Invalid: 文件不存在: $path", detail)
+            }
+            if (mode == "exists") {
+                val state = if (file.isDirectory) "是目录" else if (file.length() == 0L) "文件为空（0 字节）" else "文件存在，${file.length()} 字节"
+                return@Tool listOf(me.rerere.ai.ui.UIMessagePart.Text("exists: true — $path — $state；$detail"))
+            }
+            if (!file.isDirectory) {
+                return@Tool readImageError("Invalid: list 模式需要目录路径: $path", detail)
+            }
+            val files = file.listFiles()?.filter { it.isFile }?.sortedBy { it.name } ?: emptyList()
+            val images = files.filter { it.extension.lowercase() in IMAGE_EXTENSIONS }
+            val listing = if (files.isEmpty()) "（空目录）" else files.joinToString("\n") { f ->
+                val marker = if (f.extension.lowercase() in IMAGE_EXTENSIONS) "[图片] " else ""
+                "$marker${f.name} (${f.length()}B)"
+            }
+            return@Tool listOf(
+                me.rerere.ai.ui.UIMessagePart.Text(
+                    "list: $path\n共 ${files.size} 个文件（其中图片 ${images.size} 个）：\n$listing"
+                )
+            )
+        }
+        if (!file.exists()) {
             return@Tool readImageError(
-                "Invalid: 文件不存在或为空: $path",
+                "Invalid: 文件不存在: $path",
                 listOfNotNull(
                     rootfsErr,
-                    "宿主侧解析 = $canonical（文件不存在或为空）",
-                    "提示：/workspace、/upload、/tool_outputs、/skills、/tmp 走工作区 rootfs；file:// 与宿主绝对路径走直读",
+                    "宿主侧解析 = $canonical（该路径不存在）",
+                    "提示：/workspace、/upload、/tool_outputs、/skills、/tmp 走工作区 rootfs；file:// 与宿主绝对路径走直读。可用 mode=exists / mode=list 在回复前自校验",
+                ).joinToString("；"),
+            )
+        }
+        if (file.length() == 0L) {
+            return@Tool readImageError(
+                "Invalid: 文件为空（0 字节）: $path",
+                listOfNotNull(
+                    rootfsErr,
+                    "宿主侧解析 = $canonical（文件存在但大小为 0）",
+                    "提示：0 字节通常是上游写盘失败或复制中断，不代表路径错",
                 ).joinToString("；"),
             )
         }
