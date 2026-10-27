@@ -31,6 +31,7 @@ import me.rerere.hugeicons.stroke.AiEditing
 import me.rerere.hugeicons.stroke.BubbleChat
 import me.rerere.hugeicons.stroke.ScanText
 import me.rerere.hugeicons.stroke.Translate
+import me.rerere.hugeicons.stroke.Cpu
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.hugeicons.stroke.AiMagic
 
@@ -146,6 +147,13 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
         providers = settings.providers,
         type = ModelType.CHAT,
     )
+    // v5.1.17 ★用户实测「上下文压缩全崩」：压缩用的 compressModelId 一直没有 UI，
+    // 用户无法更换（本次它指向服务端已弃用的 deepseek-flash → 压缩必然失败）。
+    val compressModel = rememberModelListState(
+        modelId = settings.compressModelId,
+        providers = settings.providers,
+        type = ModelType.CHAT,
+    )
     // v5.0.67 用户定案：做梦（自动记忆整理）单独一个模型选择，与记忆模型分开
     val dreamMemoryModel = rememberModelListState(
         modelId = settings.dreamMemoryModelId,
@@ -189,6 +197,19 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
                     state = dreamMemoryModel,
                     iconContainerColor = dreamContainerColor,
                     iconContentColor = dreamContentColor,
+                )
+            }
+            // v5.1.17：压缩模型（上下文压缩/摘要生成的模型）
+            val compressContainerColor = MaterialTheme.colorScheme.surfaceVariant
+            val compressContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            CardGroup {
+                modelItem(
+                    icon = HugeIcons.Cpu,
+                    title = R.string.setting_model_page_compress_model,
+                    description = R.string.setting_model_page_compress_model_desc,
+                    state = compressModel,
+                    iconContainerColor = compressContainerColor,
+                    iconContentColor = compressContentColor,
                 )
             }
             // 标题和聊天建议都由快速模型生成，相关的选项跟它放在一组
@@ -266,6 +287,9 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
     }
     ModelListSheet(state = dreamMemoryModel) {
         vm.updateSettings { latest -> latest.copy(dreamMemoryModelId = it.id) }
+    }
+    ModelListSheet(state = compressModel) {
+        vm.updateSettings { latest -> latest.copy(compressModelId = it.id) }
     }
 }
 

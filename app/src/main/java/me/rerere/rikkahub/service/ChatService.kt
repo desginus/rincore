@@ -1506,11 +1506,40 @@ class ChatService(
             val settingsNow = settingsStore.settingsFlow.first()
             val compressLevel = settingsNow.fastModelReasoningLevel
             android.util.Log.i("ChatService", "compressMessages: model=${model.modelId} level=$compressLevel chunk=${messages.size}msgs chars=${contentToCompress.length}")
-            val result = providerHandler.generateText(
-                providerSetting = provider,
-                messages = listOf(UIMessage.user(prompt)),
-                params = backgroundTextGenerationParams(model, compressLevel, sessionId = conversationId.toString()),
-            )
+            // v5.1.17 ★用户实测「上下文压缩全崩」根因：压缩用 ``compressModelId`` 指定的模型，
+            // 而它可能是一个**服务端已弃用**的模型（本次报错 Model deepseek-flash has been
+            // deprecated. Use deepseek-v4.1-flash instead.）→ 压缩请求被拒 → 摘要生成失败
+            // → 无法保存压缩记录，而设置页**没有压缩模型这一项**，用户无从自救。
+            // 这里加「已弃用自动回退」：识别模型无效类错误后用当前对话模型重试一次。
+            fun isStaleModelError(e: Throwable): Boolean {
+                val msg = (e.message ?: "").lowercase()
+                return msg.contains("deprecated") || msg.contains("not found") ||
+                    msg.contains("invalid model") || msg.contains("model_not_found") ||
+                    msg.contains("does not exist")
+            }
+
+            val result = try {
+                providerHandler.generateText(
+                    providerSetting = provider,
+                    messages = listOf(UIMessage.user(prompt)),
+                    params = backgroundTextGenerationParams(model, compressLevel, sessionId = conversationId.toString()),
+                )
+            } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                val fbModel = settings.getCurrentChatModel()
+                if (!isStaleModelError(e) || fbModel == null || fbModel.id == model.id) throw e
+                val fbProvider = fbModel.findProvider(settings.providers) ?: throw e
+                val fbHandler = providerManager.getProviderByType(fbProvider)
+                android.util.Log.w(
+                    "ChatService",
+                    "compress: model=${model.modelId} 失败(${(e.message ?: "").take(120)}) → 回退 ${fbModel.modelId} 重试",
+                )
+                fbHandler.generateText(
+                    providerSetting = fbProvider,
+                    messages = listOf(UIMessage.user(prompt)),
+                    params = backgroundTextGenerationParams(fbModel, compressLevel, sessionId = conversationId.toString()),
+                )
+            }
 
             return result.message.toText().trim().ifEmpty { throw IllegalStateException("Failed to generate compressed summary") }
         }
