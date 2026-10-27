@@ -108,6 +108,14 @@ data class Conversation(
         }
         val newNodes = this.messageNodes.toMutableList()
         var anyChanged = false
+        // v5.1.21 ★「新一轮回复被塞进上一个气泡」的结构性根修：
+        // 下方 `else { newMessages.add(message) }` 的语义是「同一 node 的新分支（重新生成）」。
+        // 一旦 messages 与 messageNodes 的 index 发生错位（例如流式 chunk 与内存态在
+        // 队列派发窗口内不同步），user/assistant 会被追加进**上一个轮次的气泡**里，
+        // 且 selectIndex 指向新分支 → 用户看到的就是「模型在先前回复的结果下面继续思考」。
+        // 一个 node 的分支只可能是**同一轮的不同版本**（role 必然相同）；
+        // role 不同 = 一定是新的一轮 → 必须独立成 node，绝不能当分支追加。
+        val appendAsNewNodes = ArrayList<me.rerere.rikkahub.data.model.MessageNode>()
 
         messages.forEachIndexed { index, message ->
             // v4.8.19 性能: 逐 node 引用短路 — currentMessage 引用相同则该 node 完全无需重建
@@ -118,6 +126,13 @@ data class Conversation(
             anyChanged = true
 
             val node = existing ?: message.toMessageNode()
+
+            // v5.1.21：跨 role 绝不追加为分支（见上方说明）——独立成 node 追加到末尾。
+            val nodeRole = node.messages.firstOrNull()?.role
+            if (existing != null && nodeRole != null && nodeRole != message.role) {
+                appendAsNewNodes.add(message.toMessageNode())
+                return@forEachIndexed
+            }
 
             val newMessages = node.messages.toMutableList()
             var newMessageIndex = node.selectIndex
@@ -141,6 +156,9 @@ data class Conversation(
         }
 
         if (!anyChanged) return this
+
+        // v5.1.21：跨 role 的新轮次节点统一追加到末尾（保持时间顺序）
+        if (appendAsNewNodes.isNotEmpty()) newNodes.addAll(appendAsNewNodes)
 
         return this.copy(
             messageNodes = newNodes
