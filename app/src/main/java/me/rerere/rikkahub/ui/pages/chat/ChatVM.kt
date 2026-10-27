@@ -155,6 +155,13 @@ class ChatVM(
     var pendingCompression by androidx.compose.runtime.mutableStateOf<PendingCompression?>(null)
         private set
 
+    /**
+     * v5.1.18：草稿加载完成标志 —— 在 load() 返回前，输入框的"空"只是初始态，
+     * 不能据此清理草稿（否则会把刚读出来的草稿又删掉）。
+     */
+    @Volatile
+    private var draftHandled = false
+
     init {
         // v5.1.9：生成结束 → 若存在排队压缩则自动执行
         viewModelScope.launch {
@@ -187,15 +194,40 @@ class ChatVM(
             if (draft.isNotEmpty() && inputState.textContent.text.isBlank() &&
                 inputState.messageContent.isEmpty() && !inputState.isEditing()
             ) {
-                inputState.setMessageText(draft)
+                // v5.1.18 ★★★「输入栏幽灵文本」的结构性根治（第三次报告，这次改判据不改时序）：
+                //
+                // 旧设计的充要条件是"把磁盘上的草稿删掉" —— 但删除是**异步写盘**
+                // （DraftStore 用 SupervisorJob(IO)），发送后立刻退出/进程被杀时这次删除
+                // 可能根本没落盘 → 下次进入 load() 又拿到那条文本 → 回灌进输入框。
+                // 这就是"永远删不干净"的机制：**可靠性寄托在一个可能丢失的删除动作上**。
+                //
+                // 现在改为**幂等判据**：草稿文本如果与本对话**最后一条用户消息**完全一致，
+                // 它就是"已经发出去过的残留"，一律不回灌并顺手清理。
+                // 这个判据不依赖任何时序/写盘成功与否，跨进程、跨重启都成立。
+                val lastUserText = conversation.value.currentMessages
+                    .lastOrNull { it.role == me.rerere.ai.core.MessageRole.USER }
+                    ?.toText()?.trim()
+                if (lastUserText != null && lastUserText == draft.trim()) {
+                    draftStore.clearNow(_conversationId)
+                } else {
+                    inputState.setMessageText(draft)
+                }
             }
+            draftHandled = true
         }
         viewModelScope.launch {
             snapshotFlow { inputState.textContent.text.toString() }
                 .collectLatest { text ->
                     // v5.0.72: 每次变化先同步非 Compose 镜像（onCleared 只认它）
                     inputState.syncMirror()
-                    if (text.isEmpty()) return@collectLatest
+                    if (text.isEmpty()) {
+                        // v5.1.18 ★第三条幽灵路径（用户："永远删不干净"）：
+                        // 旧实现在输入框为空时直接 return —— **用户手动删光输入框时磁盘草稿不删**
+                        // → 退出重进又被回灌 = 删了又回来。现在用户主动清空也清草稿。
+                        // draftHandled 守卫：load() 返回前的初始空态不做清理。
+                        if (draftHandled) draftStore.clearNow(_conversationId)
+                        return@collectLatest
+                    }
                     // v5.0.96：分享回灌的那一次不落草稿（见 suppressNextDraftSave 注释）
                     if (suppressNextDraftSave) {
                         suppressNextDraftSave = false
@@ -286,7 +318,17 @@ class ChatVM(
         // v5.0.72 ★不再读 TextFieldState（Compose 快照状态在非 Compose 上下文不可靠，
         // 旧实现读到空串 → DraftStore.save("") 曾等价 clear → 用户草稿被自己删掉）。
         // 改为读 ChatInputState.latestText 这份纯 Kotlin 镜像；空串本身也不会再删草稿。
-        draftStore.saveNow(_conversationId, inputState.latestText)
+        // v5.1.18 ★同一个幂等判据用在写入侧：把"刚发出去的那条"再写回磁盘，
+        // 本身就是幽灵文本的生产环节（旧实现无条件保存 latestText）。
+        val pendingText = inputState.latestText
+        if (pendingText.isNotBlank()) {
+            val lastUserText = conversation.value.currentMessages
+                .lastOrNull { it.role == me.rerere.ai.core.MessageRole.USER }
+                ?.toText()?.trim()
+            if (lastUserText == null || lastUserText != pendingText.trim()) {
+                draftStore.saveNow(_conversationId, pendingText)
+            }
+        }
         voiceSession.stop()
         super.onCleared()
         // 移除对话引用

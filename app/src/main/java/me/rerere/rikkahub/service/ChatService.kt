@@ -1562,7 +1562,24 @@ class ChatService(
             chatSuggestions = emptyList(),
         ).addCompressRetention(savedNodes, summaryNodes)
 
-        saveConversation(conversationId, newConversation)
+        // v5.1.19 ★压缩是结构性变更（消息必然变少）→ forceReplace=true，
+        // 否则会被 saveConversation 的"防旧快照"判据当成 stale 丢弃（扣费无结果）。
+        saveConversation(conversationId, newConversation, forceReplace = true)
+        // v5.1.19 ★校验：压缩必须真的生效（节点数变化 + 留存位点存在），
+        // 否则明确报错给用户，绝不静默"扣了钱什么都没变"。
+        val expectedNodes = newMessageNodes.size
+        val actualNodes = sessionManager.get(conversationId)?.state?.value?.messageNodes?.size
+            ?: conversationRepo.getConversationById(conversationId)?.messageNodes?.size
+        if (actualNodes != expectedNodes) {
+            throw IllegalStateException(
+                "压缩结果未生效：期望 $expectedNodes 个节点，实际 $actualNodes（已回滚，请重试）"
+            )
+        }
+        android.util.Log.i(
+            "ChatService",
+            "compress done: nodes ${savedNodes.size} -> $expectedNodes " +
+                "(summaries=${summaryNodes.size}, kept=${messagesToKeep.size}, verified=true)",
+        )
     }
 
     // ---- 对话状态更新 ----
@@ -1721,7 +1738,15 @@ class ChatService(
         }
     }
 
-    suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
+    /**
+     * [forceReplace] = 本次写入是**结构性变更**（压缩后消息变少、清空重排等），
+     * 允许入参消息数少于内存。默认 false 保持"防旧快照覆盖"的保护。
+     */
+    suspend fun saveConversation(
+        conversationId: Uuid,
+        conversation: Conversation,
+        forceReplace: Boolean = false,
+    ) {
         // v5.0.83 ★★★数据丢失根修（用户实测：并发生成+切换→重启后对话内容消失）：
         //
         // 旧实现三宗罪：
@@ -1810,6 +1835,18 @@ class ChatService(
             //      整对象 apply 会把流式期间写入内存的新数据盖掉（v5.0.60 同类 lost update）。
             //      只在内存为空（空壳）时用入参补种，其余一律以内存为准。
             if (!session.isInitialized()) {
+                if (forceReplace) {
+                    // v5.1.19：结构性变更（压缩）在 session 未加载时也必须落库，
+                    // 否则「跳过 + 补加载」会把整次压缩结果丢掉（用户看到的又是"什么都没变"）。
+                    conversationRepo.updateConversation(conversation)
+                    Log.w(
+                        TAG,
+                        "saveConversation: forceReplace on unloaded session — wrote DB directly " +
+                            "id=$conversationId nodes=${conversation.messageNodes.size}",
+                    )
+                    appScope.launch { runCatching { initializeConversation(conversationId) } }
+                    return@withLock
+                }
                 Log.w(
                     TAG,
                     "saveConversation: not loaded yet — skip write + heal id=$conversationId " +
@@ -1831,7 +1868,13 @@ class ChatService(
                 val incomingIsNewer = conversation.messageNodes.size >= current.messageNodes.size ||
                     incomingIds == currentIds
                 val currentIsSubset = currentIds.all { it in incomingIds }
-                if (incomingIsNewer || currentIsSubset) {
+                // v5.1.19 ★★★「压缩扣费但毫无变化」真根因：
+                // 压缩的产物**必然消息更少**（摘要节点 + 保留的最近若干条），
+                // 而上面的判据把"入参比内存少"一律当旧快照丢弃 —— 于是：
+                // 模型调用成功（扣费）、摘要生成成功、newConversation 构造成功，
+                // 最后在这里被静默丢掉，用户只看到"压缩中"弹窗结束、什么都没变。
+                // 结构性变更（forceReplace=true）必须放行。
+                if (forceReplace || incomingIsNewer || currentIsSubset) {
                     conversation.copy(
                         // 新对话标记不可被入参抹掉（否则 isReady 会掉回 false，队列卡死）
                         newConversation = current.newConversation || conversation.newConversation,
