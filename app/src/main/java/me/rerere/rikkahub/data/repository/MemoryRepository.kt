@@ -413,12 +413,16 @@ class MemoryRepository(
         while (memoryDAO.getMemoryById(id) != null) {
             id++
         }
+        // v5.1.14 ★统一写入判据（与 updateScope 同口径）：归属**互斥** ——
+        // 挂了单对话就不再是项目包记忆，否则这条记录不会被任何一条分层查询命中（用户视角消失）。
+        val normalizedConversationId = conversationId
+        val normalizedFolderId = if (normalizedConversationId != null) null else folderId
         val memory = AssistantMemory(
             id = id,
             content = content,
-            conversationId = conversationId,
+            conversationId = normalizedConversationId,
             sourceConversationId = sourceConversationId,
-            folderId = folderId,
+            folderId = normalizedFolderId,
             source = source,
         )
         memoryDAO.insertMemory(

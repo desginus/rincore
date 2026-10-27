@@ -291,6 +291,9 @@ class AssistantDetailVM(
                 // 助手级记忆记录来源对话（UI 小标签）。
                 conversationId = memory.conversationId,
                 sourceConversationId = memory.conversationId ?: memory.sourceConversationId,
+                // v5.1.14 ★统一写入：新建记忆此前**不传 folderId** → 在「项目包记忆」档
+                // 新建的条目落成助手级，用户看到"新建了但不在这个包里"。
+                folderId = memory.folderId,
             )
         }
     }

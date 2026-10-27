@@ -69,4 +69,16 @@ class DraftStore(context: Context) {
     suspend fun clear(id: Uuid) {
         runCatching { store.edit { it.remove(key(id)) } }
     }
+
+    /**
+     * v5.1.14 ★「发送后重进应用草稿复活」真根因：
+     * `ChatVM.clearDraft()` 原来写的是 `viewModelScope.launch { clear(id) }` ——
+     * 发送完立刻切走/退出，VM 被销毁 → **这个协程还没跑就被取消** → 草稿留在盘上
+     * → 下次进入该对话又被回灌进输入框（用户看到"发出去的内容又出现在输入框"）。
+     * 而且 `saveNow(id, "")` 是空的，v5.0.72 起 save 对空串 no-op，等于没清。
+     * 清理必须走 DraftStore 自己的 SupervisorJob(IO) scope：与 VM 生命周期无关。
+     */
+    fun clearNow(id: Uuid) {
+        scope.launch { runCatching { clear(id) } }
+    }
 }

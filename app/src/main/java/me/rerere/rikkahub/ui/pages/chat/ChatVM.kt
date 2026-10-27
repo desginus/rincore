@@ -273,8 +273,13 @@ class ChatVM(
 
     /** v5.0.72：发送成功后**显式**作废草稿（唯一合法的删除时机之一） */
     fun clearDraft() {
-        draftStore.saveNow(_conversationId, "")
-        viewModelScope.launch { draftStore.clear(_conversationId) }
+        // v5.1.14 ★发送后草稿复活根修：
+        // 旧实现 = saveNow(id, "")（空串 no-op，什么都没做）+ viewModelScope.launch{clear()}
+        // → 发送后立刻切走/退出时 VM 销毁、协程被取消 → 草稿留在盘上 → 重进又冒出来。
+        // 现在：先同步镜像（避免 onCleared 用旧值兜底回写），再用 DraftStore 自己的
+        // 不可取消 scope 清理。
+        inputState.syncMirror()
+        draftStore.clearNow(_conversationId)
     }
 
     override fun onCleared() {

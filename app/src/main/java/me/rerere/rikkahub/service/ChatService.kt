@@ -966,12 +966,17 @@ class ChatService(
                     // 项目包 = **该对话 + 归属同一项目包的所有对话** 的「仅对话内可见」记忆集合，
                     // 不是独立的存储层。旧实现只注入 folderId 层（若从未写入就恒为空），
                     // 同包其他对话的记忆**根本没有被注入** → "包内互通"名不副实。
-                    val siblingMemories = conversation.folderId?.let { fid ->
+                    // v5.1.14 ★统一判据：同包对话 id 集合提前算好，既用于查询也用于可见性判定
+                    val siblingConversationIds: Set<String> = conversation.folderId?.let { fid ->
                         runCatching {
-                            val ids = conversationRepo.getConversationIdsOfFolder(fid).map { it.toString() }
-                            memoryRepository.getMemoriesOfConversations(ids, memoryScopeId)
-                        }.getOrDefault(emptyList())
-                    } ?: emptyList()
+                            conversationRepo.getConversationIdsOfFolder(fid).map { it.toString() }.toSet()
+                        }.getOrDefault(emptySet())
+                    } ?: emptySet()
+                    val siblingMemories = if (siblingConversationIds.isEmpty()) emptyList() else runCatching {
+                        memoryRepository.getMemoriesOfConversations(
+                            siblingConversationIds.toList(), memoryScopeId
+                        )
+                    }.getOrDefault(emptyList())
                     val ownMemories = runCatching {
                         memoryRepository.getMemoriesOfConversation(conversation.id.toString(), memoryScopeId)
                     }.getOrDefault(emptyList())
@@ -981,18 +986,16 @@ class ChatService(
                     val manualMount = assistant.manualMemoryMount
                     val dreamMount = assistant.dreamMemoryMount
                     val ownConversationId = conversation.id.toString()
-                    fun mountAllowed(memory: me.rerere.rikkahub.data.model.AssistantMemory, level: Int): Boolean =
-                        when (level) {
-                            1 -> memory.folderId == null && memory.conversationId == null
-                            3 -> (memory.folderId == null && memory.conversationId == null) ||
-                                memory.conversationId == ownConversationId
-                            else -> true
-                        }
+                    // v5.1.14 ★统一判据（唯一实现 = MemoryVisibility）：注入链不再自己写一份
+                    // "挂载层级 / 归属层"语义，避免与记忆管理页口径漂移（v5.1.13 同类事故根因）。
                     (base + folderMemories + siblingMemories + ownMemories).distinctBy { it.id }
                         .filter { memory ->
-                            mountAllowed(
-                                memory,
-                                if (memory.source == "dream") dreamMount else manualMount,
+                            me.rerere.rikkahub.data.repository.MemoryVisibility.visibleForInjection(
+                                memory = memory,
+                                folderId = conversation.folderId?.toString(),
+                                conversationId = ownConversationId,
+                                siblingConversationIds = siblingConversationIds,
+                                mountLevel = if (memory.source == "dream") dreamMount else manualMount,
                             )
                         }
                 },

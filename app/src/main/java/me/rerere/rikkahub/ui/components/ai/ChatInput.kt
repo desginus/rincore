@@ -778,6 +778,11 @@ private fun TextInputRow(
                     selection = state.textContent.selection,
                 )
             }.collectLatest { context ->
+                // v5.1.14 ★光标抖动抑制：输入法长按/组合输入（composition）时会连续发出多个
+                // selection/text 事件，旧实现每个事件都同步跑一遍全部 provider.complete()
+                // （其中 workspace 补全会做文件系统判断）→ 主线程抖动，光标视觉位置乱跳。
+                // collectLatest 是取消式的：停顿 120ms 才真正补全，打字过程中不再逐键执行。
+                kotlinx.coroutines.delay(120)
                 val lists = completionProviders.mapNotNull { provider ->
                     try {
                         provider.complete(context)
@@ -814,9 +819,12 @@ private fun TextInputRow(
                 return@LaunchedEffect
             }
             snapshotFlow {
-                val text = state.textContent.text.toString()
+                // v5.1.14 ★每键不再复制整段前缀（长文本时每次按键都 toString+take 全文 =
+                // 主线程无谓开销，与输入法组合事件叠加会造成可感知的抖动）。
+                // 只需要判断"光标前两个字符"，直接取窗口。
+                val text = state.textContent.text
                 val caret = state.textContent.selection.start.coerceIn(0, text.length)
-                text.take(caret)
+                if (caret >= 2) text.substring(caret - 2, caret) else ""
             }.collectLatest { before ->
                 // v5.0.68 ★用户纠正：这里**只认 `/@`（斜杠+艾特）**，不是 `/` 也不是 `@`。
                 // 分工与 4.8.190 逐字一致（见其 detectToolMention 注释）：
@@ -824,9 +832,7 @@ private fun TextInputRow(
                 //   · 斜杠后的 `/@` → **工具矩阵**（ToolMatrixPickerPopup）
                 // 两者天然分流：`@` 前是 `/` 就不是文件补全的边界。
                 // v5.0.64 我错把 `@` 和 `/` 都接给工具矩阵，抢掉了 workspace 补全。
-                val isSlashAt = before.length >= 2 &&
-                    before[before.length - 1] == '@' &&
-                    before[before.length - 2] == '/'
+                val isSlashAt = before.length == 2 && before[1] == '@' && before[0] == '/'
                 if (isSlashAt) {
                     if (toolPickerData == null) {
                         toolPickerData = runCatching { provider() }.getOrNull()

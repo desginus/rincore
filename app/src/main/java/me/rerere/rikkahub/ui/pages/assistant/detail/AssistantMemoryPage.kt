@@ -295,8 +295,12 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                 //             项目包记忆 = 该包 folderId 层 ∪ 同包所有对话的「仅对话内可见」记忆
                 //             单对话记忆 = conversationId 层的条目
                 // 两个维度**叉乘**，任何组合都能查到对应内容。
+                // v5.1.14 ★统一判据（唯一实现 = MemoryVisibility）：
+                // 来源档位、存储层、管理页可见性全部从这里取，UI 不再各写一份。
                 val matchSource: (me.rerere.rikkahub.data.model.AssistantMemory) -> Boolean = { m ->
-                    if (memoryCategory == MemoryCategory.DREAM) m.source == "dream" else m.source != "dream"
+                    me.rerere.rikkahub.data.repository.MemoryVisibility.matchesSource(
+                        m, dream = memoryCategory == MemoryCategory.DREAM,
+                    )
                 }
                 val folderConvIds by vm.folderConversationIds.collectAsStateWithLifecycle()
                 // v5.0.87 ★可见性统一（用户定案："只要模型能看到，我这里也得看到"）：
@@ -320,7 +324,10 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                     MemoryScope.ASSISTANT -> assistantMemories + folderMemories
                     MemoryScope.FOLDER -> folderMemories
                     MemoryScope.CONVERSATION -> emptyList()
-                }.filter(matchSource).distinctBy { it.id }
+                }
+                    .filter { me.rerere.rikkahub.data.repository.MemoryVisibility.visibleForManagement(it) }
+                    .filter(matchSource)
+                    .distinctBy { it.id }
                 val scopedConversationMemories = when (memoryScope) {
                     MemoryScope.ASSISTANT -> conversationMemories.filter(matchSource)
                     MemoryScope.FOLDER -> conversationMemories
