@@ -190,6 +190,8 @@ class ChatVM(
         // v4.8.70: 会话草稿持久化 — VM 重建/进程重启后恢复 (仅输入为空时注入);
         // 输入变化 1s 防抖落盘 (collectLatest 取消式, 连续输入只落最终值); onCleared 兜底 flush
         viewModelScope.launch {
+          // v5.1.20：任何异常都必须让 draftHandled 置位，否则"输入框为空也不清草稿"的旧行为会复活
+          try {
             val draft = draftStore.load(_conversationId)
             if (draft.isNotEmpty() && inputState.textContent.text.isBlank() &&
                 inputState.messageContent.isEmpty() && !inputState.isEditing()
@@ -213,7 +215,9 @@ class ChatVM(
                     inputState.setMessageText(draft)
                 }
             }
+          } finally {
             draftHandled = true
+          }
         }
         viewModelScope.launch {
             snapshotFlow { inputState.textContent.text.toString() }

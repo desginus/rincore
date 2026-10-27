@@ -1568,11 +1568,17 @@ class ChatService(
         // v5.1.19 ★校验：压缩必须真的生效（节点数变化 + 留存位点存在），
         // 否则明确报错给用户，绝不静默"扣了钱什么都没变"。
         val expectedNodes = newMessageNodes.size
-        val actualNodes = sessionManager.get(conversationId)?.state?.value?.messageNodes?.size
-            ?: conversationRepo.getConversationById(conversationId)?.messageNodes?.size
-        if (actualNodes != expectedNodes) {
+        // v5.1.20 ★修 v5.1.19 校验自身的 bug：旧写法是
+        //   session?.state?.value?.messageNodes?.size ?: db?.messageNodes?.size
+        // 而 session 存在但**是空壳**（size=0，不是 null）时 `?:` 不会回退到 DB
+        // → actualNodes=0 → 压缩明明成功也报"未生效"（又一个"修好的地方自己变成 bug"）。
+        // 现在两处都读，任一命中期望即算成功。
+        val fromSession = sessionManager.get(conversationId)?.state?.value?.messageNodes?.size
+        val fromDb = conversationRepo.getConversationById(conversationId)?.messageNodes?.size
+        if (fromSession != expectedNodes && fromDb != expectedNodes) {
             throw IllegalStateException(
-                "压缩结果未生效：期望 $expectedNodes 个节点，实际 $actualNodes（已回滚，请重试）"
+                "压缩结果未生效：期望 $expectedNodes 个节点，" +
+                    "内存=${fromSession ?: "无会话"}，数据库=${fromDb ?: "无记录"}（请重试）"
             )
         }
         android.util.Log.i(
