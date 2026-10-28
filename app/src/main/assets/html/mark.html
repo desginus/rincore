@@ -268,11 +268,16 @@
                 }
 
                 // Render KaTeX math
+                // v5.3.1 ★剥离 pdfLaTeX 间距参数：`\\[2pt]` / `\\[6pt]` 是排版参数，
+                // 不是数学内容，KaTeX 不认 → 会原样显示成正文（用户缺陷三）。
+                const normalizeLatex = (src) =>
+                    src.replace(/\\\\\[\s*[\d.]+\s*(?:pt|mm|cm|in|ex|em|mu)\s*\]/g, '\\\\');
+
                 // v5.3.0 ★用户要求：KaTeX 不认的写法（如 \begin{cases} 里的 \\[2pt]）
                 // 绝不"硬排"成正文。throwOnError=true 会抛异常 → 这里必须把**原文**红色回填，
                 // 否则公式会整段消失（比显示 [2pt] 更糟）。
                 document.querySelectorAll('.math.inline').forEach(el => {
-                    const src = el.textContent;
+                    const src = normalizeLatex(el.textContent);
                     try {
                         katex.render(src, el, {
                             throwOnError: true,
@@ -289,7 +294,7 @@
                 });
 
                 document.querySelectorAll('.math.block').forEach(el => {
-                    const src = el.textContent;
+                    const src = normalizeLatex(el.textContent);
                     try {
                         katex.render(src, el, {
                             displayMode: true,

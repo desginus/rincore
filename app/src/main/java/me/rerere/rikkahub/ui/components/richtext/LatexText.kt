@@ -169,5 +169,22 @@ private fun processLatex(latex: String): String {
     // v4.8.128 (用户实证 \tag 整条击杀): 编号/元命令清洗 — 见 LatexCommandSanitizer
     // (jlatexmath 对 \tag/\label/\nonumber/\notag/\begin{equation} 零容忍, 一个即
     // 整条 ParseException → 回落原文; 清洗后编号保留为 \quad(...), 其余删除)
-    return LatexCommandSanitizer.sanitize(content)
+    return stripLatexSpacing(LatexCommandSanitizer.sanitize(content))
 }
+
+/**
+ * v5.3.1 ★用户缺陷三（`[2pt]` / `[6pt]` 当正文显示）真根因：
+ *
+ * 模型经常输出 pdfLaTeX 风格的**可选间距参数**，例如
+ *     `\begin{cases} a & b \\[2pt] c & d \end{cases}`
+ * 其中的 `\\[2pt]`（=换行 + 2pt 额外间距）是**排版引擎参数**，
+ * 不是数学内容。JLatexMath 不认这个语法 → 解析失败 → 整条公式回落原文，
+ * 用户就看到正文里孤零零的 `[2pt]` / `[6pt]`。
+ *
+ * 处理：把 `\\[<数字><单位>]` 整体替换成 `\\`（保留换行，丢掉间距），
+ * 单位覆盖 pdfLaTeX 常用的 pt / mm / cm / in / ex / em / mu。
+ */
+private val LATEX_SPACING_PARAM = Regex("""\\\\\[\s*[\d.]+\s*(?:pt|mm|cm|in|ex|em|mu)\s*]""")
+
+internal fun stripLatexSpacing(latex: String): String =
+    latex.replace(LATEX_SPACING_PARAM, "\\\\")
