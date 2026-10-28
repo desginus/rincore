@@ -37,6 +37,7 @@ import me.rerere.rikkahub.ui.components.ui.ImagePreviewDialog
 import me.rerere.rikkahub.ui.components.ui.LocalExportContext
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.utils.resolveLocalImageFile
 import me.rerere.rikkahub.utils.isVirtualWorkspaceUri
 import me.rerere.rikkahub.utils.isWorkspaceUri
 import me.rerere.rikkahub.utils.resolveWorkspaceRelPath
@@ -268,7 +269,7 @@ private fun probeLocalImage(url: String?): ImageProbe {
     if (scheme.isNotEmpty() && scheme != "file" && scheme != "workspace" && scheme != "content") {
         return ImageProbe.Unsupported(scheme)
     }
-    val file = runCatching { resolveLocalImageFile(url) }.getOrNull() ?: return ImageProbe.Missing
+    val file = runCatching<java.io.File?> { resolveLocalImageFile(url) }.getOrNull() ?: return ImageProbe.Missing
     if (!file.exists() || file.isDirectory || !file.canRead()) return ImageProbe.Missing
     if (file.length() == 0L) return ImageProbe.Empty
     return ImageProbe.Readable
