@@ -213,6 +213,9 @@ enum class ConversationSortOrder {
 
 @Serializable
 data class DisplaySetting(
+    // v5.3.2（3.1.1 对齐）：悬浮窗开关 —— DisplaySetting 整体是 JSON blob 持久化，
+    // 新增字段零迁移、自动落盘（不需在 SETTINGS_FIELDS 单独登记）。
+    val enableFloatingChatWindow: Boolean = false,
     // ── RinCore 兼容层（B1 并树）：v4.8.183 定版玻璃字段 + 旧消费面字段（JSON blob 持久化，零迁移） ──
     val useAppIconStyleLoadingIndicator: Boolean = true,
     val glassMaskPercent: Int = 50,

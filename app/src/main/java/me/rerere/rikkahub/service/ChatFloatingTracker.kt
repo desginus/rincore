@@ -45,7 +45,7 @@ class ChatFloatingTracker(
     private val isForeground = MutableStateFlow(true)
     private val actions = MutableSharedFlow<Action>(extraBufferCapacity = 8)
 
-    val window: StateFlow<FloatingChatWindow?> = combine(
+    val window: StateFlow<FloatingChatWindow?> = combine<Boolean, Boolean, Boolean>(
         settingsStore.settingsFlow.map { it.displaySetting.enableFloatingChatWindow },
         isForeground,
     ) { enabled, foreground -> enabled && !foreground }
