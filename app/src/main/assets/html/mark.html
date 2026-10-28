@@ -268,27 +268,41 @@
                 }
 
                 // Render KaTeX math
+                // v5.3.0 ★用户要求：KaTeX 不认的写法（如 \begin{cases} 里的 \\[2pt]）
+                // 绝不"硬排"成正文。throwOnError=true 会抛异常 → 这里必须把**原文**红色回填，
+                // 否则公式会整段消失（比显示 [2pt] 更糟）。
                 document.querySelectorAll('.math.inline').forEach(el => {
+                    const src = el.textContent;
                     try {
-                        katex.render(el.textContent, el, {
-                            throwOnError: false,
+                        katex.render(src, el, {
+                            throwOnError: true,
                             errorColor: '#cc0000',
                             trust: true
                         });
                     } catch (e) {
+                        el.textContent = src;
+                        el.style.color = '#cc0000';
+                        el.style.fontFamily = 'monospace';
+                        el.title = 'LaTeX 渲染失败：' + (e && e.message ? e.message : e);
                         console.warn('KaTeX inline render error:', e);
                     }
                 });
 
                 document.querySelectorAll('.math.block').forEach(el => {
+                    const src = el.textContent;
                     try {
-                        katex.render(el.textContent, el, {
+                        katex.render(src, el, {
                             displayMode: true,
-                            throwOnError: false,
+                            throwOnError: true,
                             errorColor: '#cc0000',
                             trust: true
                         });
                     } catch (e) {
+                        el.textContent = src;
+                        el.style.color = '#cc0000';
+                        el.style.fontFamily = 'monospace';
+                        el.style.whiteSpace = 'pre-wrap';
+                        el.title = 'LaTeX 渲染失败：' + (e && e.message ? e.message : e);
                         console.warn('KaTeX block render error:', e);
                     }
                 });

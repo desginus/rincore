@@ -937,7 +937,7 @@ private fun AnnotatedString.Builder.appendHtmlInlineElement(
             if (element.hasClass("math") && element.attr("inline") == "true") {
                 val formula = element.text()
                 if (enableLatexRendering) {
-                    appendInlineContent(formula, "[Latex]")
+                    appendInlineContent(formula, formula)
                     val (width, height) = with(density) {
                         assumeLatexSize(latex = formula, fontSize = style.fontSize.toPx()).let {
                             it.width().toSp() to it.height().toSp()

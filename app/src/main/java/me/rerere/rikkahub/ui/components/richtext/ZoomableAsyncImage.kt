@@ -10,6 +10,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -108,17 +110,39 @@ fun ZoomableAsyncImage(
     var loading by remember { mutableStateOf(false) }
 
     if (workspaceFetch && (workspaceFailed || workspaceDead)) {
-        // v5.0.85 ★失败占位升级（用户 A1/A4）：红框 + 失败原因分类 + 完整路径（点按复制），
-        // 一眼区分"路径不存在 / 解码失败 / 流式路径未就绪"，不再只有一句"图片不可用"。
-        val failedPath = model ?: ""
-        val failReason = if (workspaceDead) {
-            "路径尚未就绪（流式内容未完整）"
-        } else {
-            "加载失败：文件不存在 / 解码失败 / 缓存已清理（已重试一轮）"
+        // v5.3.0 ★缺陷一（用户清单第 1、2 条）：渲染前先 stat，**四类结果分开报**并回显原路径：
+        //   可读 / 不存在 / 文件为空（0 字节）/ scheme 不支持
+        // 旧的单一文案「文件不存在 / 解码失败 / 缓存已清理」把四种完全不同的故障混成一句，
+        // 用户无法判断是路径错、文件空、还是地址 scheme 根本不被支持。
+        val failedPath = model?.toString() ?: ""
+        val probe = remember(model) { probeLocalImage(failedPath) }
+        val failTitle: String
+        val failReason: String
+        if (workspaceDead) {
+            failTitle = "路径尚未就绪"
+            failReason = "流式内容未完整，等待地址补全后自动恢復"
+        } else when (probe) {
+            ImageProbe.Missing -> {
+                failTitle = "图片不存在"
+                failReason = "路径不存在，或文件已被清理"
+            }
+            ImageProbe.Empty -> {
+                failTitle = "图片为空"
+                failReason = "文件存在但大小为 0 字节（写入未完成或被截断）"
+            }
+            is ImageProbe.Unsupported -> {
+                failTitle = "不支持的地址"
+                failReason = "scheme=${probe.scheme}，本机无法渲染"
+            }
+            ImageProbe.Readable -> {
+                failTitle = "加载失败"
+                failReason = "文件可读但解码失败，或命中旧缓存（已重试一轮）"
+            }
         }
         val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
         Column(
             modifier = modifier
+                .heightIn(min = 96.dp)
                 .background(
                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
                     shape = RoundedCornerShape(8.dp),
@@ -134,7 +158,7 @@ fun ZoomableAsyncImage(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "图片不可用",
+                text = failTitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -142,7 +166,7 @@ fun ZoomableAsyncImage(
                 text = failReason,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
             if (failedPath.isNotBlank()) {
@@ -158,6 +182,19 @@ fun ZoomableAsyncImage(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
+            }
+            // v5.3.0 ★用户清单第 2 条：占位卡片必须提供**重试**按钮（旧实现只能退出重进/重组）
+            if (!workspaceDead) {
+                TextButton(
+                    onClick = {
+                        val urlKey = failedPath.substringBefore('#')
+                        workspaceImageRetriedUrls.remove(urlKey)
+                        workspaceRetry = 0
+                        workspaceFailed = false
+                    }
+                ) {
+                    Text("重试", style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
     } else {
@@ -207,4 +244,32 @@ fun ZoomableAsyncImage(
             showImageViewer = false
         }
     }
+}
+
+// ─── v5.3.0：本地图片地址四类探测（用户缺陷一第 1 条）──────────────────────────
+//
+// 渲染前先 stat，把「可读 / 不存在 / 文件为空 / scheme 不支持」**分开报**，
+// 不再让四种完全不同的故障共用一句"图片不可用"。
+private sealed interface ImageProbe {
+    data object Readable : ImageProbe
+    data object Missing : ImageProbe
+    data object Empty : ImageProbe
+    data class Unsupported(val scheme: String) : ImageProbe
+}
+
+private fun probeLocalImage(url: String?): ImageProbe {
+    if (url.isNullOrBlank()) return ImageProbe.Missing
+    // 非本地地址交给 Coil，这里不判定
+    if (url.startsWith("data:", true) ||
+        url.startsWith("http://", true) ||
+        url.startsWith("https://", true)
+    ) return ImageProbe.Readable
+    val scheme = url.substringBefore("://", "")
+    if (scheme.isNotEmpty() && scheme != "file" && scheme != "workspace" && scheme != "content") {
+        return ImageProbe.Unsupported(scheme)
+    }
+    val file = runCatching { resolveLocalImageFile(url) }.getOrNull() ?: return ImageProbe.Missing
+    if (!file.exists() || file.isDirectory || !file.canRead()) return ImageProbe.Missing
+    if (file.length() == 0L) return ImageProbe.Empty
+    return ImageProbe.Readable
 }
