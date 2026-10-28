@@ -1794,4 +1794,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="floating_chat_status_awaiting_approval">等待确认工具调用</string>
   <string name="floating_chat_status_done">回复完成</string>
   <string name="floating_chat_status_idle">空闲</string>
+  <string name="setting_page_preferences_notification_floating_window">后台悬浮窗</string>
+  <string name="setting_page_preferences_notification_floating_window_desc">切到后台时 AI 还在回复，显示一个悬浮图标，点开可查看进度、确认工具调用和快速回复</string>
+  <string name="setting_page_preferences_notification_overlay_permission">授予悬浮窗权限</string>
+  <string name="setting_page_preferences_notification_overlay_permission_desc">没有权限时不会显示悬浮窗</string>
 </resources>

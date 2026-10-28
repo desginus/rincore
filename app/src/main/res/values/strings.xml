@@ -1892,4 +1892,8 @@
   <string name="floating_chat_status_awaiting_approval">Waiting for tool call confirmation</string>
   <string name="floating_chat_status_done">Reply finished</string>
   <string name="floating_chat_status_idle">Idle</string>
+  <string name="setting_page_preferences_notification_floating_window">Background floating window</string>
+  <string name="setting_page_preferences_notification_floating_window_desc">When you leave the app while the AI is still replying, show a floating icon. Tap it to check progress, confirm tool calls and reply quickly</string>
+  <string name="setting_page_preferences_notification_overlay_permission">Grant overlay permission</string>
+  <string name="setting_page_preferences_notification_overlay_permission_desc">The floating window will not appear without this permission</string>
 </resources>

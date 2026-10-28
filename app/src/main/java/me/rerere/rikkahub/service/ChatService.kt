@@ -61,6 +61,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -359,9 +360,16 @@ class ChatService(
     fun getProcessingStatusFlow(conversationId: Uuid): StateFlow<String?> =
         sessionManager.getProcessingStatusFlow(conversationId)
 
-    // v5.3.2（3.1.1 对齐）：悬浮窗订阅本轮的回复 id 与开始时间
+    // v5.3.3 ★修正 v5.3.2 的悬空实现：replyMessageId 原先只有一个"读取"接口、
+    // 全库没有任何写入点 → 悬浮窗永远拿不到"本轮正在写的助手消息" → 只能显示状态文字、
+    // 看不到正在输出的内容。现在改为**派生 flow**（从会话当前消息里实时取最后一条
+    // assistant），不依赖任何写入点，结构上不可能为空/过期。
     fun getReplyMessageIdFlow(conversationId: Uuid): StateFlow<Uuid?> =
-        sessionManager.getReplyMessageIdFlow(conversationId)
+        getConversationFlow(conversationId)
+            .map { conv ->
+                conv.currentMessages.lastOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }?.id
+            }
+            .stateIn(appScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
 
     fun getGenerationStartedAtFlow(conversationId: Uuid): StateFlow<Long?> =
         sessionManager.getGenerationStartedAtFlow(conversationId)

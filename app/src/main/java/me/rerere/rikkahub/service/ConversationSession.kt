@@ -292,6 +292,10 @@ class ConversationSession(
                 if (!cancelPrevious && cause is CancellationException) previous?.cancel()
                 // A replaced job must not clear or advance its successor.
                 if (_generationJob.compareAndSet(job, null)) {
+                    // v5.3.3：本轮结束即清空开始时间 —— 否则下一轮开始前它仍是上一轮的值，
+                    // 悬浮窗"只显示本轮错误"的判据会把旧错误当成本轮。
+                    generationStartedAt.value = null
+                    replyMessageId.value = null
                     onGenerationFinished(id, cause)
                     if (refCount.get() <= 0) scheduleIdleCheck()
                 }

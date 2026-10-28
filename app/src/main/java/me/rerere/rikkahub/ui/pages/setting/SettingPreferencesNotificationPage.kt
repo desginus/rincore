@@ -115,6 +115,31 @@ fun SettingPreferencesNotificationPage(vm: SettingVM = koinViewModel()) {
                             Icon(HugeIcons.ArrowRight01, contentDescription = null)
                         },
                     )
+                    // v5.3.3 ★悬浮窗开关（3.1.1 对齐）——v5.3.2 只加了字段与读取方，
+                    // **没有任何 UI 能把它打开**，等于悬浮窗功能永远不可用。
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    switchItem(
+                        checked = displaySetting.enableFloatingChatWindow,
+                        onCheckedChange = { enabled ->
+                            if (enabled && !android.provider.Settings.canDrawOverlays(ctx)) {
+                                runCatching {
+                                    ctx.startActivity(
+                                        android.content.Intent(
+                                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            android.net.Uri.parse("package:${'$'}{ctx.packageName}"),
+                                        )
+                                    )
+                                }
+                            }
+                            updateDisplaySetting(displaySetting.copy(enableFloatingChatWindow = enabled))
+                        },
+                        supportingContent = {
+                            Text(stringResource(R.string.setting_page_preferences_notification_floating_window_desc))
+                        },
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_page_preferences_notification_floating_window))
+                        },
+                    )
                     switchItem(
                         checked = displaySetting.enableNotificationOnMessageGeneration,
                         onCheckedChange = {
