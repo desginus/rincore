@@ -91,12 +91,6 @@ data class Conversation(
         return messageNodes.firstOrNull { node -> node.messages.contains(message) }
     }
 
-    /** v5.3.2（3.1.1 对齐）：等待用户审批的工具调用，与 isAwaitingToolApproval 判断一致 */
-val Conversation.pendingToolCalls: List<UIMessagePart.Tool>
-    get() = currentMessages.flatMap { message ->
-        message.parts.filterIsInstance<UIMessagePart.Tool>().filter { it.isPending }
-    }
-
 fun updateCurrentMessages(messages: List<UIMessage>): Conversation {
         // v4.8.15 性能: 快路径（流式热路径）— 流式期间绝大多数 node 的当前消息
         // 引用未变，仅尾部 1 条在动；逐条同一性检查可跳过全部 node 重建。
@@ -378,3 +372,9 @@ internal fun UIMessagePart.mapLocalFileUrls(transform: (String) -> String): UIMe
         else -> this
     }
 }
+
+// v5.3.2（3.1.1 对齐）：等待用户审批的工具调用（顶层扩展属性，不能放在类内）
+val Conversation.pendingToolCalls: List<UIMessagePart.Tool>
+    get() = currentMessages.flatMap { message ->
+        message.parts.filterIsInstance<UIMessagePart.Tool>().filter { it.isPending }
+    }
