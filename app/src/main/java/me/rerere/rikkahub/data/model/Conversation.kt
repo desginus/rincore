@@ -92,7 +92,7 @@ data class Conversation(
     }
 
     /** v5.3.2（3.1.1 对齐）：等待用户审批的工具调用，与 isAwaitingToolApproval 判断一致 */
-internal val Conversation.pendingToolCalls: List<UIMessagePart.Tool>
+val Conversation.pendingToolCalls: List<UIMessagePart.Tool>
     get() = currentMessages.flatMap { message ->
         message.parts.filterIsInstance<UIMessagePart.Tool>().filter { it.isPending }
     }

@@ -359,6 +359,13 @@ class ChatService(
     fun getProcessingStatusFlow(conversationId: Uuid): StateFlow<String?> =
         sessionManager.getProcessingStatusFlow(conversationId)
 
+    // v5.3.2（3.1.1 对齐）：悬浮窗订阅本轮的回复 id 与开始时间
+    fun getReplyMessageIdFlow(conversationId: Uuid): StateFlow<Uuid?> =
+        sessionManager.getReplyMessageIdFlow(conversationId)
+
+    fun getGenerationStartedAtFlow(conversationId: Uuid): StateFlow<Long?> =
+        sessionManager.getGenerationStartedAtFlow(conversationId)
+
     fun getConversationJobs(): Flow<Map<Uuid, Job?>> = sessionManager.getConversationJobs()
 
     // ---- 初始化对话 ----

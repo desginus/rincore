@@ -59,6 +59,12 @@ class ConversationSession(
 
     val messageQueue = MessageQueue()
 
+    // v5.3.2（3.1.1 对齐）：悬浮窗需要的两个可观测点
+    /** 本轮回复消息 id（由生成链在创建 assistant 消息后写入） */
+    val replyMessageId = MutableStateFlow<Uuid?>(null)
+    /** 本轮生成开始时间（setJob 时写入，用于悬浮窗只显示"这一轮"的错误） */
+    val generationStartedAt = MutableStateFlow<Long?>(null)
+
     // 从队列取出到写入会话历史之间，附件仍需作为有效引用保留。
     @Volatile
     var submittingMessage: QueuedMessage? = null
@@ -274,6 +280,7 @@ class ConversationSession(
 
     @Synchronized
     fun setJob(job: Job?, cancelPrevious: Boolean = true) {
+        if (job != null) generationStartedAt.value = System.currentTimeMillis()
         val previous = _generationJob.value
         _generationJob.value = job
         if (cancelPrevious) previous?.cancel()
