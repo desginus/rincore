@@ -76,7 +76,7 @@ import coil3.network.cachecontrol.CacheControlCacheStrategy
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.svg.SvgDecoder
-import com.dokar.sonner.Toaster
+import com.dokar.sonner.Toaster as SonnerToaster
 import com.dokar.sonner.rememberToasterState
 import kotlinx.serialization.Serializable
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -182,6 +182,15 @@ private const val ACTION_TRANSLATE = "me.rerere.rikkahub.action.TRANSLATE"
 private const val ACTION_IMAGE_GEN = "me.rerere.rikkahub.action.IMAGE_GEN"
 // v4.8.98: 沙箱 rin render → 应用原生渲染弹窗 (软件-沙箱一体化)
 private const val ACTION_RENDER_FILE = "me.rerere.rikkahub.action.RENDER_FILE"
+
+private const val EXTRA_CONVERSATION_ID = "conversationId"
+
+/** v5.3.2（3.1.1 对齐）：悬浮窗"展开到应用"用——打开指定会话的聊天页 */
+fun conversationIntent(context: Context, conversationId: String): Intent =
+    Intent(context, RouteActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        putExtra(EXTRA_CONVERSATION_ID, conversationId)
+    }
 
 class RouteActivity : ComponentActivity() {
     private val okHttpClient by inject<OkHttpClient>()
@@ -517,7 +526,7 @@ class RouteActivity : ComponentActivity() {
                 LocalTTSState provides tts,
                 LocalASRState provides asr,
             ) {
-                Toaster(
+                SonnerToaster(
                     state = toastState,
                     darkTheme = LocalDarkMode.current,
                     richColors = true,

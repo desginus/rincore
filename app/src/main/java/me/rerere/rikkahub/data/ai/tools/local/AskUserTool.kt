@@ -12,8 +12,11 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 
+/** v5.3.2：悬浮窗/气泡等 UI 侧共用（3.1.1 对齐） */
+const val ASK_USER_TOOL_NAME = "ask_user"
+
 internal fun buildAskUserTool(): Tool = Tool(
-    name = "ask_user",
+    name = ASK_USER_TOOL_NAME,
     description = """
         Ask the user one or more questions when you need clarification, additional information, or confirmation.
         Each question can optionally provide a list of suggested options for the user to choose from.

@@ -1879,4 +1879,17 @@
   <string name="stats_by_model">By model</string>
   <string name="stats_by_source">By source</string>
   <string name="memory_dream_require_enabled">Memory is disabled for this assistant. Enable it in Settings first.</string>
+  <string name="floating_chat_open_conversation">Open conversation</string>
+  <string name="floating_chat_collapse">Collapse</string>
+  <string name="floating_chat_close">Close floating window</string>
+  <string name="floating_chat_ask_user">The AI has a question for you</string>
+  <string name="floating_chat_tool_request">Wants to call tool: %1$s</string>
+  <string name="floating_chat_answer">Answer</string>
+  <string name="floating_chat_reply_placeholder">Quick reply…</string>
+  <string name="floating_chat_reply_queued_placeholder">Your reply will be sent when this turn ends</string>
+  <string name="floating_chat_status_failed">Generation failed</string>
+  <string name="floating_chat_status_awaiting_answer">Waiting for your answer</string>
+  <string name="floating_chat_status_awaiting_approval">Waiting for tool call confirmation</string>
+  <string name="floating_chat_status_done">Reply finished</string>
+  <string name="floating_chat_status_idle">Idle</string>
 </resources>

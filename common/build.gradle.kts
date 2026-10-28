@@ -16,8 +16,9 @@ android {
 
 dependencies {
     // RinCore 兼容层（B1 并树）：FloatingWindow（app 经 :common 传递）
-    api(libs.floatingx)
+    api(libs.floatingx.app)
     api(libs.floatingx.compose)
+    api(libs.floatingx.system)
     // okhttp
     api(libs.okhttp)
     api(libs.okhttp.sse)

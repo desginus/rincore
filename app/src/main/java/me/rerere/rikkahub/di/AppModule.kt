@@ -36,6 +36,8 @@ import me.rerere.rikkahub.subagent.SubAgentRegistry
 import me.rerere.rikkahub.browser.BrowserPreferences
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.ChatFloatingTracker
+import me.rerere.rikkahub.ui.floating.ChatFloatingWindows
 import me.rerere.rikkahub.service.CronJobScheduler
 import me.rerere.rikkahub.service.DirectModeActionRunner
 import me.rerere.rikkahub.utils.EmojiData
@@ -48,6 +50,25 @@ import me.rerere.tts.provider.TTSManager
 import org.koin.dsl.module
 
 val appModule = module {
+    // v5.3.2（3.1.1 对齐）：悬浮窗 —— 决定显示哪个会话/是否展开（纯决策层，不涉及窗口）
+    single {
+        ChatFloatingTracker(
+            appScope = get(),
+            lazyChatService = lazy { get() },
+            settingsStore = get(),
+        )
+    }
+
+    // v5.3.2：进程启动即开始监听前后台切换，驱动悬浮球/面板的显示
+    single(createdAtStart = true) {
+        ChatFloatingWindows(
+            context = get(),
+            appScope = get(),
+            tracker = get(),
+            lazyChatService = lazy { get() },
+        )
+    }
+
     single { StubAnalytics }
     single<Json> { JsonInstant }
 
