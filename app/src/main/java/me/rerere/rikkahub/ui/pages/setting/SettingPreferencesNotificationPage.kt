@@ -52,6 +52,7 @@ fun SettingPreferencesNotificationPage(vm: SettingVM = koinViewModel()) {
     var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
     var showUpdatePauseDialog by remember { mutableStateOf(false) }
     var selectedUpdatePauseDays by remember { mutableStateOf(UPDATE_PAUSE_DAY_OPTIONS.first()) }
+    val overlayContext = androidx.compose.ui.platform.LocalContext.current
 
     fun updateDisplaySetting(setting: DisplaySetting) {
         displaySetting = setting
@@ -121,12 +122,12 @@ fun SettingPreferencesNotificationPage(vm: SettingVM = koinViewModel()) {
                     switchItem(
                         checked = displaySetting.enableFloatingChatWindow,
                         onCheckedChange = { enabled ->
-                            if (enabled && !android.provider.Settings.canDrawOverlays(ctx)) {
+                            if (enabled && !android.provider.Settings.canDrawOverlays(overlayContext)) {
                                 runCatching {
-                                    ctx.startActivity(
+                                    overlayContext.startActivity(
                                         android.content.Intent(
                                             android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                            android.net.Uri.parse("package:${'$'}{ctx.packageName}"),
+                                            android.net.Uri.parse("package:" + overlayContext.packageName),
                                         )
                                     )
                                 }
