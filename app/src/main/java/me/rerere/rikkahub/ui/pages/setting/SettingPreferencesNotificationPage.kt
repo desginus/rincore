@@ -118,7 +118,6 @@ fun SettingPreferencesNotificationPage(vm: SettingVM = koinViewModel()) {
                     )
                     // v5.3.3 ★悬浮窗开关（3.1.1 对齐）——v5.3.2 只加了字段与读取方，
                     // **没有任何 UI 能把它打开**，等于悬浮窗功能永远不可用。
-                    val ctx = androidx.compose.ui.platform.LocalContext.current
                     switchItem(
                         checked = displaySetting.enableFloatingChatWindow,
                         onCheckedChange = { enabled ->
