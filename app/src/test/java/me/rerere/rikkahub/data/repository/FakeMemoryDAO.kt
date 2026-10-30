@@ -3,10 +3,17 @@ package me.rerere.rikkahub.data.repository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
-import me.rerere.rikkahub.data.db.dao.MemoryDAO
+import me.rerere.rikkahub.data.db.dao.MemoryFileDAO
 import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
 
-internal class FakeMemoryDAO : MemoryDAO {
+/**
+ * v5.3.10：修正为**只实现 `MemoryFileDAO`**。
+ *
+ * 历史问题：它曾写成 `: MemoryDAO`（那是旧的条目式表接口）却实现了文件式方法 ——
+ * 早在 v5.3.7 统一记忆后就已经编译不过，但因为 CI 从不运行 `app` 模块的单元测试，
+ * 这个断裂一直没被发现（见 build.yml 只跑 `:app:compileResearchKotlin`）。
+ */
+internal class FakeMemoryDAO : MemoryFileDAO {
     private val files = MutableStateFlow<List<MemoryFileEntity>>(emptyList())
 
     override fun getFilesOfAssistantFlow(assistantId: String): Flow<List<MemoryFileEntity>> =
@@ -31,5 +38,63 @@ internal class FakeMemoryDAO : MemoryDAO {
 
     override suspend fun deleteFilesOfAssistant(assistantId: String) {
         files.value = files.value.filterNot { it.assistantId == assistantId }
+    }
+
+    // ═══ v5.3.7 统一记忆新增：来源 / 归属 / 软删 / 对话查询 ═══
+
+    override suspend fun updateScope(
+        assistantId: String,
+        path: String,
+        folderId: String?,
+        conversationId: String?,
+        at: Long,
+    ) {
+        files.value = files.value.map {
+            if (it.assistantId == assistantId && it.path == path) {
+                it.copy(folderId = folderId, conversationId = conversationId, updatedAt = at)
+            } else {
+                it
+            }
+        }
+    }
+
+    override suspend fun updateSource(assistantId: String, path: String, source: String, at: Long) {
+        files.value = files.value.map {
+            if (it.assistantId == assistantId && it.path == path) {
+                it.copy(source = source, updatedAt = at)
+            } else {
+                it
+            }
+        }
+    }
+
+    override suspend fun invalidate(assistantId: String, path: String, at: Long?) {
+        files.value = files.value.map {
+            if (it.assistantId == assistantId && it.path == path) it.copy(invalidatedAt = at) else it
+        }
+    }
+
+    override fun getFilesBySourceFlow(assistantId: String, source: String): Flow<List<MemoryFileEntity>> =
+        files.map { all ->
+            all.filter {
+                it.assistantId == assistantId && it.source == source &&
+                    (it.invalidatedAt == null || it.invalidatedAt == 0L)
+            }.sortedBy { it.path }
+        }
+
+    override fun getFilesOfConversationFlow(conversationId: String): Flow<List<MemoryFileEntity>> =
+        files.map { all ->
+            all.filter {
+                it.conversationId == conversationId && (it.invalidatedAt == null || it.invalidatedAt == 0L)
+            }.sortedBy { it.path }
+        }
+
+    override suspend fun getFilesOfConversation(conversationId: String): List<MemoryFileEntity> =
+        files.value.filter {
+            it.conversationId == conversationId && (it.invalidatedAt == null || it.invalidatedAt == 0L)
+        }.sortedBy { it.path }
+
+    override suspend fun deleteFilesOfConversation(conversationId: String) {
+        files.value = files.value.filterNot { it.conversationId == conversationId }
     }
 }

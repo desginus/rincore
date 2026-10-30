@@ -102,10 +102,19 @@ jobs:
 
       # ★ 单次 Gradle 调用：编译门禁 → 单元测试 → 打包（增量复用，失败立即中止）
       #   --console=plain 让 `e:` 行直接出现在日志，便于外部脚本秒抓错误
+      #
+      # v5.3.10 ★★★关键修正：此前这里**只编译不测试** app 模块 ——
+      #   `:app:compileResearchKotlin` 只编译 main 源码，`app/src/test` 下 681 个
+      #   @Test 从未被执行（`:ai:compileDebugUnitTestKotlin` 也只是"编译测试"）。
+      #   后果：测试代码与生产代码长期脱节（如 FakeMemoryDAO 早在 v5.3.7 统一记忆后
+      #   就编译不过：构造签名从单参变双参、MemoryFileDAO 多了 7 个方法），却无人发现；
+      #   所有运行期 bug 只能等用户装上手机才暴露。
+      #   现在加入 `:app:testResearchUnitTest`，让测试成为发版门禁的一部分。
       - name: Build (compile → test → assemble)
         run: |
           ./gradlew \
             :app:compileResearchKotlin \
+            :app:testResearchUnitTest \
             :ai:compileDebugUnitTestKotlin \
             :markdown:test \
             assembleResearch \
