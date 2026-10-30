@@ -64,6 +64,7 @@ import org.koin.android.ext.android.get
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.androidx.workmanager.koin.workManagerFactory
+import coil3.request.crossfade
 import org.koin.core.context.startKoin
 
 private const val TAG = "RikkaHubApp"
