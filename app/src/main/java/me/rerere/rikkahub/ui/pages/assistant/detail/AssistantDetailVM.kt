@@ -279,41 +279,39 @@ class AssistantDetailVM(
 
     fun addMemory(memory: AssistantMemory) {
         viewModelScope.launch {
-            val memoryAssistantId = if (assistant.value.useGlobalMemory) {
-                MemoryRepository.GLOBAL_MEMORY_ID
-            } else {
-                assistantId.toString()
-            }
-            memoryRepository.addMemory(
-                assistantId = memoryAssistantId,
-                content = memory.content,
-                // v4.8.92: 单对话记忆 —— 在「单对话记忆」视图创建时带归属对话；
-                // 助手级记忆记录来源对话（UI 小标签）。
-                conversationId = memory.conversationId,
-                sourceConversationId = memory.conversationId ?: memory.sourceConversationId,
-                // v5.1.14 ★统一写入：新建记忆此前**不传 folderId** → 在「项目包记忆」档
-                // 新建的条目落成助手级，用户看到"新建了但不在这个包里"。
+            // v5.3.7 ★统一记忆：新建一条记忆 = 在唯一存储表写一条（source=active）
+            val memoryId = memoryIdOf(assistant.value)
+            val content = memory.content.ifBlank { return@launch }
+            val path = memory.path?.takeIf { it.isNotBlank() }
+                ?: me.rerere.rikkahub.data.model.pathFromContent(content)
+            memoryRepository.writeFile(
+                assistantId = memoryId,
+                path = path,
+                content = content,
+                ifVersion = if (memory.path == null) MemoryRepository.NEW_FILE_VERSION else null,
+                source = "active",
                 folderId = memory.folderId,
+                conversationId = memory.conversationId,
             )
         }
     }
 
     fun updateMemory(memory: AssistantMemory) {
         viewModelScope.launch {
-            // v5.1.13 ★真 bug 修复：旧实现只写 content，归属（项目包/单对话）变更被静默丢弃
-            // → 用户"设置到项目包"看起来成功，退出重进还原（或按旧归属显示而像消失）。
-            memoryRepository.updateContent(id = memory.id, content = memory.content)
-            memoryRepository.updateScope(
-                id = memory.id,
-                folderId = memory.folderId,
-                conversationId = memory.conversationId,
-            )
+            // v5.3.7 ★统一记忆：正文与归属都写在同一张表（path 定位）
+            val memoryId = memoryIdOf(assistant.value)
+            val path = memory.path ?: return@launch
+            memoryRepository.writeFile(memoryId, path, memory.content)
+            memoryRepository.updateScope(memoryId, path, memory.folderId, memory.conversationId)
         }
     }
 
     fun deleteMemory(memory: AssistantMemory) {
         viewModelScope.launch {
-            memoryRepository.deleteMemory(id = memory.id)
+            // v5.3.7 ★统一记忆：软删（失效标记，留痕可审计）
+            val memoryId = memoryIdOf(assistant.value)
+            val path = memory.path ?: return@launch
+            memoryRepository.invalidateFile(memoryId, path)
         }
     }
 

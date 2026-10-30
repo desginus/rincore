@@ -502,57 +502,36 @@ class GenerationHandler(
                         } else {
                             assistant.id.toString()
                         }
+                        // v5.3.7 ★★统一记忆（用户定案：「记忆只有一个存储类别，模型通过这一个类别
+                        // 读取、写入；内部两个小类=主动/做梦，每个小类三个 tag=助手级/项目包级/单对话级」）：
+                        // 旧的 `memory_tool`（条目式，写 memoryentity 表）**已彻底移除** ——
+                        // 改用统一记忆表的文件式工具（memory_read/write/str_replace/append/delete/list），
+                        // 它们读写的 `memory_file` 就是注入链和记忆页读的**同一张表**（此前写 A 读 B）。
+                        // 新建记忆的归属由 assistant.memoryWriteScope 锚定（0=助手级/1=项目包/2=本对话）。
+                        val convId = conversationId?.toString()
+                        val writeScope = when {
+                            assistant.memoryWriteScope != 0 -> assistant.memoryWriteScope
+                            assistant.conversationScopedMemory -> 2
+                            else -> 0
+                        }
+                        val folderIdOfConv = conversationId?.let { cid ->
+                            runCatching {
+                                conversationRepository?.getConversationById(cid)?.folderId?.toString()
+                            }.getOrNull()
+                        }
                         buildMemoryTools(
-                            json = json,
-                            onCreation = { content ->
-                                // v4.8.92: 单对话记忆模式开启时新记忆只挂载到当前对话；
-                                // 未开启则挂到助手，并记录来源对话（UI 小标签）。
-                                // v5.0.54 用户定案：**新建记忆归属**由 assistant.memoryWriteScope 锚定 —
-                                // 0=助手级（folderId/conversationId 都留空，全助手可见）
-                                // 1=项目包内（写 folderId，仅该包可见）2=当前对话（写 conversationId，仅该对话可见）
-                                // 兼容旧开关 conversationScopedMemory（true 等价 2）。
-                                val convId = conversationId?.toString()
-                                val writeScope = when {
-                                    assistant.memoryWriteScope != 0 -> assistant.memoryWriteScope
-                                    assistant.conversationScopedMemory -> 2
-                                    else -> 0
-                                }
-                                val folderIdOfConv = conversationId?.let { cid ->
-                                    runCatching {
-                                        conversationRepository?.getConversationById(cid)?.folderId?.toString()
-                                    }.getOrNull()
-                                }
-                                memoryRepo.addMemory(
-                                    assistantId = memoryAssistantId,
-                                    content = content,
-                                    conversationId = convId.takeIf { writeScope == 2 },
-                                    sourceConversationId = convId,
-                                    folderId = folderIdOfConv.takeIf { writeScope == 1 },
-                                )
-                            },
-                            onUpdate = { id, content ->
-                                // v4.8.92: 守卫 —— 其它对话的单对话记忆不可被模型修改
-                                memoryRepo.updateContentChecked(
-                                    id = id,
-                                    content = content,
-                                    allowedAssistantId = memoryAssistantId,
-                                    currentConversationId = conversationId?.toString(),
-                                )
-                            },
-                            onDelete = { id ->
-                                memoryRepo.deleteMemoryChecked(
-                                    id = id,
-                                    allowedAssistantId = memoryAssistantId,
-                                    currentConversationId = conversationId?.toString(),
-                                )
-                            }
+                            repository = memoryRepo,
+                            assistantId = memoryAssistantId,
+                            source = "active",
+                            folderId = folderIdOfConv.takeIf { writeScope == 1 },
+                            conversationId = convId.takeIf { writeScope == 2 },
                         ).let(this::addAll)
                     }
                     // v3.11.24: 任务清单工具 — 始终注入 (框架工具, 静态, 零 DB;
                     // 清单存 tool output 随会话消息持久化 — Cherry 任务功能移植)
                     add(createTaskTool(conversationId?.toString() ?: "global"))  // v4.8.134 (A2): 清单按对话隔离
                     // 其他框架工具 (search/conversation/workspace) — 始终注入
-                    addAll(frameworkTools.filter { it.name != "memory_tool" })
+                    addAll(frameworkTools.filter { it.name !in MEMORY_TOOL_NAMES_ALL })
                     // invoke_tools 元工具 — 操作 allDomainTools (含MCP), 模型按需加载
                     add(toolRouter.createInvokeToolsTool(allDomainTools, loadedDomains, toolPoolProvider))
                     // 已加载域的工具 (含MCP工具, 通过分类归入域) — 分层注入是底层逻辑,
@@ -581,7 +560,7 @@ class GenerationHandler(
                     // 新域追加尾部, 已加载前缀不变 → 缓存前缀在追加点前保持。
                     .also { built ->
                         val approved = topLevelSet +
-                            setOf("memory_tool", "invoke_tools") + loadedDomainToolNames
+                            setOf("invoke_tools") + MEMORY_TOOL_NAMES_ALL + loadedDomainToolNames
                         val leaked = built.filter { it.name !in approved }
                         if (leaked.isNotEmpty()) {
                             Log.i(TAG, "意外顶层注入 (不在批准集合): ${leaked.map { it.name }}")
@@ -589,7 +568,7 @@ class GenerationHandler(
                     }
                     .filter {
                         it.name in topLevelSet ||
-                            it.name == "memory_tool" || it.name == "invoke_tools" ||
+                            it.name in MEMORY_TOOL_NAMES_ALL || it.name == "invoke_tools" ||
                             // 已加载工具区的工具放行 — 完整 schema 注入请求 (喂到嘴边)
                             it.name in loadedDomainToolNames
                     }
@@ -610,50 +589,29 @@ class GenerationHandler(
                         } else {
                             assistant.id.toString()
                         }
+                        // v5.3.7 ★★统一记忆（用户定案：「记忆只有一个存储类别，模型通过这一个类别
+                        // 读取、写入；内部两个小类=主动/做梦，每个小类三个 tag=助手级/项目包级/单对话级」）：
+                        // 旧的 `memory_tool`（条目式，写 memoryentity 表）**已彻底移除** ——
+                        // 改用统一记忆表的文件式工具（memory_read/write/str_replace/append/delete/list），
+                        // 它们读写的 `memory_file` 就是注入链和记忆页读的**同一张表**（此前写 A 读 B）。
+                        // 新建记忆的归属由 assistant.memoryWriteScope 锚定（0=助手级/1=项目包/2=本对话）。
+                        val convId = conversationId?.toString()
+                        val writeScope = when {
+                            assistant.memoryWriteScope != 0 -> assistant.memoryWriteScope
+                            assistant.conversationScopedMemory -> 2
+                            else -> 0
+                        }
+                        val folderIdOfConv = conversationId?.let { cid ->
+                            runCatching {
+                                conversationRepository?.getConversationById(cid)?.folderId?.toString()
+                            }.getOrNull()
+                        }
                         buildMemoryTools(
-                            json = json,
-                            onCreation = { content ->
-                                // v4.8.92: 单对话记忆模式开启时新记忆只挂载到当前对话；
-                                // 未开启则挂到助手，并记录来源对话（UI 小标签）。
-                                // v5.0.54 用户定案：**新建记忆归属**由 assistant.memoryWriteScope 锚定 —
-                                // 0=助手级（folderId/conversationId 都留空，全助手可见）
-                                // 1=项目包内（写 folderId，仅该包可见）2=当前对话（写 conversationId，仅该对话可见）
-                                // 兼容旧开关 conversationScopedMemory（true 等价 2）。
-                                val convId = conversationId?.toString()
-                                val writeScope = when {
-                                    assistant.memoryWriteScope != 0 -> assistant.memoryWriteScope
-                                    assistant.conversationScopedMemory -> 2
-                                    else -> 0
-                                }
-                                val folderIdOfConv = conversationId?.let { cid ->
-                                    runCatching {
-                                        conversationRepository?.getConversationById(cid)?.folderId?.toString()
-                                    }.getOrNull()
-                                }
-                                memoryRepo.addMemory(
-                                    assistantId = memoryAssistantId,
-                                    content = content,
-                                    conversationId = convId.takeIf { writeScope == 2 },
-                                    sourceConversationId = convId,
-                                    folderId = folderIdOfConv.takeIf { writeScope == 1 },
-                                )
-                            },
-                            onUpdate = { id, content ->
-                                // v4.8.92: 守卫 —— 其它对话的单对话记忆不可被模型修改
-                                memoryRepo.updateContentChecked(
-                                    id = id,
-                                    content = content,
-                                    allowedAssistantId = memoryAssistantId,
-                                    currentConversationId = conversationId?.toString(),
-                                )
-                            },
-                            onDelete = { id ->
-                                memoryRepo.deleteMemoryChecked(
-                                    id = id,
-                                    allowedAssistantId = memoryAssistantId,
-                                    currentConversationId = conversationId?.toString(),
-                                )
-                            }
+                            repository = memoryRepo,
+                            assistantId = memoryAssistantId,
+                            source = "active",
+                            folderId = folderIdOfConv.takeIf { writeScope == 1 },
+                            conversationId = convId.takeIf { writeScope == 2 },
                         ).let(this::addAll)
                     }
                     addAll(tools)
@@ -2466,3 +2424,17 @@ private fun mergeAdjacentTextParts(messages: List<UIMessage>): List<UIMessage> {
         messages.dropLast(1) + last.copy(parts = merged)
     } else messages
 }
+
+/**
+ * v5.3.7：记忆工具名全集 —— 用于「框架工具里若也带了记忆工具，就不要再重复注入」。
+ * 旧条目式 `memory_tool` 已从注入链移除，保留在集合里只为过滤历史配置残留。
+ */
+private val MEMORY_TOOL_NAMES_ALL: Set<String> = setOf(
+    "memory_tool",
+    me.rerere.rikkahub.data.ai.tools.MemoryToolNames.READ,
+    me.rerere.rikkahub.data.ai.tools.MemoryToolNames.WRITE,
+    me.rerere.rikkahub.data.ai.tools.MemoryToolNames.STR_REPLACE,
+    me.rerere.rikkahub.data.ai.tools.MemoryToolNames.APPEND,
+    me.rerere.rikkahub.data.ai.tools.MemoryToolNames.DELETE,
+    me.rerere.rikkahub.data.ai.tools.MemoryToolNames.LIST,
+)

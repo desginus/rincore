@@ -189,7 +189,16 @@ class MemoryConsolidator(
         val providerSetting = model.findProvider(settings.providers) ?: error("Provider not found")
         // 自动整理只增改；删文件只在用户手动要求清理整个记忆库时才允许。
         // v5.0.82：范围不是"整个助手"时禁用 DELETE 工具 —— 范围内清理不该有权触碰范围外的记忆文件。
-        val tools = buildMemoryTools(memoryRepository, memoryId)
+        // v5.3.7 ★统一记忆：做梦整理产物直接写进**唯一记忆表**（memory_file），
+        // source 标记为 dream —— 不再需要事后再「同步成条目式副本」（那正是过去
+        // 「同一主题在助手层/包层/对话层各留一份、旧的永不删」的重复来源）。
+        val tools = buildMemoryTools(
+            repository = memoryRepository,
+            assistantId = memoryId,
+            source = "dream",
+            folderId = effectiveFolderForScope?.toString(),
+            conversationId = if (effectiveScope == 2) batches.firstOrNull()?.conversation?.id?.toString() else null,
+        )
             .filter { (fullReview && effectiveScope == 0) || it.name != MemoryToolNames.DELETE } +
             createMemoryConversationTools(conversationRepo, assistantIds, allowedConversationIds = scopeConversationIds)
         val systemPrompt = buildMemoryConsolidationPrompt(fullReview, effectiveScope)

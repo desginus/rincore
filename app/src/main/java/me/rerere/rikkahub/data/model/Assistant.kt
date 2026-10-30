@@ -108,6 +108,9 @@ data class AssistantMemory(
     val folderId: String? = null,
     // v5.0.26: 来源（manual=模型主动写入 / user=用户添加 / dream=做梦整理）
     val source: String = "manual",
+    // v5.3.7 ★统一记忆：该条记忆在唯一存储表（memory_file）里的键。
+    // 非空 = 真实存在的一条记忆，增删改一律按 path 定位（id 只是 UI 用的稳定 key）。
+    val path: String? = null,
 )
 
 @Serializable

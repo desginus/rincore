@@ -12,7 +12,24 @@ data class MemoryFile(
     val path: String,
     val content: String,
     val updatedAt: Long,
-) {
+    // v5.3.7 ★统一记忆模型：来源与归属（此前只在另一张条目表里有，导致模型写的记忆
+    // 无法按「主动/做梦 × 助手级/项目包级/单对话级」二维检索）
+    val source: String = "active",
+    val folderId: String? = null,
+    val conversationId: String? = null,
+    val invalidatedAt: Long? = null,
+)  {
+    /** 是否做梦整理产物 */
+    val isDream: Boolean get() = source == "dream"
+
+    /** 归属层级：对话级 > 项目包级 > 助手级（三 tag） */
+    val layer: MemoryLayer
+        get() = when {
+            !conversationId.isNullOrBlank() -> MemoryLayer.CONVERSATION
+            !folderId.isNullOrBlank() -> MemoryLayer.FOLDER
+            else -> MemoryLayer.ASSISTANT
+        }
+
     val version: String by lazy { memoryVersionOf(content) }
 
     private val frontmatter by lazy { SkillFrontmatterParser.parse(content) }
@@ -108,3 +125,43 @@ private fun memoryVersionOf(content: String): String =
         .digest(content.toByteArray())
         .joinToString("") { "%02x".format(it) }
         .take(12)
+
+/**
+ * v5.3.7：记忆归属层级（用户定案的三个 tag）。
+ * 与 [me.rerere.rikkahub.data.model.MemoryFile.layer] 一一对应。
+ */
+enum class MemoryLayer { ASSISTANT, FOLDER, CONVERSATION }
+
+/**
+ * v5.3.7：把**统一记忆**（[MemoryFile]，唯一存储表 memory_file）适配成注入 prompt
+ * 使用的旧模型 [me.rerere.rikkahub.data.model.AssistantMemory]。
+ *
+ * 存储与判据都已统一，这里只是让生成链的既有 `buildMemoryPrompt(List<AssistantMemory>)`
+ * 无需连锁改动 —— 数据来自同一张表，不存在第二份真相。
+ */
+fun MemoryFile.toAssistantMemory(): AssistantMemory = AssistantMemory(
+    id = path.hashCode().toLong(),
+    content = displayBody.ifBlank { content },
+    conversationId = conversationId,
+    folderId = folderId,
+    source = source,
+    path = path,
+)
+
+/** v5.3.7：由正文首行生成一个可读的记忆路径（UI 新建记忆时用）。 */
+fun pathFromContent(content: String, fallbackId: Long = 0L): String {
+    val firstLine = content.lineSequence()
+        .map { it.trim() }
+        .firstOrNull { it.isNotEmpty() }
+        .orEmpty()
+        .removePrefix("#")
+        .removePrefix("【")
+        .removeSuffix("】")
+        .trim()
+    val cleaned = firstLine
+        .replace(Regex("""[\\/:*?"<>|\r\n\t]"""), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+        .take(40)
+    return if (cleaned.isBlank()) "memory_$fallbackId.md" else "$cleaned.md"
+}

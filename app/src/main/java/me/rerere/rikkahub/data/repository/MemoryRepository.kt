@@ -50,24 +50,48 @@ class MemoryRepository(
     // 读取、校验版本、写入必须一起完成，否则两个写入方会互相覆盖
     private val writeLock = Mutex()
 
+    // v5.3.7 ★统一记忆：过滤软删（invalidated_at 非空的条目不再展示/注入）
     fun getFilesFlow(assistantId: String): Flow<List<MemoryFile>> =
-        memoryFileDAO.getFilesOfAssistantFlow(assistantId).map { entities -> entities.map { it.toMemoryFile() } }
+        memoryFileDAO.getFilesOfAssistantFlow(assistantId).map { entities ->
+            entities.filter { it.invalidatedAt == null || it.invalidatedAt == 0L }.map { it.toMemoryFile() }
+        }
 
     suspend fun getFiles(assistantId: String): List<MemoryFile> =
-        memoryFileDAO.getFilesOfAssistant(assistantId).map { it.toMemoryFile() }
+        memoryFileDAO.getFilesOfAssistant(assistantId)
+            .filter { it.invalidatedAt == null || it.invalidatedAt == 0L }
+            .map { it.toMemoryFile() }
 
     suspend fun getFile(assistantId: String, path: String): MemoryFile? {
         val normalized = MemoryFile.normalizePath(path) ?: return null
         return memoryFileDAO.getFile(assistantId, normalized)?.toMemoryFile()
     }
 
-    /** 新建或整体覆盖 */
+    /**
+     * 新建或整体覆盖。
+     *
+     * v5.3.7 ★统一记忆：写入时同时确定这条记忆的两个维度 ——
+     *  - [source]：`active`=主动写入 / `dream`=做梦整理（用户定案的两个小类）
+     *  - [folderId] / [conversationId]：归属（三者互斥；都为空=助手级）
+     * 已存在的文件**保留原归属**（除非显式传了非空值），避免模型追加内容时把
+     * 一条项目包级记忆意外降级成助手级。
+     */
     suspend fun writeFile(
         assistantId: String,
         path: String,
         content: String,
         ifVersion: String? = null,
-    ): MemoryWriteResult = update(assistantId, path, ifVersion, allowCreate = true) { Edit.Content(content) }
+        source: String = "active",
+        folderId: String? = null,
+        conversationId: String? = null,
+    ): MemoryWriteResult = update(
+        assistantId = assistantId,
+        path = path,
+        ifVersion = ifVersion,
+        allowCreate = true,
+        source = source,
+        folderId = folderId,
+        conversationId = conversationId,
+    ) { Edit.Content(content) }
 
     /** 把唯一匹配的 [oldStr] 换成 [newStr]，[newStr] 为空即删除 */
     suspend fun replaceInFile(
@@ -112,6 +136,73 @@ class MemoryRepository(
         MemoryWriteResult.Success(null)
     }
 
+    // ═══════════ 一·B、统一记忆门面（v5.3.7）═══════════
+    //
+    // 用户定案的唯一模型：**记忆只有一个存储类别**，两个来源小类（主动 / 做梦）
+    // × 三个归属 tag（助手级 / 项目包级 / 单对话级）。UI 与模型注入都只调这里，
+    // 不再有任何"文件式 / 条目式"的第二套语义。
+
+    /** 改归属（三 tag）。folderId 与 conversationId **互斥**：传了对话就清包，反之亦然。 */
+    suspend fun updateScope(
+        memoryId: String,
+        path: String,
+        folderId: String?,
+        conversationId: String?,
+    ): Boolean = writeLock.withLock {
+        val normalized = MemoryFile.normalizePath(path) ?: return@withLock false
+        val existing = memoryFileDAO.getFile(memoryId, normalized) ?: return@withLock false
+        val fid = folderId?.takeIf { it.isNotBlank() }
+        val cid = conversationId?.takeIf { it.isNotBlank() }
+        val finalCid = cid
+        val finalFid = if (finalCid != null) null else fid
+        memoryFileDAO.updateScope(memoryId, normalized, finalFid, finalCid, System.currentTimeMillis())
+        existing.path.isNotEmpty()
+    }
+
+    /** 改来源（主动 / 做梦）。 */
+    suspend fun updateSource(memoryId: String, path: String, source: String): Boolean =
+        writeLock.withLock {
+            val normalized = MemoryFile.normalizePath(path) ?: return@withLock false
+            memoryFileDAO.updateSource(memoryId, normalized, source, System.currentTimeMillis())
+            true
+        }
+
+    /** 软删（失效标记）：不再注入、不再展示，但留痕。 */
+    suspend fun invalidateFile(memoryId: String, path: String, invalidated: Boolean = true): Boolean =
+        writeLock.withLock {
+            val normalized = MemoryFile.normalizePath(path) ?: return@withLock false
+            memoryFileDAO.invalidate(memoryId, normalized, if (invalidated) System.currentTimeMillis() else null)
+            true
+        }
+
+    /**
+     * **注入判据（唯一实现）** —— 一条记忆在给定对话里是否应进入模型上下文。
+     *
+     *  - 助手级：任何对话都可见
+     *  - 项目包级：当前对话属于该项目包时可见
+     *  - 单对话级：仅本对话，或同项目包内其它对话（包内互通）可见
+     */
+    fun visibleForInjection(
+        memory: MemoryFile,
+        folderId: String?,
+        conversationId: String?,
+        siblingConversationIds: Collection<String> = emptyList(),
+    ): Boolean = when (memory.layer) {
+        MemoryLayer.ASSISTANT -> true
+        MemoryLayer.FOLDER -> folderId != null && memory.folderId == folderId
+        MemoryLayer.CONVERSATION ->
+            memory.conversationId == conversationId || memory.conversationId in siblingConversationIds
+    }
+
+    /** 注入用：一次查出该上下文可见的全部记忆（已经是唯一存储，无需跨表拼装）。 */
+    suspend fun memoriesForInjection(
+        memoryId: String,
+        folderId: String?,
+        conversationId: String?,
+        siblingConversationIds: Collection<String> = emptyList(),
+    ): List<MemoryFile> = getFiles(memoryId)
+        .filter { visibleForInjection(it, folderId, conversationId, siblingConversationIds) }
+
     suspend fun deleteFilesOfAssistant(assistantId: String) {
         memoryFileDAO.deleteFilesOfAssistant(assistantId)
     }
@@ -132,6 +223,9 @@ class MemoryRepository(
         path: String,
         ifVersion: String?,
         allowCreate: Boolean = false,
+        source: String = "active",
+        folderId: String? = null,
+        conversationId: String? = null,
         edit: (current: String) -> Edit,
     ): MemoryWriteResult = writeLock.withLock {
         val normalized = MemoryFile.normalizePath(path) ?: return invalidPath(path)
@@ -153,11 +247,24 @@ class MemoryRepository(
                     "Merge duplicates and drop outdated details instead of adding more."
             )
         }
+        // v5.3.7：归属与来源 —— 已存在的条目保留原值（追加内容不改归属），新条目采用入参
+        val existing = current
+        val finalConversationId = existing?.conversationId ?: conversationId?.takeIf { it.isNotBlank() }
+        val finalFolderId = if (finalConversationId != null) {
+            null
+        } else {
+            existing?.folderId ?: folderId?.takeIf { it.isNotBlank() }
+        }
+        val finalSource = existing?.source ?: source
         val entity = MemoryFileEntity(
             assistantId = assistantId,
             path = normalized,
             content = content,
             updatedAt = System.currentTimeMillis(),
+            source = finalSource,
+            folderId = finalFolderId,
+            conversationId = finalConversationId,
+            invalidatedAt = existing?.invalidatedAt,
         )
         memoryFileDAO.upsertFile(entity)
         MemoryWriteResult.Success(entity.toMemoryFile())
@@ -490,7 +597,15 @@ class MemoryRepository(
 val Assistant.memoryId: String
     get() = if (useGlobalMemory) MemoryRepository.GLOBAL_MEMORY_ID else id.toString()
 
-private fun MemoryFileEntity.toMemoryFile() = MemoryFile(path = path, content = content, updatedAt = updatedAt)
+private fun MemoryFileEntity.toMemoryFile() = MemoryFile(
+    path = path,
+    content = content,
+    updatedAt = updatedAt,
+    source = source,
+    folderId = folderId,
+    conversationId = conversationId,
+    invalidatedAt = invalidatedAt,
+)
 
 private fun String.replaceAt(index: Int, length: Int, replacement: String): String =
     substring(0, index) + replacement + substring(index + length)

@@ -113,7 +113,7 @@ private enum class MemoryScope { ASSISTANT, FOLDER, CONVERSATION }
  * **全库没有任何调用点 = 死代码** → 模型写的记忆在 UI 上完全不可见。
  * 这里新增 FILES 档专门浏览/搜索文件式记忆库（模型创建的记忆就在这）。
  */
-private enum class MemoryCategory { ACTIVE, DREAM, FILES }
+private enum class MemoryCategory { ACTIVE, DREAM }
 
 /** 大卡：半屏宽、方块圆角、选中态高亮 */
 @Composable
@@ -293,12 +293,6 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                         onClick = { memoryCategory = MemoryCategory.DREAM },
                         label = { Text("做梦整理") },
                     )
-                    // v5.3.4：模型用 memory_write 创建的记忆落在这里（此前完全不可见）
-                    FilterChip(
-                        selected = memoryCategory == MemoryCategory.FILES,
-                        onClick = { memoryCategory = MemoryCategory.FILES },
-                        label = { Text("文件库") },
-                    )
                 }
 
                 // v5.0.67 ★用户定案的二维语义（来源 × 存储）：
@@ -310,11 +304,7 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                 // 两个维度**叉乘**，任何组合都能查到对应内容。
                 // v5.1.14 ★统一判据（唯一实现 = MemoryVisibility）：
                 // 来源档位、存储层、管理页可见性全部从这里取，UI 不再各写一份。
-                val matchSource: (me.rerere.rikkahub.data.model.AssistantMemory) -> Boolean = { m ->
-                    me.rerere.rikkahub.data.repository.MemoryVisibility.matchesSource(
-                        m, dream = memoryCategory == MemoryCategory.DREAM,
-                    )
-                }
+                // v5.3.7：来源判据已并入统一记忆的 2×3 过滤（不再需要 matchSource lambda）
                 val folderConvIds by vm.folderConversationIds.collectAsStateWithLifecycle()
                 // v5.0.87 ★可见性统一（用户定案："只要模型能看到，我这里也得看到"）：
                 // 旧实现三档各只显示**单一存储层**（助手档只列助手级、包档只列 folder 层），
@@ -333,25 +323,33 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                 //   助手记忆   = 助手级 + 全部项目包层（全集，保证任何一条都能被管理）
                 //   项目包记忆 = 只显示项目包层
                 //   单对话记忆 = 助手/包层清空，只显示下方按对话分组的对话层
-                val scopedMemories = when (memoryScope) {
-                    MemoryScope.ASSISTANT -> assistantMemories + folderMemories
-                    MemoryScope.FOLDER -> folderMemories
-                    MemoryScope.CONVERSATION -> emptyList()
+                // v5.3.7 ★★统一记忆（用户定案）：「记忆只有一个存储类别，那就是记忆。模型通过
+                // 这一个类别读取、写入。这一个类别里面分为两个小类，一个是主动的，一个是做梦的。
+                // 然后每个小类里面还有三个不同的 tag，分别是助手级的、项目包级的和单对话级的。」
+                //
+                // 因此管理页不再是「三档各拼一条存储层」，而是对**同一张记忆表**做 2×3 分流：
+                //   来源档（主动/做梦） × 归属 tag（助手级/项目包级/单对话级）
+                // 数据与模型注入完全同源（vm.memories = memory_file），不存在"用户看不到但模型看得到"。
+                val scopedFiles = memories.filter { m ->
+                    val sourceOk = if (memoryCategory == MemoryCategory.DREAM) m.isDream else !m.isDream
+                    val layerOk = when (memoryScope) {
+                        MemoryScope.ASSISTANT -> m.layer == me.rerere.rikkahub.data.model.MemoryLayer.ASSISTANT
+                        MemoryScope.FOLDER -> m.layer == me.rerere.rikkahub.data.model.MemoryLayer.FOLDER
+                        MemoryScope.CONVERSATION -> m.layer == me.rerere.rikkahub.data.model.MemoryLayer.CONVERSATION
+                    }
+                    sourceOk && layerOk
                 }
-                    .filter { me.rerere.rikkahub.data.repository.MemoryVisibility.visibleForManagement(it) }
-                    .filter(matchSource)
-                    .distinctBy { it.id }
-                val scopedConversationMemories = when (memoryScope) {
-                    MemoryScope.ASSISTANT -> conversationMemories.filter(matchSource)
-                    MemoryScope.FOLDER -> conversationMemories
-                        .filter { it.conversationId != null && it.conversationId in folderConvIds }
-                        .filter(matchSource)
-                    // 单对话档：没有对话上下文（从助手设置进入）时显示该助手全部对话层，
-                    // 否则只显示当前这条对话 —— 两种情况下都不再按 mount 层级隐藏。
-                    MemoryScope.CONVERSATION -> conversationMemories
-                        .filter { conversationId == null || it.conversationId == conversationId }
-                        .filter(matchSource)
-                }.distinctBy { it.id }
+                // 助手级/项目包级走平铺列表；单对话级走按对话分组的列表（保持既有 UI 结构）
+                val scopedMemories = if (memoryScope == MemoryScope.CONVERSATION) {
+                    emptyList()
+                } else {
+                    scopedFiles.map { it.toAssistantMemory() }.distinctBy { it.id }
+                }
+                val scopedConversationMemories = if (memoryScope == MemoryScope.CONVERSATION) {
+                    scopedFiles.map { it.toAssistantMemory() }.distinctBy { it.id }
+                } else {
+                    emptyList()
+                }
                 // v5.0.81 ★做梦状态卡（用户："点击做梦之后会在上面有提示、抽屉页也会出现提示，
                 // 你这个和其他的没对上"）—— 复用与设置 tab「立即整理」**同一个组件**，
                 // 状态/转圈/最近一次结果完全一致；onOrganize 分流：带对话 id = 主动做梦
@@ -368,17 +366,7 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                         },
                     )
                 }
-                if (memoryCategory == MemoryCategory.FILES) {
-                    // v5.3.4：文件式记忆库（模型 memory_write/memory_append 的产物）
-                    MemoryFilesTab(
-                        memories = memories,
-                        memoryId = vm.memoryId,
-                        consolidation = null,
-                        onOrganizeMemory = {},
-                        onOpenMemory = { path -> navController.navigate(Screen.MemoryFile(vm.memoryId, path)) },
-                        onDeleteMemory = { vm.deleteMemory(it) },
-                    )
-                } else {
+                run {
                     MemoryMemoriesTab(
                         memories = scopedMemories,
                         conversationMemories = scopedConversationMemories,

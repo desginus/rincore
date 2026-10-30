@@ -956,63 +956,34 @@ class ChatService(
                         else pool.filter { tool -> invalidNames.none { bad -> tool.name.startsWith("mcp__${bad}__") } }
                     }
                 },
+                // v5.3.7 ★★统一记忆（用户定案：「记忆只有一个存储类别，那就是记忆。模型通过这
+                // 一个类别读取、写入。这一个类别里面分为两个小类，一个是主动的，一个是做梦的。
+                // 然后每个小类里面还有三个不同的 tag，分别是助手级的、项目包级的和单对话级的」）
+                //
+                // 统一前：模型 memory_tool 写 `memoryentity`，文件式工具写 `memory_file`，
+                // 注入读 `memoryentity`，记忆页读两张表拼装 —— 四套口径互相打架，这就是
+                // 「改了这么多遍还没干净」的结构性原因。
+                // 现在：**唯一存储 = memory_file**，来源 source(active/dream) × 归属(助手/包/对话)，
+                // 注入判据唯一实现 = MemoryRepository.visibleForInjection。
                 memories = run {
-                    val base = if (assistant.useGlobalMemory) {
-                        memoryRepository.getGlobalMemories()
-                    } else {
-                        memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
-                    }
-                    // v5.1.13 ★跨助手泄漏修复（用户报"我这边看不到、模型能看到"）：
-                    // 项目包层/对话层查询以前**不带 assistant_id** —— 一条被错误挂到别的
-                    // 助手项目包下的记忆，对方助手记忆页（按 assistant_id 查）看不到，
-                    // 但一旦进入那个包的对话，它就会被注入 = 用户不可见、模型可见。
-                    // 现在三层一律带上当前记忆库作用域（全局桶用 GLOBAL_MEMORY_ID）。
-                    val memoryScopeId = if (assistant.useGlobalMemory) {
+                    val memoryId = if (assistant.useGlobalMemory) {
                         me.rerere.rikkahub.data.repository.MemoryRepository.GLOBAL_MEMORY_ID
                     } else {
                         assistant.id.toString()
                     }
-                    // v5.0.24 三范围：助手级/全局（base） + 项目包 + 单对话
-                    val folderMemories = conversation.folderId?.let { folderId ->
-                        runCatching { memoryRepository.getMemoriesOfFolder(folderId.toString(), memoryScopeId) }
-                            .getOrDefault(emptyList())
-                    } ?: emptyList()
-                    // v5.0.67 ★用户定案的「项目包记忆」真正语义：
-                    // 项目包 = **该对话 + 归属同一项目包的所有对话** 的「仅对话内可见」记忆集合，
-                    // 不是独立的存储层。旧实现只注入 folderId 层（若从未写入就恒为空），
-                    // 同包其他对话的记忆**根本没有被注入** → "包内互通"名不副实。
-                    // v5.1.14 ★统一判据：同包对话 id 集合提前算好，既用于查询也用于可见性判定
+                    val folderId = conversation.folderId?.toString()
+                    // 项目包内互通：同包其它对话的「单对话级」记忆也可见
                     val siblingConversationIds: Set<String> = conversation.folderId?.let { fid ->
                         runCatching {
                             conversationRepo.getConversationIdsOfFolder(fid).map { it.toString() }.toSet()
                         }.getOrDefault(emptySet())
                     } ?: emptySet()
-                    val siblingMemories = if (siblingConversationIds.isEmpty()) emptyList() else runCatching {
-                        memoryRepository.getMemoriesOfConversations(
-                            siblingConversationIds.toList(), memoryScopeId
-                        )
-                    }.getOrDefault(emptyList())
-                    val ownMemories = runCatching {
-                        memoryRepository.getMemoriesOfConversation(conversation.id.toString(), memoryScopeId)
-                    }.getOrDefault(emptyList())
-                    // 同包批量查询已包含本对话的记忆 → distinctBy 去重，避免 prompt 重复
-                    // v5.0.86 ★挂载分离（用户定案）：主动写入与做梦记忆各有自己的挂载层级，
-                    // 1=仅助手级 / 2=项目包内（默认=现状全量） / 3=仅当前对话。
-                    val manualMount = assistant.manualMemoryMount
-                    val dreamMount = assistant.dreamMemoryMount
-                    val ownConversationId = conversation.id.toString()
-                    // v5.1.14 ★统一判据（唯一实现 = MemoryVisibility）：注入链不再自己写一份
-                    // "挂载层级 / 归属层"语义，避免与记忆管理页口径漂移（v5.1.13 同类事故根因）。
-                    (base + folderMemories + siblingMemories + ownMemories).distinctBy { it.id }
-                        .filter { memory ->
-                            me.rerere.rikkahub.data.repository.MemoryVisibility.visibleForInjection(
-                                memory = memory,
-                                folderId = conversation.folderId?.toString(),
-                                conversationId = ownConversationId,
-                                siblingConversationIds = siblingConversationIds,
-                                mountLevel = if (memory.source == "dream") dreamMount else manualMount,
-                            )
-                        }
+                    memoryRepository.memoriesForInjection(
+                        memoryId = memoryId,
+                        folderId = folderId,
+                        conversationId = conversation.id.toString(),
+                        siblingConversationIds = siblingConversationIds,
+                    ).map { it.toAssistantMemory() }
                 },
                 inputTransformers = buildList {
                     addAll(inputTransformers)
@@ -2236,14 +2207,22 @@ class ChatService(
         if (jobs.isEmpty()) return
         // RinCore 自研: 立即停表 (finishReasoning) 不等收尾落盘; join 限 3s 防大对话
         // DB 写入阻塞 UI 响应, 收尾在后台继续。
-        val current = getConversationFlow(conversationId).value
-        val stopped = current.copy(
-            messageNodes = current.messageNodes.map { node ->
-                node.copy(messages = node.messages.map { it.finishReasoning() })
-            },
-            updateAt = Instant.now()
-        )
-        updateConversation(conversationId, stopped)
+        // v5.3.7 ★用户实测「输出的时候按终止键会发生中断」：
+        // 旧实现先读 `getConversationFlow().value` 快照，再造一个新对象整体覆盖 ——
+        // 而生成协程此刻仍在用 `session.apply { }` 追加流式 chunk（原子读改写）。
+        // 「读快照 → 整对象写回」会把快照之后到达的 chunk 全部盖掉 → 用户看到
+        // 已输出的内容被截断/回退（就是"按终止键发生中断"）。
+        // 改为**原子读改写**：在 session 的写锁内基于当前最新状态只改 reasoning 收尾，
+        // 不重建 messageNodes 列表、不覆盖正文。
+        session.apply { current ->
+            current.copy(
+                messageNodes = current.messageNodes.map { node ->
+                    node.copy(messages = node.messages.map { it.finishReasoning() })
+                },
+                updateAt = Instant.now(),
+            )
+        }
+        persistConversationState(conversationId)
         runCatching { withTimeoutOrNull(3_000L) { jobs.forEach { it.join() } } }
         finishInterruptedPendingTools(conversationId)
         // 显式收尾: 取消灵动岛 (不依赖 onCompletion — 取消态可能跳过)

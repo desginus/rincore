@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -121,8 +122,34 @@ internal fun rememberChatAttachmentPickerActions(
         }
     }
 
+    // v5.3.7 ★用户实测「拍照有时提示报错，无法生成文件，-1字节」真根因：
+    // 错误文案是 `file?.length() ?: -1L` —— 显示 **-1** 就代表 cameraOutputFile == null，
+    // 即拍照回来的这一帧里我们**已经不知道刚刚那个文件叫啥了**。
+    // 原因：cameraOutputFile/cameraOutputUri 都是 `remember`（纯内存态），而拍照会拉起
+    // 系统相机这个独立 Activity —— 低内存机型上主进程会被系统回收，返回时重组新实例，
+    // 两个 remember 全部重置为 null → 走 else 分支 → 报 "-1 字节" → 图彻底丢失。
+    // 修：路径用 rememberSaveable 落进 SavedStateHandle（进程重建可恢复），
+    // 回到页面时按路径重建 File / Uri；同时临时文件从 cacheDir 移到 filesDir
+    // （cacheDir 会被系统在低存储时清理，拍照期间被清同样丢图）。
+    var cameraOutputPath by rememberSaveable { mutableStateOf<String?>(null) }
     var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var cameraOutputFile by remember { mutableStateOf<File?>(null) }
+
+    // 进程被系统回收后回来：按保存的路径重建 File 与可分享 Uri（否则拍照结果等于丢失）
+    LaunchedEffect(cameraOutputPath) {
+        val path = cameraOutputPath ?: return@LaunchedEffect
+        if (cameraOutputFile == null) {
+            val restored = File(path)
+            cameraOutputFile = restored
+            cameraOutputUri = runCatching {
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    restored,
+                )
+            }.getOrNull()
+        }
+    }
     val (_, launchCameraCrop) = useCropLauncher(
         onCroppedImageReady = { croppedUri ->
             addLocalImagesAsync(listOf(croppedUri))
@@ -131,6 +158,7 @@ internal fun rememberChatAttachmentPickerActions(
             cameraOutputFile?.delete()
             cameraOutputFile = null
             cameraOutputUri = null
+            cameraOutputPath = null
         }
     )
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captureSuccessful ->
@@ -168,12 +196,17 @@ internal fun rememberChatAttachmentPickerActions(
                 }
             }
         } else {
-            val size = file?.length() ?: -1L
             if (captureSuccessful) {
-                toaster.show(
-                    "拍照失败：没有生成有效图片文件（$size 字节）",
-                    type = ToastType.Error,
-                )
+                val reason = when {
+                    file == null && cameraOutputPath == null ->
+                        "拍照结果丢失（系统相机期间进程被回收，且没有记录到文件路径）"
+                    file == null ->
+                        "拍照结果丢失（文件路径 $cameraOutputPath 无法重建）"
+                    !file.isFile -> "拍照失败：文件不存在（${file.absolutePath}）"
+                    file.length() <= 0 -> "拍照失败：文件为空（${file.absolutePath}，0 字节）"
+                    else -> "拍照失败：未知原因"
+                }
+                toaster.show(reason, type = ToastType.Error)
             }
             runCatching { file?.delete() }
             cameraOutputFile = null
@@ -182,11 +215,19 @@ internal fun rememberChatAttachmentPickerActions(
     }
     val onTakePicture: () -> Unit = {
         if (cameraPermission.allRequiredPermissionsGranted) {
-            cameraOutputFile = context.cacheDir.resolve("camera_${Uuid.random()}.jpg")
-            cameraOutputUri = FileProvider.getUriForFile(
-                context, "${context.packageName}.fileprovider", cameraOutputFile!!
-            )
-            cameraLauncher.launch(cameraOutputUri!!)
+            // v5.3.7：拍照临时文件放 filesDir（cacheDir 会被系统低存储时清理 → 拍照回来文件没了）
+            val photoDir = File(context.filesDir, "camera").apply { mkdirs() }
+            val photo = File(photoDir, "camera_${Uuid.random()}.jpg")
+            cameraOutputFile = photo
+            cameraOutputPath = photo.absolutePath   // ★进程被回收后可恢复
+            cameraOutputUri = runCatching {
+                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photo)
+            }.getOrNull()
+            if (cameraOutputUri == null) {
+                toaster.show("无法创建拍照文件", type = ToastType.Error)
+            } else {
+                cameraLauncher.launch(cameraOutputUri!!)
+            }
         } else {
             cameraPermission.requestPermissions()
         }
