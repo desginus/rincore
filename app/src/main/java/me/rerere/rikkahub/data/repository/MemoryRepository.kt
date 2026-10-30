@@ -19,6 +19,7 @@ import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.MemoryFile
+import me.rerere.rikkahub.data.model.toAssistantMemory
 import me.rerere.rikkahub.data.model.MemoryLayer
 
 sealed interface MemoryWriteResult {
