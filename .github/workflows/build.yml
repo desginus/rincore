@@ -109,12 +109,14 @@ jobs:
       #   后果：测试代码与生产代码长期脱节（如 FakeMemoryDAO 早在 v5.3.7 统一记忆后
       #   就编译不过：构造签名从单参变双参、MemoryFileDAO 多了 7 个方法），却无人发现；
       #   所有运行期 bug 只能等用户装上手机才暴露。
-      #   现在加入 `:app:testResearchUnitTest`，让测试成为发版门禁的一部分。
+      #   现在加入 `:app:testDebugUnitTest`（`research` 是 buildType，AGP 不会为它生成
+      #   unit test 任务；debug 变体与 research 共用同一套 main 源码，测试语义等价），
+      #   让测试成为发版门禁的一部分。
       - name: Build (compile → test → assemble)
         run: |
           ./gradlew \
             :app:compileResearchKotlin \
-            :app:testResearchUnitTest \
+            :app:testDebugUnitTest \
             :ai:compileDebugUnitTestKotlin \
             :markdown:test \
             assembleResearch \
