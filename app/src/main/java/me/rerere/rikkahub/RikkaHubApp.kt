@@ -253,6 +253,39 @@ class RikkaHubApp : Application() {
 
         // Start WebServer if enabled in settings
         startWebServerIfEnabled()
+
+        // v5.3.4 ★用户崩溃报告（版本 5.0.12 / RouteActivity.kt:228）：
+        //   IllegalStateException: The singleton image loader has already been created.
+        //   This indicates that 'setSafe' is being called after the first 'get' call.
+        // 根因：setSingletonImageLoaderFactory 原本写在 RouteActivity.setContent 内部，
+        // **Activity 每次重建**（旋转/深色切换/多实例/返回栈恢复）都会重新执行一次 →
+        // Coil 3 的 SingletonImageLoader.setSafe 在已初始化后再调就抛异常 → 启动崩溃。
+        // 修法：移到 Application（进程级、必然只执行一次），Coil 官方推荐位置；
+        // 用 setSafe（若极早期已被别处初始化也不会崩）。
+        runCatching {
+            val okHttpForCoil = org.koin.core.context.GlobalContext.get().get<okhttp3.OkHttpClient>()
+            coil3.SingletonImageLoader.setSafe { context ->
+                coil3.ImageLoader.Builder(context)
+                    .crossfade(true)
+                    .components {
+                        add(
+                            coil3.network.okhttp.OkHttpNetworkFetcherFactory(
+                                callFactory = { okHttpForCoil },
+                                cacheStrategy = { coil3.network.cachecontrol.CacheControlCacheStrategy() },
+                            )
+                        )
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                            add(coil3.gif.AnimatedImageDecoder.Factory())
+                        } else {
+                            add(coil3.gif.GifDecoder.Factory())
+                        }
+                        add(coil3.svg.SvgDecoder.Factory(scaleToDensity = true))
+                        add(me.rerere.rikkahub.ui.components.richtext.WorkspaceUriKeyer())
+                        add(me.rerere.rikkahub.ui.components.richtext.WorkspaceImageFetcherFactory())
+                    }
+                    .build()
+            }
+        }
         // v4.8.0: 沙箱一体化桥 — 无条件启动 (loopback only, 端口 17526),
         // 供沙箱内进程/脚本 (rin 命令) 回连软件侧能力 (通知/AI/剪贴板/打开/分享).
         // v4.8.1: 挪 IO 后台线程 — token 文件 IO + Ktor 初始化不再阻塞主线程

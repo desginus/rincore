@@ -106,7 +106,14 @@ private enum class MemorySection { MEMORY, SETTINGS }
 private enum class MemoryScope { ASSISTANT, FOLDER, CONVERSATION }
 
 /** v5.0.25：记忆来源（主动写入 / 做梦整理） */
-private enum class MemoryCategory { ACTIVE, DREAM }
+/**
+ * v5.3.4 ★用户实测「模型在对话里创建的新记忆，用户根本没有办法从记忆页浏览和查找」：
+ * 模型用的是**文件式**记忆工具（memory_read/write/str_replace/append/delete/list → MemoryFile 表），
+ * 而记忆页只渲染**条目式**（AssistantMemory）。`MemoryFilesTab` 虽已实现 600+ 行，
+ * **全库没有任何调用点 = 死代码** → 模型写的记忆在 UI 上完全不可见。
+ * 这里新增 FILES 档专门浏览/搜索文件式记忆库（模型创建的记忆就在这）。
+ */
+private enum class MemoryCategory { ACTIVE, DREAM, FILES }
 
 /** 大卡：半屏宽、方块圆角、选中态高亮 */
 @Composable
@@ -286,6 +293,12 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                         onClick = { memoryCategory = MemoryCategory.DREAM },
                         label = { Text("做梦整理") },
                     )
+                    // v5.3.4：模型用 memory_write 创建的记忆落在这里（此前完全不可见）
+                    FilterChip(
+                        selected = memoryCategory == MemoryCategory.FILES,
+                        onClick = { memoryCategory = MemoryCategory.FILES },
+                        label = { Text("文件库") },
+                    )
                 }
 
                 // v5.0.67 ★用户定案的二维语义（来源 × 存储）：
@@ -355,15 +368,26 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                         },
                     )
                 }
-                MemoryMemoriesTab(
-                    memories = scopedMemories,
-                    conversationMemories = scopedConversationMemories,
-                    loadTitle = { vm.conversationTitle(it) },
-                    loadRecentConversations = { vm.recentConversations() },
-                    onAddMemory = { vm.addMemory(it) },
-                    onUpdateMemory = { vm.updateMemory(it) },
-                    onDeleteMemory = { vm.deleteMemory(it) },
-                )
+                if (memoryCategory == MemoryCategory.FILES) {
+                    // v5.3.4：文件式记忆库（模型 memory_write/memory_append 的产物）
+                    MemoryFilesTab(
+                        memories = memories,
+                        consolidation = null,
+                        onOrganizeMemory = {},
+                        onOpenMemory = { path -> navController.navigate(Screen.MemoryFile(vm.memoryId, path)) },
+                        onDeleteMemory = { vm.deleteMemory(it) },
+                    )
+                } else {
+                    MemoryMemoriesTab(
+                        memories = scopedMemories,
+                        conversationMemories = scopedConversationMemories,
+                        loadTitle = { vm.conversationTitle(it) },
+                        loadRecentConversations = { vm.recentConversations() },
+                        onAddMemory = { vm.addMemory(it) },
+                        onUpdateMemory = { vm.updateMemory(it) },
+                        onDeleteMemory = { vm.deleteMemory(it) },
+                    )
+                }
             } else {
                 MemorySettingsTab(
                     assistant = assistant,
@@ -616,7 +640,18 @@ private fun MemoryFilesTab(
     onDeleteMemory: (MemoryFile) -> Unit,
 ) {
     var pendingDeleteMemory by remember { mutableStateOf<MemoryFile?>(null) }
-    val memoryGroups = remember(memories) { memories.groupByDirectory() }
+    // v5.3.4 ★用户「根本没有办法浏览和查找」—— 除接入本 tab 外，这里补**搜索**：
+    // 按 路径 / 正文 / frontmatter description 三处模糊匹配（忽略大小写）
+    var query by remember { mutableStateOf("") }
+    val filteredMemories = remember(memories, query) {
+        if (query.isBlank()) memories
+        else memories.filter { m ->
+            m.path.contains(query, ignoreCase = true) ||
+                m.content.contains(query, ignoreCase = true) ||
+                m.description.contains(query, ignoreCase = true)
+        }
+    }
+    val memoryGroups = remember(filteredMemories) { filteredMemories.groupByDirectory() }
 
     Column(
         modifier = Modifier
@@ -625,6 +660,14 @@ private fun MemoryFilesTab(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // v5.3.4：记忆文件搜索（路径 / 正文 / 描述）
+        TextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = { Text("搜索记忆（路径 / 内容 / 描述）") },
+        )
         if (consolidation != null) {
             MemoryConsolidationSection(
                 status = consolidation,
