@@ -341,14 +341,14 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                 }
                 // 助手级/项目包级走平铺列表；单对话级走按对话分组的列表（保持既有 UI 结构）
                 val scopedMemories = if (memoryScope == MemoryScope.CONVERSATION) {
-                    emptyList()
+                    emptyList<me.rerere.rikkahub.data.model.AssistantMemory>()
                 } else {
                     scopedFiles.map { it.toAssistantMemory() }.distinctBy { it.id }
                 }
                 val scopedConversationMemories = if (memoryScope == MemoryScope.CONVERSATION) {
                     scopedFiles.map { it.toAssistantMemory() }.distinctBy { it.id }
                 } else {
-                    emptyList()
+                    emptyList<me.rerere.rikkahub.data.model.AssistantMemory>()
                 }
                 // v5.0.81 ★做梦状态卡（用户："点击做梦之后会在上面有提示、抽屉页也会出现提示，
                 // 你这个和其他的没对上"）—— 复用与设置 tab「立即整理」**同一个组件**，
