@@ -88,18 +88,34 @@ fun RikkahubTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         DisposableEffect(view, darkTheme) {
-            val window = (view.context as Activity).window
-            val controller = WindowCompat.getInsetsController(window, view)
-            val previousLightStatusBars = controller.isAppearanceLightStatusBars
-            val previousLightNavigationBars = controller.isAppearanceLightNavigationBars
-            controller.apply {
-                isAppearanceLightStatusBars = !darkTheme
-                isAppearanceLightNavigationBars = !darkTheme
-            }
-            onDispose {
-                // 嵌套主题（如终端的深色主题）退出时恢复原有系统栏图标颜色。
-                controller.isAppearanceLightStatusBars = previousLightStatusBars
-                controller.isAppearanceLightNavigationBars = previousLightNavigationBars
+            // v5.3.6 ★用户崩溃报告（5.3.5 / me.rincore.app.hub / Xiaomi / Android 17）：
+            //   java.lang.ClassCastException: me.rerere.rikkahub.RikkaHubApp cannot be cast to android.app.Activity
+            //   at ThemeKt.RikkahubTheme$lambda$3$0(Theme.kt:91)
+            //   ← FloatingX AppHost.moveTo ← FxControlImpl.<init> ← FloatingX.install
+            //   ← FloatingWindow.kt:37
+            // 真根因：这里写的是 `(view.context as Activity).window` 硬转换，而**悬浮窗**
+            // 的 ComposeView 宿主是 FloatingX 的 AppHost，它的 context 是 Application
+            // （FloatingWindow.kt 里 `appHost(context.applicationContext as Application)`），
+            // 不是 Activity → 一渲染悬浮窗内容就崩。
+            // 修：逐层查找真正的 Activity；找不到（悬浮窗/Service/Application 宿主）就
+            // 跳过系统栏颜色处理 —— 这类宿主本来也没有 window 状态栏。
+            val activity = view.context.findActivity()
+            if (activity == null) {
+                onDispose { }
+            } else {
+                val window = activity.window
+                val controller = WindowCompat.getInsetsController(window, view)
+                val previousLightStatusBars = controller.isAppearanceLightStatusBars
+                val previousLightNavigationBars = controller.isAppearanceLightNavigationBars
+                controller.apply {
+                    isAppearanceLightStatusBars = !darkTheme
+                    isAppearanceLightNavigationBars = !darkTheme
+                }
+                onDispose {
+                    // 嵌套主题（如终端的深色主题）退出时恢复原有系统栏图标颜色。
+                    controller.isAppearanceLightStatusBars = previousLightStatusBars
+                    controller.isAppearanceLightNavigationBars = previousLightNavigationBars
+                }
             }
         }
     }
@@ -122,3 +138,19 @@ val MaterialTheme.extendColors
     @Composable
     @ReadOnlyComposable
     get() = LocalExtendColors.current
+
+/**
+ * v5.3.6：从任意 Context 逐层找出真正的 Activity。
+ *
+ * 悬浮窗（FloatingX AppHost）、Service、Application 这类宿主里
+ * `view.context` 不是 Activity，硬转会抛 ClassCastException。
+ * 找不到就返回 null，由调用方跳过与 window 相关的操作。
+ */
+internal fun android.content.Context.findActivity(): Activity? {
+    var ctx: android.content.Context = this
+    while (ctx is android.content.ContextWrapper) {
+        if (ctx is Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
+}
