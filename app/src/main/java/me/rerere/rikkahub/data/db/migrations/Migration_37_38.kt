@@ -72,7 +72,7 @@ val MIGRATION_37_38 = object : Migration(37, 38) {
                         "INSERT OR REPLACE INTO memory_file " +
                             "(assistant_id, path, content, updated_at, source, folder_id, conversation_id, invalidated_at) " +
                             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        arrayOf(assistantId, path, content, updatedAt, unifiedSource, finalFolderId, finalConversationId, invalidatedAt)
+                        arrayOf<Any?>(assistantId, path, content, updatedAt, unifiedSource, finalFolderId, finalConversationId, invalidatedAt)
                     )
                     moved++
                 }
