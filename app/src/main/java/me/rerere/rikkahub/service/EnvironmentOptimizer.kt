@@ -315,7 +315,8 @@ object ConnectionWarmer {
                 val pingCost = android.os.SystemClock.elapsedRealtime() - pingStart
                 // v4.8.98: 心跳成功打点 — 轮首探活据此判断"最近热", 热则零等待放行
                 if (warmOk) markWarm(trimmed)
-                // v5.0.92 熔断判定：慢 ping（>800ms）或失败都记一次；连续 3 次 → 暂停 30 分钟
+                // v5.0.92 熔断判定（v5.1.3 已放宽）：慢 ping（>2500ms）或失败都记一次；
+                // 连续 4 次 → 暂停 10 分钟（移动网冷连 0.8~2.5s 属正常，不应判死）
                 if (warmOk && pingCost <= KEEPALIVE_SLOW_MS) {
                     keepAliveSlowStreak[trimmed] = 0
                 } else {

@@ -286,27 +286,28 @@ class MemoryRepository(
         source = source,
     )
 
-    fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
-        memoryDAO.getMemoriesOfAssistantFlow(assistantId)
-            .map { entities -> entities.map { it.toModel() } }
+    // ═══ v5.3.8 ★★统一记忆收口：以下旧「条目式」API 全部改为 **统一表（memory_file）的
+    //     适配层**，签名不变（Operit 脚本运行时与少量 UI 仍在调用），但读写的不再是
+    //     `memoryentity` —— 结构上不可能再出现第二张记忆表/第二条读写路径。
+    //     AssistantMemory.id 由 path 稳定派生（path 才是唯一真实键）。
 
-    suspend fun getMemoriesOfAssistant(assistantId: String): List<AssistantMemory> {
-        return memoryDAO.getMemoriesOfAssistant(assistantId).map { it.toModel() }
-    }
+    fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
+        getFilesFlow(assistantId).map { list -> list.map { it.toAssistantMemory() } }
+
+    suspend fun getMemoriesOfAssistant(assistantId: String): List<AssistantMemory> =
+        getFiles(assistantId).map { it.toAssistantMemory() }
 
     fun getGlobalMemoriesFlow(): Flow<List<AssistantMemory>> =
-        memoryDAO.getMemoriesOfAssistantFlow(GLOBAL_MEMORY_ID)
-            .map { entities -> entities.map { it.toModel() } }
+        getFilesFlow(GLOBAL_MEMORY_ID).map { list -> list.map { it.toAssistantMemory() } }
 
-    suspend fun getGlobalMemories(): List<AssistantMemory> {
-        return memoryDAO.getMemoriesOfAssistant(GLOBAL_MEMORY_ID).map { it.toModel() }
-    }
+    suspend fun getGlobalMemories(): List<AssistantMemory> =
+        getFiles(GLOBAL_MEMORY_ID).map { it.toAssistantMemory() }
 
     // ── v4.8.92: 单对话记忆 ──
 
     fun getMemoriesOfConversationFlow(conversationId: String): Flow<List<AssistantMemory>> =
-        memoryDAO.getMemoriesOfConversationFlow(conversationId)
-            .map { entities -> entities.map { it.toModel() } }
+        memoryFileDAO.getFilesOfConversationFlow(conversationId)
+            .map { entities -> entities.map { it.toMemoryFile().toAssistantMemory() } }
 
     // v5.0.25: 助手名下全部项目包记忆（UI 分组）
     fun getFolderMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
@@ -450,8 +451,9 @@ class MemoryRepository(
 
     /** 某助手（或全局桶）名下的全部单对话记忆（管理页「单对话记忆」视图用） */
     fun getConversationMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
-        memoryDAO.getConversationMemoriesOfAssistantFlow(assistantId)
-            .map { entities -> entities.map { it.toModel() } }
+        getFilesFlow(assistantId).map { list ->
+            list.filter { it.layer == MemoryLayer.CONVERSATION }.map { it.toAssistantMemory() }
+        }
 
     suspend fun deleteMemoriesOfAssistant(assistantId: String) {
         memoryDAO.deleteMemoriesOfAssistant(assistantId)
@@ -459,7 +461,8 @@ class MemoryRepository(
 
     /** v4.8.92: 对话删除时的级联清理（单对话记忆随对话销毁） */
     suspend fun deleteMemoriesOfConversation(conversationId: String) {
-        memoryDAO.deleteMemoriesOfConversation(conversationId)
+        // v5.3.8：对话删除时级联清理统一表里的对话级记忆（与条目式时代语义一致）
+        memoryFileDAO.deleteFilesOfConversation(conversationId)
     }
 
     /**
@@ -479,12 +482,24 @@ class MemoryRepository(
         ).toModel()
     }
 
+    // ═══════════ 二·B、旧条目式写操作 → 统一表适配（v5.3.8）═══════════
+    //
+    // 这些方法历史上读写 `memoryentity`（第二张表 = 记忆分叉的根源）。现在它们全部
+    // 落到 `memory_file`：**id 只是 path 的派生标识**（path.hashCode），真实键是 path。
+    // Operit 脚本运行时（memory.create/update/delete/move/link）零改动即自动统一。
+
+    /** 按 [AssistantMemory.id]（= path.hashCode）在指定记忆库里找出真实 path。 */
+    private suspend fun resolvePathById(assistantId: String, id: Long): String? =
+        memoryFileDAO.getFilesOfAssistant(assistantId)
+            .firstOrNull { it.path.hashCode().toLong() == id }
+            ?.path
+
     suspend fun updateContent(id: Long, content: String): AssistantMemory {
-        val old = memoryDAO.getMemoryById(id) ?: error("Memory record #$id not found")
-        val newMemory = old.copy(content = content, updatedAt = System.currentTimeMillis())
-        memoryDAO.updateMemory(newMemory)
-        invalidateSupersededDreams(old.assistantId, content)
-        return newMemory.toModel()
+        val path = resolvePathById(GLOBAL_MEMORY_ID, id)
+            ?: error("Memory record #$id not found")
+        writeFile(GLOBAL_MEMORY_ID, path, content)
+        return getFile(GLOBAL_MEMORY_ID, path)?.toAssistantMemory()
+            ?: error("Memory record #$id could not be re-read")
     }
 
     /**
@@ -497,13 +512,13 @@ class MemoryRepository(
         allowedAssistantId: String,
         currentConversationId: String?,
     ): AssistantMemory {
-        val old = memoryDAO.getMemoryById(id) ?: error("记忆 #$id 不存在")
-        guardMemoryAccess(old, allowedAssistantId, currentConversationId)
-        val newMemory = old.copy(content = content, updatedAt = System.currentTimeMillis())
-        memoryDAO.updateMemory(newMemory)
-        // v5.0.87：编辑即取代 —— 同主题旧做梦条目自动失效（用户要求"修改后旧记录必须删掉"）
-        invalidateSupersededDreams(old.assistantId, content)
-        return newMemory.toModel()
+        // v5.0.85：跨对话编辑已放开，仅保留「跨助手不可访问」硬边界（由 resolvePathById
+        // 的 assistantId 参数天然保证 —— 在别的助手的库里根本找不到这个 id）。
+        val path = resolvePathById(allowedAssistantId, id)
+            ?: error("记忆 #$id 不存在")
+        writeFile(allowedAssistantId, path, content)
+        return getFile(allowedAssistantId, path)?.toAssistantMemory()
+            ?: error("记忆 #$id 读取失败")
     }
 
     suspend fun addMemory(
@@ -514,56 +529,46 @@ class MemoryRepository(
         folderId: String? = null,
         source: String = "manual",
     ): AssistantMemory {
-        // v3.8.29: 记忆 ID 改为创建时间戳 YYMMDDHHMMSS (如 260820213001)，
-        // 不再自增 1,2,3。同秒冲突顺延 (id+1) 保证唯一。
-        var id: Long = java.text.SimpleDateFormat("yyMMddHHmmss", java.util.Locale.US)
-            .format(java.util.Date()).toLong()
-        while (memoryDAO.getMemoryById(id) != null) {
-            id++
-        }
-        // v5.1.14 ★统一写入判据（与 updateScope 同口径）：归属**互斥** ——
-        // 挂了单对话就不再是项目包记忆，否则这条记录不会被任何一条分层查询命中（用户视角消失）。
+        // v5.1.14 ★统一写入判据：归属**互斥** —— 挂了单对话就不再是项目包记忆
         val normalizedConversationId = conversationId
         val normalizedFolderId = if (normalizedConversationId != null) null else folderId
-        val memory = AssistantMemory(
-            id = id,
-            content = content,
-            conversationId = normalizedConversationId,
-            sourceConversationId = sourceConversationId,
-            folderId = normalizedFolderId,
-            source = source,
-        )
-        memoryDAO.insertMemory(
-            MemoryEntity(
-                id = memory.id,
-                assistantId = assistantId,
-                content = memory.content,
-                conversationId = memory.conversationId,
-                sourceConversationId = memory.sourceConversationId,
-                folderId = memory.folderId,
-                source = memory.source,
-                // v5.0.85（用户 B3）：创建即记录时间戳，便于判断新旧
-                updatedAt = System.currentTimeMillis(),
-            )
-        )
-        // v5.0.87：新写的主动记忆若与旧条目同主题 → 旧条目失效（不留矛盾版本）
-        if (source != "dream") {
-            invalidateSupersededDreams(assistantId, content)
-            invalidateSupersededManual(assistantId, memory, content)
+        // v5.3.8：路径由正文首行派生（可读），同名冲突加时间后缀保证唯一
+        var path = me.rerere.rikkahub.data.model.pathFromContent(content)
+        if (memoryFileDAO.getFile(assistantId, path) != null) {
+            path = path.removeSuffix(".md") + "-" + System.currentTimeMillis().toString().takeLast(6) + ".md"
         }
-        return memory
+        writeFile(
+            assistantId = assistantId,
+            path = path,
+            content = content,
+            ifVersion = NEW_FILE_VERSION,
+            source = if (source == "dream") "dream" else "active",
+            folderId = normalizedFolderId,
+            conversationId = normalizedConversationId,
+        )
+        return getFile(assistantId, path)?.toAssistantMemory()
+            ?: error("记忆写入失败: $path")
     }
 
     suspend fun copyMemories(fromAssistantId: String, toAssistantId: String) {
-        val memories = memoryDAO.getMemoriesOfAssistant(fromAssistantId)
-        if (memories.isEmpty()) return
-        memoryDAO.insertMemories(
-            memories.map { MemoryEntity(assistantId = toAssistantId, content = it.content) }
-        )
+        val files = getFiles(fromAssistantId)
+        if (files.isEmpty()) return
+        files.forEach { file ->
+            writeFile(
+                assistantId = toAssistantId,
+                path = file.path,
+                content = file.content,
+                ifVersion = NEW_FILE_VERSION,
+                source = file.source,
+                folderId = file.folderId,
+                conversationId = null, // 跨助手复制：对话归属不能带过去（对话属于源助手）
+            )
+        }
     }
 
     suspend fun deleteMemory(id: Long) {
-        memoryDAO.deleteMemory(id)
+        val path = resolvePathById(GLOBAL_MEMORY_ID, id) ?: return
+        memoryFileDAO.deleteFile(GLOBAL_MEMORY_ID, path)
     }
 
     /** v4.8.92: 带守卫的删除（模型侧用）—— 其它对话的单对话记忆不可被删除。 */
@@ -572,11 +577,9 @@ class MemoryRepository(
         allowedAssistantId: String,
         currentConversationId: String?,
     ) {
-        val entity = memoryDAO.getMemoryById(id) ?: error("记忆 #$id 不存在")
-        guardMemoryAccess(entity, allowedAssistantId, currentConversationId)
-        // v5.0.85（用户 B1/B3）：模型侧"删除"改为**软删（失效）** —— 旧口径被废弃后
-        // 不再注入后续会话，但记录留痕（此前物理删除后无从追溯，用户也只能新增"作废"条目）。
-        memoryDAO.invalidateMemory(id, System.currentTimeMillis())
+        // v5.0.85：模型侧「删除」= 软删（失效留痕，不再注入后续会话）
+        val path = resolvePathById(allowedAssistantId, id) ?: error("记忆 #$id 不存在")
+        memoryFileDAO.invalidate(allowedAssistantId, path, System.currentTimeMillis())
     }
 
     @Suppress("UNUSED_PARAMETER")

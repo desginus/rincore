@@ -30,7 +30,7 @@ suspend fun Settings.resolveRoutedModel(assistant: me.rerere.rikkahub.data.model
     }
     if (pool.isEmpty()) return normal
     return runCatching {
-        val winner = me.rerere.rikkahub.data.ai.ModelRacer.pickFastest(this, pool)
+        val winner = me.rerere.rikkahub.data.ai.ModelRacer.pickFastest(this, pool, timeoutMs = 1_500L)
         findModelById(winner ?: pool.first()) ?: normal
     }.getOrNull() ?: normal
 }

@@ -41,8 +41,17 @@ object ModelRacer {
     /** 单个探针的硬超时（首包慢于这个就不算"快"） */
     private const val PROBE_TIMEOUT_MS = 3_000L
 
-    /** 竞速结果缓存：同一组候选 60s 内复用上次赢家，避免每轮都打 N 个探针 */
-    private const val CACHE_TTL_MS = 5_000L
+    /**
+     * v5.3.8 ★竞速结果缓存 5s → 120s。
+     *
+     * 背景：v5.1.7 把 TTL 压到 5s 是为了满足「每次发送都要重新选最快的」，
+     * 但代价是**每轮都会在首字前同步阻塞最多 3s**（探针与整体双 3s 超时）。
+     * 现在改为「**上一轮生成结束时后台预取**（见 [prefetch]）+ 发送时命中缓存」：
+     *   · 第 1 轮：可能同步竞速一次（上限降到 1.5s）
+     *   · 之后每轮：用上一轮结束后的预取结果，**首字零额外等待**，且仍是最新一次测量
+     * 缓存键含候选列表（池变了自然失效），所以 120s 不会拿到过期池的结果。
+     */
+    private const val CACHE_TTL_MS = 120_000L
 
     private data class CacheEntry(val key: String, val modelId: Uuid, val at: Long)
 
@@ -85,6 +94,19 @@ object ModelRacer {
         // ★隔离：绝不向上抛
         Log.w(TAG, "pickFastest failed, fallback to caller: ${it.message}")
     }.getOrNull()
+
+    /**
+     * v5.3.8：**后台预取**（在生成结束时调用）。
+     *
+     * 与 [pickFastest] 走完全相同的路径，只是给足超时（不阻塞用户），
+     * 目的只有一个：把结果写进 [cache]，让**下一次发送**直接命中、零等待。
+     */
+    suspend fun prefetch(settings: Settings, ids: List<Uuid>) {
+        runCatching {
+            if (ids.isEmpty()) return@runCatching
+            pickFastest(settings, ids, timeoutMs = 5_000L)
+        }.onFailure { Log.d(TAG, "prefetch failed: ${it.message}") }
+    }
 
     /** 并发探针，取第一个成功者；全部失败/超时 → null */
     private suspend fun race(

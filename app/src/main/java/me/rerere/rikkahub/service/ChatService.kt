@@ -653,9 +653,40 @@ class ChatService(
             synchronized(session) {
                 if (session.submittingMessage?.id == queued.id) session.submittingMessage = null
             }
+            // v5.3.8 ★竞速结果预取：本轮结束就测好「下一轮哪个模型最快」，
+            // 下一轮发送时直接命中缓存（零额外等待），同时仍满足「每轮都用最新测量」。
+            scheduleRoutePrefetch(conversationId)
         }
         session.setJob(job)
         return job
+    }
+
+    /**
+     * v5.3.8：**竞速结果预取** —— 本轮生成结束后，在后台把「快速/极致」模型的
+     * 连接竞速跑一遍写进缓存，使**下一次发送零等待**。
+     *
+     * 为什么这样最合理（对应用户问「每轮都要重新吗」）：
+     *  · 每轮都重新**测量**是需要的（网络/网关状态会变）；
+     *  · 但**不该让用户在首字前等测量** —— 测量放在上一轮结束后的空闲时间做；
+     *  · 于是：第 1 轮可能同步竞速一次（上限 1.5s），之后每轮命中缓存、0 等待。
+     * 全程 fire-and-forget + runCatching，失败不影响任何东西。
+     */
+    private fun scheduleRoutePrefetch(conversationId: Uuid) {
+        appScope.launch(Dispatchers.IO) {
+            runCatching {
+                val s = settingsStore.settingsFlow.value
+                val conv = getConversationFlow(conversationId).value
+                val assistant = s.getAssistantById(conv.assistantId) ?: return@runCatching
+                val pool = when (assistant.modelRouting) {
+                    1 -> s.fastChatModelIds
+                    2 -> s.ultraChatModelIds
+                    else -> return@runCatching
+                }
+                if (pool.isNotEmpty()) {
+                    me.rerere.rikkahub.data.ai.ModelRacer.prefetch(s, pool)
+                }
+            }.onFailure { Log.d(TAG, "route prefetch skipped: ${it.message}") }
+        }
     }
 
     private fun preprocessUserInputParts(parts: List<UIMessagePart>, assistant: Assistant): List<UIMessagePart> {

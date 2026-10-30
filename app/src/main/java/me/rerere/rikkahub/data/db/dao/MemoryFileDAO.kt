@@ -34,6 +34,15 @@ interface MemoryFileDAO {
     @Query("UPDATE memory_file SET folder_id = :folderId, conversation_id = :conversationId, updated_at = :at WHERE assistant_id = :assistantId AND path = :path")
     suspend fun updateScope(assistantId: String, path: String, folderId: String?, conversationId: String?, at: Long)
 
+    @Query("SELECT * FROM memory_file WHERE conversation_id = :conversationId AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY path")
+    fun getFilesOfConversationFlow(conversationId: String): Flow<List<MemoryFileEntity>>
+
+    @Query("SELECT * FROM memory_file WHERE conversation_id = :conversationId AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY path")
+    suspend fun getFilesOfConversation(conversationId: String): List<MemoryFileEntity>
+
+    @Query("DELETE FROM memory_file WHERE conversation_id = :conversationId")
+    suspend fun deleteFilesOfConversation(conversationId: String)
+
     @Query("UPDATE memory_file SET source = :source, updated_at = :at WHERE assistant_id = :assistantId AND path = :path")
     suspend fun updateSource(assistantId: String, path: String, source: String, at: Long)
 
