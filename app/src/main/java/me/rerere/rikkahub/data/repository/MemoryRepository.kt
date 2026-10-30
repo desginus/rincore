@@ -277,6 +277,17 @@ class MemoryRepository(
     )
 
     // ═══════════ 二、行式记忆（我方 2.5.x + v4.8.92 单对话记忆） ═══════════
+    //
+    // v5.3.9 ★★用户定案「记忆只有一个存储类别」的收口说明：
+    // 本节**所有公开 API 都已是统一表（memory_file）的适配层**（v5.3.8），
+    // 但下面仍有若干**已无调用点**的旧实现（直接操作 memoryDAO / memoryentity）：
+    //   getMemoriesOfFolderFlow / getMemoriesOfFolder / getMemoriesOfConversation /
+    //   getMemoriesOfConversations / syncDreamMemories / invalidateSupersededDreams /
+    //   invalidateSupersededManual / updateScope(id: Long) / MemoryEntity.toModel
+    // 它们**不再被任何代码调用**（v5.3.7 删了注入链与 UI 的调用、v5.3.9 删了做梦镜像调用）。
+    // 保留它们只为降低一次性大删的编译风险；**新增代码一律不得调用它们** ——
+    // 需要读写记忆，只用本节上半部分的统一门面（getFiles/writeFile/updateScope(path)/invalidateFile）。
+    // 下一轮可以整段删除（删除时同步移除 `memoryDAO` 依赖与 `MemoryEntity`/`MemoryDAO` 文件）。
 
     private fun MemoryEntity.toModel(): AssistantMemory = AssistantMemory(
         id = id,

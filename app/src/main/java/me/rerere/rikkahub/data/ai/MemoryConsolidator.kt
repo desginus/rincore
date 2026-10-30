@@ -254,27 +254,13 @@ class MemoryConsolidator(
         //   旧实现 files=remaining 是【全库记忆文件】，全部镜像成当前范围条目 = 其它包/其它对话
         //   的既有记忆被复制进本范围。现在只重建【本次 touched】的文件 + 三层归属互斥：
         //   助手级=两者 null / 项目包=folderId 非空 conversationId null / 对话=conversationId 非空 folderId null。
-        runCatching {
-            val syncFolder: String? = when (effectiveScope) {
-                1 -> effectiveFolderForScope?.toString()
-                else -> null
-            }
-            val syncConv: String? = when (effectiveScope) {
-                2 -> conversationIds.singleOrNull()?.toString()
-                else -> null
-            }
-            val touchedPaths = touched.toSet()
-            val touchedFiles = remaining.values.filter { it.path in touchedPaths }
-            assistants.forEach { a ->
-                memoryRepository.syncDreamMemories(
-                    assistantId = a.id.toString(),
-                    folderId = syncFolder,
-                    conversationId = syncConv,
-                    files = touchedFiles,
-                    incremental = true,
-                )
-            }
-        }.onFailure { Logging.log(TAG, "syncDreamMemories: $it") }
+        // v5.3.9 ★★用户定案「记忆只有一个存储类别」的**最后一块漏网已堵死**：
+        // 这里原本在每次做梦整理后调 `syncDreamMemories`，把产物**镜像进第二张表
+        // `memoryentity`**（v5.0.67 为解决"文件式无 scope 维度"而加）—— 但 v5.3.7 起
+        // `memory_file` 自己就有 source + folder_id + conversation_id 两个维度，
+        // 做梦产物在写入时已经以 `source="dream"` + 正确归属落库（见上方 buildMemoryTools
+        // 的 source/folderId/conversationId 参数），**不需要、也不允许再镜像一份**。
+        // 保留这行注释是为了说明：不要再把任何记忆写进 memoryentity。
 
         return MemoryConsolidationRun(
             memoryId = memoryId,
