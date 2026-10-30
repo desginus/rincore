@@ -372,6 +372,7 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                     // v5.3.4：文件式记忆库（模型 memory_write/memory_append 的产物）
                     MemoryFilesTab(
                         memories = memories,
+                        memoryId = vm.memoryId,
                         consolidation = null,
                         onOrganizeMemory = {},
                         onOpenMemory = { path -> navController.navigate(Screen.MemoryFile(vm.memoryId, path)) },
@@ -633,6 +634,8 @@ private fun MemorySettingsTab(
 @Composable
 private fun MemoryFilesTab(
     memories: List<MemoryFile>,
+    // v5.3.5：只用于诊断显示（当前查的是哪个记忆库）
+    memoryId: String,
     // 为 null 时不显示整理入口
     consolidation: MemoryConsolidationStatus?,
     onOrganizeMemory: () -> Unit,
@@ -668,6 +671,35 @@ private fun MemoryFilesTab(
             singleLine = true,
             placeholder = { Text("搜索记忆（路径 / 内容 / 描述）") },
         )
+        // v5.3.5 ★用户反复反馈"模型写的记忆看不到"，而此前界面**完全无法自证**
+        // 到底是"没写进来"还是"写到了别的库"。这里直接显示当前记忆库 ID 与文件数：
+        //   - 文件数 > 0 却看不到条目 → 渲染问题（下面还有空态兜底）
+        //   - 文件数 = 0 但模型说写过 → 模型写的是另一个库（看这里的 ID 对不对）
+        Text(
+            text = buildString {
+                append("记忆库 ").append(memoryId.take(12))
+                if (memoryId.length > 12) append("…")
+                append(" · ").append(memories.size).append(" 个文件")
+                if (query.isNotBlank()) append("（搜索命中 ").append(filteredMemories.size).append("）")
+            },
+            style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (memories.isEmpty()) {
+            // 明确空态：区分"模型还没写过"与"写到了别的库"
+            CardGroup {
+                item(
+                    headlineContent = { Text("这个记忆库里还没有文件") },
+                    supportingContent = {
+                        Text(
+                            "模型调用 memory_write（或 memory_append）写入后会出现在这里。\n" +
+                                "如果模型明确说写过、这里仍是 0 个，说明它写进了另一个记忆库 —— " +
+                                "请核对上方「记忆库」ID：助手级库 = 该助手 ID，全局库 = GLOBAL。"
+                        )
+                    },
+                )
+            }
+        }
         if (consolidation != null) {
             MemoryConsolidationSection(
                 status = consolidation,
