@@ -51,6 +51,7 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.ai.MemoryConsolidationStatus
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.MemoryFile
+import me.rerere.rikkahub.data.model.toAssistantMemory
 import me.rerere.rikkahub.data.model.groupByDirectory
 import me.rerere.rikkahub.data.model.memoryTitleOf
 import me.rerere.rikkahub.ui.components.nav.BackButton
