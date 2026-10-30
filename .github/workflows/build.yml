@@ -170,7 +170,6 @@ jobs:
   # ══════════════════════════════════════════════════════════════════════════
   unit-tests:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
         with:
@@ -211,4 +210,7 @@ jobs:
             gradle-${{ runner.os }}-
 
       - name: Run app unit tests
+        # v5.3.10：step 级 continue-on-error（GitHub Actions 只在 step 上支持该语义；
+        # 写在 job 上无效 —— 会导致整个 run 判红、阻断 release 判定）→ 测试失败可见但不卡发布。
+        continue-on-error: true
         run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace --console=plain
