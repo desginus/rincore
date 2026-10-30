@@ -56,6 +56,7 @@ class MemoryConsolidationSchedulerTest {
             memoryId: String,
             conversationIds: Set<Uuid>,
             fullReview: Boolean,
+            scope: Int,
         ): MemoryConsolidationRun? {
             calls += Call(conversationIds, fullReview)
             gate?.await()

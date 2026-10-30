@@ -22,7 +22,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MemoryToolsTest {
-    private val repository = MemoryRepository(FakeMemoryDAO())
+    private val repository = MemoryRepository(FakeLegacyMemoryDao(), FakeMemoryDAO())
     private val tools = buildMemoryTools(repository, "assistant").associateBy { it.name }
 
     private suspend fun call(name: String, args: JsonObjectBuilder.() -> Unit): JsonObject {
