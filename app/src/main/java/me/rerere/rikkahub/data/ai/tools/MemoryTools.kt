@@ -216,6 +216,12 @@ private const val IF_VERSION_DESCRIPTION =
 fun buildMemoryTools(
     repository: MemoryRepository,
     assistantId: String,
+    // v5.3.7 ★统一记忆：新建条目时的**两个维度** ——
+    // 来源 [source]（active=主动写入 / dream=做梦整理）与归属（folderId / conversationId 互斥，都空=助手级）。
+    // 修改/追加已存在的条目**保留原归属与来源**（见 MemoryRepository.update）。
+    source: String = "active",
+    folderId: String? = null,
+    conversationId: String? = null,
 ): List<Tool> = listOf(
     Tool(
         name = MemoryToolNames.READ,
@@ -280,7 +286,15 @@ fun buildMemoryTools(
             val path = args.string("path")
             val content = args.string("content")
             guarded(content) {
-                repository.writeFile(assistantId, path, content, args.string("if_version"))
+                repository.writeFile(
+                    assistantId = assistantId,
+                    path = path,
+                    content = content,
+                    ifVersion = args.string("if_version"),
+                    source = source,
+                    folderId = folderId,
+                    conversationId = conversationId,
+                )
             }.toToolOutput(path)
         }
     ),
