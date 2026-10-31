@@ -210,19 +210,13 @@ class LatexCommandSanitizerTest {
     //   ① 控制空格 `\ `（反斜杠+空格）→ 归一为 `\,`
     //   ② 单 token 分数参数 `\dfrac13` → 补成 `\dfrac{1}{3}`
     // ══════════════════════════════════════════════════════════════════════
-    private val USER_PIECEWISE = "F(x,y)=\n" +
-        "\\begin{cases}\n" +
-        "0, & x<1 \\ \\text{或}\\ y<1, \\\\[4pt]\n" +
-        "0, & 1\\le x<2,\\ 1\\le y<2, \\\\[4pt]\n" +
-        "\\dfrac13, & 1\\le x<2,\\ y\\ge 2, \\\\[4pt]\n" +
-        "\\dfrac13, & x\\ge 2,\\ 1\\le y<2, \\\\[4pt]\n" +
-        "1, & x\\ge 2,\\ y\\ge 2.\n" +
-        "\\end{cases}"
+    // v5.3.16 用例同源（v5.3.18 改用 BACKSLASH 常量拼接，语义见上）
+    private val USER_PIECEWISE = PIECEWISE_CTRL
 
     @Test
     fun `piecewise cases formula control space is normalized`() {
         val out = clean(USER_PIECEWISE)
-        assertFalse("控制空格 `\\ ` 必须被归一化: $out", out.contains("\\ "))
+        assertFalse("控制空格（单反斜杠+空格）必须被归一化: $out", out.contains(BACKSLASH + " "))
         assertTrue("控制空格应变成 thin space \\,", out.contains("\\,\\text{或}"))
     }
 
@@ -263,5 +257,97 @@ class LatexCommandSanitizerTest {
     fun `double backslash newline is not treated as control space`() {
         val out = clean("a \\\\ b")
         assertEquals("\\\\ 必须保持（不能被当成控制空格）", "a \\\\ b", out)
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // v5.3.18 ★★★「5.0.12 能渲染、后来渲染不了」的真根因回归
+    //
+    // v5.3.1 的 stripLatexSpacing 用 `Regex.replace(regex, "\\\\")` —— 替换串里的 `\`
+    // 被当转义符 → `\\[4pt]` 变成**单个 `\`** → 紧跟换行 → jlatexmath 报
+    // `Unknown symbol '\n'` → 整条公式 ParseException → 0×0 空白。
+    // 下面这组锁死：间距参数被剥掉，但**换行前的反斜杠必须仍是两个**。
+    // ══════════════════════════════════════════════════════════════════════
+
+    private fun assertKeepsDoubleBackslashBeforeNewline(out: String) {
+        var idx = out.indexOf('\n')
+        while (idx >= 0) {
+            if (idx >= 1 && out[idx - 1] == '\\') {
+                assertTrue(
+                    "换行前必须是两个反斜杠（否则 jlatexmath 报 Unknown symbol），实际片段=" +
+                        out.substring(maxOf(0, idx - 6), minOf(out.length, idx + 2)),
+                    idx >= 2 && out[idx - 2] == '\\',
+                )
+            }
+            idx = out.indexOf('\n', idx + 1)
+        }
+    }
+
+    @Test
+    fun `spacing param is stripped but keeps double backslash`() {
+        val out = clean("a \\\\[4pt]\nb")
+        assertFalse("间距参数必须消失: $out", out.contains("[4pt]"))
+        assertTrue("必须保留换行: $out", out.contains("\n"))
+        assertKeepsDoubleBackslashBeforeNewline(out)
+        assertTrue("必须正好是两个反斜杠: $out", out.contains("\\\\\n"))
+    }
+
+    @Test
+    fun `multiple spacing units all stripped correctly`() {
+        for (unit in listOf("2pt", "4pt", "6pt", "1mm", "0.5em", "3ex", "10mu", "0.2cm", "0.1in")) {
+            val out = clean("x \\\\[$unit]\ny")
+            assertFalse("[$unit] 必须被剥离: $out", out.contains("[$unit]"))
+            assertKeepsDoubleBackslashBeforeNewline(out)
+        }
+    }
+
+    @Test
+    fun `spacing param inline with content on same line is untouched`() {
+        // 不是换行参数（前面不是两个反斜杠）→ 原样保留
+        val src = "a [4pt] b"
+        assertEquals(src, clean(src))
+    }
+
+    // ── 用户实测的四条分段函数（v5.3.18 形态断言）──
+
+    // ★ v5.3.18：全部改用 \u005C 常量拼接 —— 反斜杠数量一目了然，不再依赖多层转义：
+    //   单个 = \u005C（LaTeX 命令前缀 / 控制空格），两个 = \u005C\u005C（LaTeX 换行）。
+    private val BACKSLASH = "\u005C"
+
+    /** 用户实测的四条分段函数（控制空格版：单反斜杠 + 空格） */
+    private val PIECEWISE_CTRL = "F(x,y)=\n" +
+        BACKSLASH + "begin{cases}\n" +
+        "0, & x<1 " + BACKSLASH + " " + BACKSLASH + "text{或}" + BACKSLASH + " y<1, " + BACKSLASH.repeat(2) + "[4pt]\n" +
+        "0, & 1" + BACKSLASH + "le x<2," + BACKSLASH + " 1" + BACKSLASH + "le y<2, " + BACKSLASH.repeat(2) + "[4pt]\n" +
+        BACKSLASH + "dfrac13, & 1" + BACKSLASH + "le x<2," + BACKSLASH + " y" + BACKSLASH + "ge 2, " + BACKSLASH.repeat(2) + "[4pt]\n" +
+        BACKSLASH + "dfrac13, & x" + BACKSLASH + "ge 2," + BACKSLASH + " 1" + BACKSLASH + "le y<2, " + BACKSLASH.repeat(2) + "[4pt]\n" +
+        "1, & x" + BACKSLASH + "ge 2," + BACKSLASH + " y" + BACKSLASH + "ge 2.\n" +
+        BACKSLASH + "end{cases}"
+
+
+    @Test
+    fun `user four piecewise formulas are fully normalized`() {
+        val variants = listOf(
+            PIECEWISE_CTRL,
+            PIECEWISE_CTRL.replace("\\\\dfrac13, & 1\\\\le x<2,\\\\ 1\\\\le y<2", "\\\\dfrac19, & 1\\\\le x<2,\\\\ 1\\\\le y<2"),
+            PIECEWISE_CTRL.replace("\\\\ \\\\text{或}\\\\ ", "\\\\text{ 或 }"),
+            PIECEWISE_CTRL.replace("\\\\ \\\\text{或}\\\\ ", "\\\\text{ 或 }")
+                .replace("\\\\dfrac13, & 1\\\\le x<2,\\\\ 1\\\\le y<2", "\\\\dfrac19, & 1\\\\le x<2,\\\\ 1\\\\le y<2"),
+        )
+        for ((i, src) in variants.withIndex()) {
+            val out = clean(src)
+            assertFalse("#$i 不得残留间距参数: $out", out.contains("[4pt]"))
+            assertFalse("#$i 不得残留控制空格（单反斜杠+空格）: $out", out.contains(BACKSLASH + " "))
+            assertFalse("#$i dfrac 单 token 必须展开: $out", Regex("""\\dfrac\d""").containsMatchIn(out))
+            assertTrue("#$i cases 环境必须保留", out.contains("\\\\begin{cases}"))
+            assertTrue("#$i 中文必须保留", out.contains("或"))
+            assertKeepsDoubleBackslashBeforeNewline(out)
+        }
+    }
+
+    @Test
+    fun `piecewise formulas survive repeated sanitize (idempotent)`() {
+        val once = clean(PIECEWISE_CTRL)
+        val twice = clean(once)
+        assertEquals("sanitize 必须幂等（重复处理不改变结果）", once, twice)
     }
 }

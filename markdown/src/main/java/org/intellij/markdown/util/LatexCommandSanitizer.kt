@@ -36,7 +36,74 @@ object LatexCommandSanitizer {
         s = normalizeExtensibleArrows(s)
         s = expandFracShorthand(s)
         s = normalizeControlSpace(s)
+        s = stripSpacingParams(s)
         return s
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // v5.3.18 ★★★「曾经能渲染的公式现在渲染不了」的真根因（用户实证 5.0.12 可渲染）
+    //
+    // v5.3.1 我为了让「[2pt] / [4pt] 不再当正文显示」加了这条剥离：
+    //     latex.replace(LATEX_SPACING_PARAM, "\\")
+    // 其中 `"\\"` 在 Kotlin 里是 `\\`（两个反斜杠）—— 但 **`Regex.replace(Regex, String)`
+    // 会把替换串里的 `\` 当转义符**（与 `$` 同族语义），`\` 是合法转义（代表一个反斜杠），
+    // 于是 `\\[4pt]` 被替换成了**单个 `\`** 而不是 `\\`。
+    //
+    // 后果（用真 JLatexMath 实测确认）：
+    //   原始 `\\[4pt]`  → jlatexmath 解析为「换行 + 字面 [4pt]」→ **整条公式 OK**
+    //                       （这正是 5.0.12 的表现：公式能渲染，只是多显示 [4pt] 文本）
+    //   剥成单 `\` 后     → `\` 后面紧跟换行 → `Unknown symbol or command: '\n'`
+    //                       → 整条公式 ParseException → 0×0 → 空白
+    //
+    // 即：**这条「修复」本身制造了从 v5.3.1 起所有带 `\\[Npt]` 的公式渲染失败**。
+    // 修法：lambda 形式（返回值不做转义解释）。并顺带把本函数从 app 模块搬到这里 ——
+    // 纯 Kotlin 才能进 JVM 单测，app 模块的 LatexText 依赖 android.graphics 跑不了测试。
+    // ───────────────────────────────────────────────────────────────────────
+    /**
+     * `\\[2pt]` / `\\[4pt]` / `\\[6mm]` → `\\`（保留换行、丢掉排版间距参数）。
+     *
+     * ★ v5.3.18 为什么改成手写扫描器而不用正则：
+     *   这里前后踩了**两次**同一个坑 —— `Regex.replace(Regex, String)` 会把替换串里的
+     *   `\` 当转义符（`\\` 变成 `\`），导致 `\\[4pt]` 被替换成**单个 `\`**，
+     *   后面紧跟换行 → jlatexmath 报 `Unknown symbol '\n'` → **整条公式 ParseException**。
+     *   而这条「修复」从 v5.3.1 起就存在，正是「5.0.12 能渲染、后来渲染不了」的真凶
+     *   （5.0.12 没有这一步：`\\[4pt]` 被 jlatexmath 解析成「换行 + 字面 [4pt]」，
+     *   公式照常渲染，只是正文里多出 [4pt] 字样 —— 用户描述完全吻合）。
+     *   手写扫描器不涉及任何替换串转义语义，且可被 JVM 单测直接覆盖。
+     */
+    private val SPACING_UNITS = setOf("pt", "mm", "cm", "in", "ex", "em", "mu")
+
+    private fun stripSpacingParams(input: String): String {
+        if (!input.contains("[")) return input
+        val sb = StringBuilder(input.length)
+        var i = 0
+        while (i < input.length) {
+            // 需要匹配 "\\[" （两个反斜杠 + 左方括号）
+            if (i + 2 < input.length &&
+                input[i] == '\\' && input[i + 1] == '\\' && input[i + 2] == '['
+            ) {
+                var j = i + 3
+                val digitsStart = j
+                while (j < input.length && (input[j].isDigit() || input[j] == '.')) j++
+                if (j > digitsStart) {
+                    while (j < input.length && input[j].isWhitespace()) j++
+                    val unitStart = j
+                    while (j < input.length && input[j].isLetter()) j++
+                    val unit = input.substring(unitStart, j)
+                    if (unit in SPACING_UNITS) {
+                        while (j < input.length && input[j].isWhitespace()) j++
+                        if (j < input.length && input[j] == ']') {
+                            sb.append("\\\\")
+                            i = j + 1
+                            continue
+                        }
+                    }
+                }
+            }
+            sb.append(input[i])
+            i++
+        }
+        return sb.toString()
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -113,22 +180,37 @@ object LatexCommandSanitizer {
         }
         return sb.toString()
     }
-
-    /** 控制空格 `\ `（反斜杠+空白）→ `\,`；`\\` 与 `\;` 等原有命令不受影响。 */
-    private val CONTROL_SPACE = Regex("""\\\s""")
-
+    /**
+     * 控制空格 `\ `（反斜杠 + 空白）→ `\,`（thin space）。
+     *
+     * ★ v5.3.18 手写扫描器，**不用正则、不用任何转义**：
+     *   之前用 `Regex("""\\\s""")` + guard 替换，在 Kotlin 源码转义与工具链
+     *   转义之间反复出错 —— 最终表现是 `\ ` 被替换成 `\\ `（多一个反斜杠），
+     *   或 `\\[4pt]` 被剥成单反斜杠。这类「反斜杠数量」的问题必须用字符码判断。
+     *   语义：**恰好 1 个反斜杠** + 空白 才替换；2 个及以上（换行 \\）原样保留。
+     */
     private fun normalizeControlSpace(input: String): String {
-        if (!input.contains("\\ ")) return input
-        // 只把「反斜杠 + 单个空白」换成 thin space；连续两个反斜杠（换行 `\\`）先保护
-        val guard = "\u0000"
-        var s = input.replace("\\\\", guard)
-        // ⚠ v5.3.16 实测教训：`Regex.replace(Regex, String)` 会把替换串里的 `\` 当转义符
-        // （与 `$` 同族语义），`\,` 是非法转义 → **反斜杠被吞掉**，`\ ` 变成 `,` 而不是 `\,`。
-        // 本行必须用 lambda 形式（lambda 的返回值不做转义解释），否则归一化结果静默错误，
-        // 公式里会留下裸逗号（jlatexmath 仍会解析失败）。这是本地 kotlinc 跑出来的实证。
-        s = s.replace(CONTROL_SPACE) { "\\," }
-        s = s.replace(guard, "\\\\")
-        return s
+        if (input.indexOf(92.toChar()) < 0) return input
+        val sb = StringBuilder(input.length)
+        var i = 0
+        while (i < input.length) {
+            if (input[i] == 92.toChar()) {
+                var n = 1
+                while (i + n < input.length && input[i + n] == 92.toChar()) n++
+                val after = i + n
+                if (n == 1 && after < input.length && input[after].isWhitespace()) {
+                    sb.append(92.toChar()).append(',')
+                    i = after + 1
+                    continue
+                }
+                repeat(n) { sb.append(92.toChar()) }
+                i = after
+                continue
+            }
+            sb.append(input[i])
+            i++
+        }
+        return sb.toString()
     }
 
     // ═══════════════════════════════════════════════════════════════════════

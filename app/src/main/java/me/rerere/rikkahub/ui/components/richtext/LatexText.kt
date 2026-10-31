@@ -131,13 +131,13 @@ fun LatexText(
             }
         }
 
-        is LatexRender.Failed -> LatexErrorBlock(
-            original = latex,
-            reason = r.reason,
-            position = r.position,
-            style = style,
-            modifier = modifier,
-        )
+        // v5.3.18 ★用户定案：**渲染失败就安静回落原文**，不要红框、不要错误消息。
+        // 用户原话：「它渲染错了，它正常就像最开始一样悄咪咪的就行了」——
+        // 显眼的错误块比问题本身更干扰阅读；失败信息只写日志，不占版面。
+        is LatexRender.Failed -> {
+            Log.w("LatexText", "render failed: ${r.reason} | latex=${processed.take(200)}")
+            Text(text = processed, style = style, modifier = modifier)
+        }
     }
 }
 
@@ -147,48 +147,9 @@ private sealed interface LatexRender {
     data class Failed(val reason: String, val position: Int?) : LatexRender
 }
 
-/**
- * v5.3.15 ★错误块：红色原式 + 错误消息 + 出错位置。
- *
- * 来自用户要求「解析失败时渲染红色原式加错误消息与出错位置，禁止返回空节点」：
- * 用户必须能一眼看出**哪一段是公式**、**为什么失败**、**失败在哪**，
- * 而不是面对一片空白去猜是不是没渲染。
- */
-@Composable
-private fun LatexErrorBlock(
-    original: String,
-    reason: String,
-    position: Int?,
-    style: TextStyle,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .background(
-                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.30f),
-                shape = RoundedCornerShape(6.dp),
-            )
-            .padding(horizontal = 8.dp, vertical = 6.dp)
-    ) {
-        Text(
-            text = original,
-            style = style.copy(fontFamily = FontFamily.Monospace),
-            color = MaterialTheme.colorScheme.error,
-        )
-        Text(
-            text = "公式渲染失败：$reason",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.error,
-        )
-        if (position != null) {
-            Text(
-                text = "出错位置：第 ${position + 1} 个字符附近",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
-            )
-        }
-    }
-}
+// v5.3.18：`LatexErrorBlock`（红框 + 错误消息 + 位置）已删除。
+// 理由：用户明确要求失败时安静回落原文，不要显眼提示。失败原因改记 Log.w。
+
 
 fun getLatexDrawable(
     latex: String,
@@ -270,22 +231,14 @@ private fun processLatex(latex: String): String {
     // v4.8.128 (用户实证 \tag 整条击杀): 编号/元命令清洗 — 见 LatexCommandSanitizer
     // (jlatexmath 对 \tag/\label/\nonumber/\notag/\begin{equation} 零容忍, 一个即
     // 整条 ParseException → 回落原文; 清洗后编号保留为 \quad(...), 其余删除)
-    return stripLatexSpacing(LatexCommandSanitizer.sanitize(content))
+    // v5.3.18：间距参数剥离已并入 LatexCommandSanitizer.sanitize()（纯 Kotlin 可单测）。
+    // 旧的本地 stripLatexSpacing 用 `Regex.replace(regex, "\\\\")` —— 替换串里的 `\`
+    // 会被当转义符，把 `\\[4pt]` 变成**单个 `\`** → 紧跟换行 → 整条公式解析失败。
+    // 那是「5.0.12 能渲染、后来渲染不了」的真凶，本版已彻底移除。
+    return LatexCommandSanitizer.sanitize(content)
 }
 
-/**
- * v5.3.1 ★用户缺陷三（`[2pt]` / `[6pt]` 当正文显示）真根因：
- *
- * 模型经常输出 pdfLaTeX 风格的**可选间距参数**，例如
- *     `\begin{cases} a & b \\[2pt] c & d \end{cases}`
- * 其中的 `\\[2pt]`（=换行 + 2pt 额外间距）是**排版引擎参数**，
- * 不是数学内容。JLatexMath 不认这个语法 → 解析失败 → 整条公式回落原文，
- * 用户就看到正文里孤零零的 `[2pt]` / `[6pt]`。
- *
- * 处理：把 `\\[<数字><单位>]` 整体替换成 `\\`（保留换行，丢掉间距），
- * 单位覆盖 pdfLaTeX 常用的 pt / mm / cm / in / ex / em / mu。
- */
-private val LATEX_SPACING_PARAM = Regex("""\\\\\[\s*[\d.]+\s*(?:pt|mm|cm|in|ex|em|mu)\s*]""")
+// v5.3.18：原 v5.3.1 的 `LATEX_SPACING_PARAM` + `stripLatexSpacing()` 已删除 ——
+// 实现搬到 markdown 模块 LatexCommandSanitizer.stripSpacingParams()（手写扫描器，
+// 不涉及替换串转义），并修正了「`\\[4pt]` 被替换成单个 `\` 导致整条公式解析失败」的老 bug。
 
-internal fun stripLatexSpacing(latex: String): String =
-    latex.replace(LATEX_SPACING_PARAM, "\\\\")
