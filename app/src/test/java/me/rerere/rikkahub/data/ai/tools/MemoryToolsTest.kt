@@ -12,7 +12,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.rikkahub.data.repository.FakeLegacyMemoryDao
 import me.rerere.rikkahub.data.repository.FakeMemoryDAO
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import org.junit.Assert.assertEquals
@@ -23,7 +22,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MemoryToolsTest {
-    private val repository = MemoryRepository(FakeLegacyMemoryDao(), FakeMemoryDAO())
+    private val repository = MemoryRepository(FakeMemoryDAO())
     private val tools = buildMemoryTools(repository, "assistant").associateBy { it.name }
 
     private suspend fun call(name: String, args: JsonObjectBuilder.() -> Unit): JsonObject {

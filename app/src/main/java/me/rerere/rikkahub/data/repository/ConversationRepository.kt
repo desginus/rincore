@@ -399,8 +399,10 @@ class ConversationRepository(
         // v4.8.185 (审计重写): 对话媒体快照随对话删除 (files/chat-media/<对话ID>/)
         filesManager.deleteConversationChatMedia(conversation.id.toString())
         // v4.8.92: 单对话记忆随对话删除（该记忆只在对应对话可见，对话没了即销毁）
+        // v5.3.13 ★★最后一条**直写旧表**的路径：这里原本调 `database.memoryDao()`
+        // （`memoryentity`），绕过 MemoryRepository 单独写第二张表 —— 已改为统一表。
         runCatching {
-            database.memoryDao().deleteMemoriesOfConversation(conversation.id.toString())
+            database.memoryFileDao().deleteFilesOfConversation(conversation.id.toString())
         }
     }
 

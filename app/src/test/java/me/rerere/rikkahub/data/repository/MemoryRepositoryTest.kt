@@ -11,7 +11,7 @@ import org.junit.Test
 class MemoryRepositoryTest {
     // v5.3.10：MemoryRepository 自 v5.3.7 起是（统一表 DAO + 旧条目式 DAO）双参构造；
     // 测试只覆盖统一表语义，legacy DAO 用最小替身（真调用会抛 NotImplementedError）。
-    private val repository = MemoryRepository(FakeLegacyMemoryDao(), FakeMemoryDAO())
+    private val repository = MemoryRepository(FakeMemoryDAO())
     private val assistant = "assistant"
 
     private suspend fun create(path: String, content: String): MemoryFile {

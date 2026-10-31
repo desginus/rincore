@@ -12,9 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.dao.MemoryFileDAO
-import me.rerere.rikkahub.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
@@ -38,8 +36,16 @@ sealed interface MemoryWriteResult {
  * - 行式记忆（我方 2.5.x + v4.8.92 单对话记忆）：[AssistantMemory.conversationId] 非空 = 该记忆挂载到对应对话，
  *   只在它所属的对话里被注入；修改/删除走带守卫的 checked 方法；对话删除时级联销毁。
  */
+/**
+ * v5.3.13 ★★**唯一存储的最终形态**。
+ *
+ * 历史：曾同时依赖 `MemoryDAO`（旧表 `memoryentity`）与 `MemoryFileDAO`（`memory_file`）——
+ * 这就是「两套方案」的代码来源：同一件事有两个入口、两张表、两套删除语义。
+ * 现在构造函数只有一个 DAO；`MemoryDAO` 仍作为 Room DAO 存在（仅因为
+ * `memoryentity` 表在 v38 已建、删实体需要再走一次迁移），但**本类不再引用它**，
+ * 全库也没有任何其他代码读写旧表 —— 结构上只剩一套。
+ */
 class MemoryRepository(
-    private val memoryDAO: MemoryDAO,
     private val memoryFileDAO: MemoryFileDAO,
 ) {
     companion object {
@@ -300,14 +306,9 @@ class MemoryRepository(
     // 需要读写记忆，只用本节上半部分的统一门面（getFiles/writeFile/updateScope(path)/invalidateFile）。
     // 下一轮可以整段删除（删除时同步移除 `memoryDAO` 依赖与 `MemoryEntity`/`MemoryDAO` 文件）。
 
-    private fun MemoryEntity.toModel(): AssistantMemory = AssistantMemory(
-        id = id,
-        content = content,
-        conversationId = conversationId,
-        sourceConversationId = sourceConversationId,
-        folderId = folderId,
-        source = source,
-    )
+    // v5.3.13：`MemoryEntity.toModel()` 已删除 —— 旧表实体不再参与任何数据转换，
+    // 统一表的 `MemoryFile.toAssistantMemory()` 是唯一 DTO 适配点。
+
 
     // ═══ v5.3.8 ★★统一记忆收口：以下旧「条目式」API 全部改为 **统一表（memory_file）的
     //     适配层**，签名不变（Operit 脚本运行时与少量 UI 仍在调用），但读写的不再是
@@ -333,21 +334,15 @@ class MemoryRepository(
             .map { entities -> entities.map { it.toMemoryFile().toAssistantMemory() } }
 
     // v5.0.25: 助手名下全部项目包记忆（UI 分组）
+    // v5.3.13：改为统一表派生 —— 与 `memoriesForInjection` 同一数据源、同一归属判据。
     fun getFolderMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
-        memoryDAO.getFolderMemoriesOfAssistantFlow(assistantId)
-            .map { entities -> entities.map { it.toModel() } }
+        getFilesFlow(assistantId).map { list ->
+            list.filter { it.layer == MemoryLayer.FOLDER }.map { it.toAssistantMemory() }
+        }
 
-    // v5.0.24: 项目包记忆
-    fun getMemoriesOfFolderFlow(folderId: String): Flow<List<AssistantMemory>> =
-        memoryDAO.getMemoriesOfFolderFlow(folderId).map { entities -> entities.map { it.toModel() } }
-
-    suspend fun getMemoriesOfFolder(folderId: String, assistantId: String? = null): List<AssistantMemory> {
-        return memoryDAO.getMemoriesOfFolder(folderId, assistantId).map { it.toModel() }
-    }
-
-    suspend fun getMemoriesOfConversation(conversationId: String, assistantId: String? = null): List<AssistantMemory> {
-        return memoryDAO.getMemoriesOfConversation(conversationId, assistantId).map { it.toModel() }
-    }
+    // v5.3.13 ★彻底统一：以下三个查询（getMemoriesOfFolderFlow / getMemoriesOfFolder /
+    // getMemoriesOfConversation）**全库 0 调用点**，且直接读旧表 `memoryentity` ——
+    // 已删除。需要按归属查询时用 `getFiles(...)` 再按 `MemoryFile.layer` 过滤。
 
     /**
      * v5.0.67 ★用户定案的记忆二维语义（来源 × 存储）落地：
@@ -365,112 +360,12 @@ class MemoryRepository(
      *   对话=conversationId 非空 folderId null（不再出现"包+对话"双字段混合条目，
      *   同步前先把历史混合条目洗成对话层）。
      */
-    suspend fun syncDreamMemories(
-        assistantId: String,
-        folderId: String?,
-        conversationId: String?,
-        files: List<MemoryFile>,
-        incremental: Boolean = false,
-    ) {
-        // 历史混合层 dream 条目洗正（幂等）：归属以"最细层"为准
-        memoryDAO.clearFolderOnMixedDreams(assistantId)
-        if (incremental) {
-            val touchedTitles = files.map { it.title }.filter { it.isNotBlank() }.toSet()
-            if (touchedTitles.isEmpty()) return
-            val scoped = memoryDAO.getDreamMemories(assistantId, folderId, conversationId)
-            val deletable = scoped.filter { entryTitleOf(it.content) in touchedTitles }
-            if (deletable.isNotEmpty()) {
-                memoryDAO.deleteMemoriesByIds(deletable.map { it.id })
-            }
-        } else {
-            memoryDAO.deleteDreamMemories(assistantId, folderId, conversationId)
-            // v5.1.13 ★跨 scope 重复治理（用户报"整个记忆系统存在大量重复"）：
-            // 同一主题在对话层/包层/助手层各生成过一次，而旧删除只精确匹配
-            // (assistantId, folderId, conversationId) 三元组 → 换 scope 后旧的永不删，
-            // 每层各留一份 = 同一主题堆成 N 条。这里按**主题**清掉其它 scope 的旧副本。
-            val currentTitles = files.map { it.title.trim() }.filter { it.isNotBlank() }.toSet()
-            if (currentTitles.isNotEmpty()) {
-                val stale = memoryDAO.getActiveDreamMemories(assistantId).filter { entity ->
-                    entryTitleOf(entity.content) in currentTitles &&
-                        (entity.folderId != folderId || entity.conversationId != conversationId)
-                }
-                if (stale.isNotEmpty()) {
-                    memoryDAO.deleteMemoriesByIds(stale.map { it.id })
-                }
-            }
-        }
-        // v5.0.87：同主题已有主动条目（非做梦）时，不再生成做梦副本 ——
-        // 否则模型会同时收到"修改后的主动条目 + 修改前的做梦条目"（用户亲见的现象）。
-        val manualTopics = runCatching {
-            memoryDAO.getActiveNonDreamMemories(assistantId).map { normalizeTopic(memoryTopicKey(it.content)) }.toSet()
-        }.getOrDefault(emptySet())
-        files.forEach { file ->
-            if (file.content.isBlank()) return@forEach
-            val fileTopic = normalizeTopic(
-                memoryTopicKey(if (file.title.isBlank()) file.content else "【${file.title}】"),
-            )
-            if (fileTopic.isNotBlank() && fileTopic in manualTopics) return@forEach
-            addMemory(
-                assistantId = assistantId,
-                content = if (file.title.isBlank()) file.content else "【${file.title}】\n${file.content}",
-                conversationId = conversationId,
-                folderId = folderId,
-                source = "dream",
-            )
-        }
-    }
-
-    /** dream 条目 content 的首行标题（addMemory 存储形态 = "【title】\ncontent"） */
-    /**
-     * v5.0.87（用户亲见：修改一段记忆后，模型那里同时出现修改前与修改后的版本）：
-     * 同主题**旧做梦条目**在主动条目被写入/编辑后自动失效 —— 修改即取代，旧口径不再注入。
-     * 主题键 = 标题（【title】）或首行，空白/标点归一化后比对。
-     */
-    private suspend fun invalidateSupersededDreams(assistantId: String, content: String) {
-        val topic = normalizeTopic(memoryTopicKey(content))
-        if (topic.isBlank()) return
-        runCatching {
-            memoryDAO.getActiveDreamMemories(assistantId)
-                .filter { normalizeTopic(memoryTopicKey(it.content)) == topic }
-                .forEach { memoryDAO.invalidateMemory(it.id, System.currentTimeMillis()) }
-        }
-    }
-
-    /** v5.0.87：同助手 + 同归属层级 + 同主题的旧主动条目 → 失效（新写入即取代，用户定案"修改后旧记录删掉"） */
-    private suspend fun invalidateSupersededManual(
-        assistantId: String,
-        created: AssistantMemory,
-        content: String,
-    ) {
-        val topic = normalizeTopic(memoryTopicKey(content))
-        if (topic.isBlank()) return
-        runCatching {
-            memoryDAO.getActiveNonDreamMemories(assistantId)
-                .filter { it.id != created.id }
-                .filter { it.folderId == created.folderId && it.conversationId == created.conversationId }
-                .filter { normalizeTopic(memoryTopicKey(it.content)) == topic }
-                .forEach { memoryDAO.invalidateMemory(it.id, System.currentTimeMillis()) }
-        }
-    }
-
-    private fun memoryTopicKey(content: String): String {
-        val t = entryTitleOf(content).ifBlank { content.lineSequence().firstOrNull().orEmpty() }
-        return t.take(80)
-    }
-
-    private fun normalizeTopic(raw: String): String =
-        raw.filterNot { it.isWhitespace() || it in "【】[]（）()：:，,。.、" }
-            .lowercase()
-            .take(40)
-
-    private fun entryTitleOf(content: String): String =
-        if (content.startsWith("【")) content.substringBefore('】').removePrefix("【").trim() else ""
-
-    /** v5.0.67：一批对话的对话级记忆（项目包互通：同包所有对话的记忆互相可见） */
-    suspend fun getMemoriesOfConversations(conversationIds: List<String>, assistantId: String? = null): List<AssistantMemory> {
-        if (conversationIds.isEmpty()) return emptyList()
-        return memoryDAO.getMemoriesOfConversations(conversationIds, assistantId).map { it.toModel() }
-    }
+    // v5.3.13 ★★彻底统一（用户问「为什么会有两套方案」）：`syncDreamMemories` 及
+    // `invalidateSupersededDreams` / `invalidateSupersededManual` 已**整段删除**。
+    // 它们是 v5.0.67 时代「文件式 + 条目式双写」的产物：把 dream 产物镜像进第二张表、
+    // 再靠主题相似度去删旧副本。v5.3.7 起 `memory_file` 自身就带 source/归属，
+    // 「同主题旧副本」由 `writeFile` 的 path 唯一性与软删自然保证，不需要也不允许镜像。
+    // 需要「编辑即取代」时，用统一门面的 `invalidateFile`（软删）+ `writeFile`（同 path 覆盖）。
 
     /** 某助手（或全局桶）名下的全部单对话记忆（管理页「单对话记忆」视图用） */
     fun getConversationMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
@@ -479,7 +374,8 @@ class MemoryRepository(
         }
 
     suspend fun deleteMemoriesOfAssistant(assistantId: String) {
-        memoryDAO.deleteMemoriesOfAssistant(assistantId)
+        // v5.3.13：统一表（含软删条目一并物理清掉 —— 助手删除时无需留痕）
+        memoryFileDAO.deleteFilesOfAssistant(assistantId)
     }
 
     /** v4.8.92: 对话删除时的级联清理（单对话记忆随对话销毁） */
@@ -493,17 +389,9 @@ class MemoryRepository(
      * 规则：folderId 与 conversationId **互斥** —— 挂到项目包必须清空对话归属，
      * 挂到单对话必须清空包归属，否则该条目不会被任何一条分层查询命中 = 用户视角消失。
      */
-    suspend fun updateScope(id: Long, folderId: String?, conversationId: String?): AssistantMemory {
-        val old = memoryDAO.getMemoryById(id) ?: error("Memory record #$id not found")
-        val at = System.currentTimeMillis()
-        val normalizedFolder = if (conversationId != null) null else folderId
-        memoryDAO.updateScope(id, normalizedFolder, conversationId, at)
-        return old.copy(
-            folderId = normalizedFolder,
-            conversationId = conversationId,
-            updatedAt = at,
-        ).toModel()
-    }
+    // v5.3.13：旧的 `updateScope(id: Long, ...)`（按 memoryentity 主键改归属）已删除；
+    // 归属修改统一走上面的 `updateScope(memoryId, path, folderId, conversationId)`。
+
 
     // ═══════════ 二·B、旧条目式写操作 → 统一表适配（v5.3.8）═══════════
     //
@@ -590,8 +478,12 @@ class MemoryRepository(
     }
 
     suspend fun deleteMemory(id: Long) {
+        // v5.3.13 ★统一删除语义：这里原本是**物理删除**（DELETE FROM），而 UI 走的是
+        // `invalidateFile` 软删 —— 同一个"删除"动作两套语义（硬删无法追溯、软删还能被
+        // 误判为没删掉）。现在统一为**软删**：写 `invalidated_at`，读侧（DAO）过滤，
+        // 需要恢复时 `invalidateFile(..., invalidated = false)` 即可。
         val path = resolvePathById(GLOBAL_MEMORY_ID, id) ?: return
-        memoryFileDAO.deleteFile(GLOBAL_MEMORY_ID, path)
+        invalidateFile(GLOBAL_MEMORY_ID, path)
     }
 
     /** v4.8.92: 带守卫的删除（模型侧用）—— 其它对话的单对话记忆不可被删除。 */

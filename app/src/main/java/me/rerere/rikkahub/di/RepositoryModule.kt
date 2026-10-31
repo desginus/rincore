@@ -36,7 +36,7 @@ val repositoryModule = module {
     }
 
     single {
-        MemoryRepository(memoryDAO = get(), memoryFileDAO = get())
+        MemoryRepository(get())
     }
 
     single {

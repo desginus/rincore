@@ -90,9 +90,9 @@ val dataSourceModule = module {
         get<AppDatabase>().conversationDao()
     }
 
-    single {
-        get<AppDatabase>().memoryDao()
-    }
+    // v5.3.13 ★彻底统一记忆：`MemoryDAO`（旧表 `memoryentity`）不再注册 ——
+    // 全库无任何注入点，Room DAO 仍由 AppDatabase 自动生成（表 schema 需要），
+    // 但没有任何代码能拿到它，结构上不可能再写第二张表。
 
     single {
         get<AppDatabase>().memoryFileDao()
