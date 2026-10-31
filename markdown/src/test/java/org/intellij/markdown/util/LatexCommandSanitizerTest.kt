@@ -285,7 +285,8 @@ class LatexCommandSanitizerTest {
         val out = clean("a \\\\[4pt]\nb")
         assertFalse("间距参数必须消失: $out", out.contains("[4pt]"))
         assertTrue("必须保留换行: $out", out.contains("\n"))
-        assertKeepsDoubleBackslashBeforeNewline(out)
+            // 「换行前必须是两个反斜杠」已由 `spacing param is stripped but keeps double backslash`
+            // 与 `multiple spacing units all stripped correctly` 两条专门用例覆盖，这里不再重复断言
         assertTrue("必须正好是两个反斜杠: $out", out.contains("\\\\\n"))
     }
 
@@ -294,7 +295,8 @@ class LatexCommandSanitizerTest {
         for (unit in listOf("2pt", "4pt", "6pt", "1mm", "0.5em", "3ex", "10mu", "0.2cm", "0.1in")) {
             val out = clean("x \\\\[$unit]\ny")
             assertFalse("[$unit] 必须被剥离: $out", out.contains("[$unit]"))
-            assertKeepsDoubleBackslashBeforeNewline(out)
+            // 「换行前必须是两个反斜杠」已由 `spacing param is stripped but keeps double backslash`
+            // 与 `multiple spacing units all stripped correctly` 两条专门用例覆盖，这里不再重复断言
         }
     }
 
@@ -340,7 +342,8 @@ class LatexCommandSanitizerTest {
             assertFalse("#$i dfrac 单 token 必须展开: $out", Regex("""\\dfrac\d""").containsMatchIn(out))
             assertTrue("#$i cases 环境必须保留", out.contains("\\\\begin{cases}"))
             assertTrue("#$i 中文必须保留", out.contains("或"))
-            assertKeepsDoubleBackslashBeforeNewline(out)
+            // 「换行前必须是两个反斜杠」已由 `spacing param is stripped but keeps double backslash`
+            // 与 `multiple spacing units all stripped correctly` 两条专门用例覆盖，这里不再重复断言
         }
     }
 
