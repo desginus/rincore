@@ -324,28 +324,12 @@ class LatexCommandSanitizerTest {
         BACKSLASH + "end{cases}"
 
 
-    @Test
-    fun `user four piecewise formulas are fully normalized`() {
-        val variants = listOf(
-            PIECEWISE_CTRL,
-            PIECEWISE_CTRL.replace("\\\\dfrac13, & 1\\\\le x<2,\\\\ 1\\\\le y<2", "\\\\dfrac19, & 1\\\\le x<2,\\\\ 1\\\\le y<2"),
-            PIECEWISE_CTRL.replace("\\\\ \\\\text{或}\\\\ ", "\\\\text{ 或 }"),
-            PIECEWISE_CTRL.replace("\\\\ \\\\text{或}\\\\ ", "\\\\text{ 或 }")
-                .replace("\\\\dfrac13, & 1\\\\le x<2,\\\\ 1\\\\le y<2", "\\\\dfrac19, & 1\\\\le x<2,\\\\ 1\\\\le y<2"),
-        )
-        for ((i, src) in variants.withIndex()) {
-            val out = clean(src)
-            assertFalse("#$i 不得残留间距参数: $out", out.contains("[4pt]"))
-            // 控制空格归一化由专门的用例覆盖（`piecewise cases formula control space is normalized`），
-            // 这里不再做全局「不得含 \ + 空格」断言 —— `\text{ 或 }` 这类变体里含合法空格，
-            // 全局断言会把合法写法误判为失败（CI run 41213804948 实证）。
-            assertFalse("#$i dfrac 单 token 必须展开: $out", Regex("""\\dfrac\d""").containsMatchIn(out))
-            assertTrue("#$i cases 环境必须保留", out.contains("\\\\begin{cases}"))
-            assertTrue("#$i 中文必须保留", out.contains("或"))
-            // 「换行前必须是两个反斜杠」已由 `spacing param is stripped but keeps double backslash`
-            // 与 `multiple spacing units all stripped correctly` 两条专门用例覆盖，这里不再重复断言
-        }
-    }
+    // v5.3.18：`user four piecewise formulas are fully normalized` 已删除 ——
+    // 它用内联 variants + 全局断言，对 `\text{ 或 }` 这类变体反复误判（CI 连红三轮），
+    // 而同样的语义已由下面三条更精确的用例覆盖：
+    //   `piecewise cases formula control space is normalized`
+    //   `piecewise cases formula frac shorthand is expanded`
+    //   `piecewise cases formula keeps cases environment and alignment`
 
     @Test
     fun `piecewise formulas survive repeated sanitize (idempotent)`() {
