@@ -201,4 +201,67 @@ class LatexCommandSanitizerTest {
         val out = clean("\\xRightarrows")
         assertTrue("\\xRightarrows 不得被拆解", out.contains("\\xRightarrows"))
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // v5.3.16 ★★★用户实测：分段函数 `\begin{cases}` 整条渲染失败（0×0 空白）
+    //
+    // 这两个公式与上一轮 \xRightarrow 的失败**不是同一个原因**（那族已归一化）。
+    // 本组锁定本轮找到的两个 jlatexmath 盲区：
+    //   ① 控制空格 `\ `（反斜杠+空格）→ 归一为 `\,`
+    //   ② 单 token 分数参数 `\dfrac13` → 补成 `\dfrac{1}{3}`
+    // ══════════════════════════════════════════════════════════════════════
+    private val USER_PIECEWISE = "F(x,y)=\n" +
+        "\\begin{cases}\n" +
+        "0, & x<1 \\ \\text{或}\\ y<1, \\\\[4pt]\n" +
+        "0, & 1\\le x<2,\\ 1\\le y<2, \\\\[4pt]\n" +
+        "\\dfrac13, & 1\\le x<2,\\ y\\ge 2, \\\\[4pt]\n" +
+        "\\dfrac13, & x\\ge 2,\\ 1\\le y<2, \\\\[4pt]\n" +
+        "1, & x\\ge 2,\\ y\\ge 2.\n" +
+        "\\end{cases}"
+
+    @Test
+    fun `piecewise cases formula control space is normalized`() {
+        val out = clean(USER_PIECEWISE)
+        assertFalse("控制空格 `\\ ` 必须被归一化: $out", out.contains("\\ "))
+        assertTrue("控制空格应变成 thin space \\,", out.contains("\\,\\text{或}"))
+    }
+
+    @Test
+    fun `piecewise cases formula frac shorthand is expanded`() {
+        val out = clean(USER_PIECEWISE)
+        assertFalse("\\dfrac13 必须补花括号: $out", out.contains("\\dfrac13"))
+        assertTrue("应为 \\dfrac{1}{3}", out.contains("\\dfrac{1}{3}"))
+    }
+
+    @Test
+    fun `piecewise cases formula keeps cases environment and alignment`() {
+        val out = clean(USER_PIECEWISE)
+        assertTrue("cases 环境必须保留", out.contains("\\begin{cases}"))
+        assertTrue("\\end{cases} 必须保留", out.contains("\\end{cases}"))
+        assertTrue("行内对齐符 & 必须保留", out.contains("&"))
+        assertTrue("换行必须保留", out.contains("\\\\"))
+        assertTrue("中文 text 必须保留", out.contains("\\text{或}"))
+        assertTrue("\\le / \\ge 必须保留", out.contains("\\le") && out.contains("\\ge"))
+    }
+
+    @Test
+    fun `frac shorthand with nested groups is untouched`() {
+        // 已是规范写法 → 原样不动
+        val src = "\\dfrac{x+1}{y-1}"
+        assertEquals(src, clean(src))
+        val nested = "\\frac{\\sqrt{2}}{3}"
+        assertEquals(nested, clean(nested))
+    }
+
+    @Test
+    fun `frac shorthand handles command tokens`() {
+        val out = clean("\\dfrac\\alpha\\beta")
+        assertTrue("命令 token 也要补花括号: $out", out.contains("\\dfrac{\\alpha}{\\beta}"))
+    }
+
+    @Test
+    fun `double backslash newline is not treated as control space`() {
+        val out = clean("a \\\\ b")
+        assertEquals("\\\\ 必须保持（不能被当成控制空格）", "a \\\\ b", out)
+    }
 }

@@ -34,6 +34,96 @@ object LatexCommandSanitizer {
         s = stripEquationEnvironment(s)
         s = renameBareCommand(s, "bm", "boldsymbol")
         s = normalizeExtensibleArrows(s)
+        s = expandFracShorthand(s)
+        s = normalizeControlSpace(s)
+        return s
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // v5.3.16 ★★★用户实测：`\begin{cases}` 分段函数整条失败（0×0 空白）
+    //
+    // 原文（两个变体都失败）：
+    //   `\begin{cases} 0, & x<1 \ \text{或}\ y<1, \\[4pt] ... \end{cases}`
+    // 已排除：语法错误、中文 `\text`（case7 正常）、`\\[4pt]`（v5.3.1 已剥离）、
+    //        `\le`/`\ge`、公式长度、`\underbrace`。
+    // 剩余两个**只在这个公式里出现**的写法，正是 jlatexmath 的处理盲区：
+    //
+    // ① **控制空格 `\ `（反斜杠+空格）** —— 这是 TeX 原语的 `\def\ {\hskip.3333em}`，
+    //    jlatexmath 的 `PredefinedTeXFormula` 只注册了 `\,` `\;` `\:` `\!` 等
+    //    **反斜杠+标点**的间距命令，**没有**以空格作命令名的 `\ `。解析器在 `\`
+    //    之后遇到空格会直接失败 → 整条公式 ParseException → 0×0。
+    //    → 归一为 `\,`（thin space，jlatexmath 确有支持，注释矩阵里 `\sqrt3\,` 在用）。
+    //
+    // ② **单 token 分数参数 `\dfrac13`** —— TeX 允许 `\frac12` 的紧凑写法（每个参数只
+    //    取一个 token）。jlatexmath 的 `\frac` 系列按 `{group}` 解析，遇到裸数字/裸字符
+    //    时行为不确定（本公式里 `\dfrac13,` 更易踩空）。→ 统一补成 `\dfrac{1}{3}`。
+    //
+    // 两者都是**纯增量归一化**：已写规范的公式（`\dfrac{1}{3}`、`\,`）原样不动。
+    // ───────────────────────────────────────────────────────────────────────
+
+    /** `\(d|t|c)?frac` 后面跟**非花括号的单个 token**时补上花括号。 */
+    private val FRAC_COMMANDS = listOf("dfrac", "tfrac", "cfrac", "frac")
+
+    private fun expandFracShorthand(input: String): String {
+        if (input.indexOf("frac") < 0) return input
+        val sb = StringBuilder(input.length + 16)
+        var i = 0
+        while (i < input.length) {
+            if (input[i] == '\\') {
+                val cmd = FRAC_COMMANDS.firstOrNull { name ->
+                    input.startsWith(name, i + 1) &&
+                        (i + 1 + name.length >= input.length || !input[i + 1 + name.length].isLetter())
+                }
+                if (cmd != null) {
+                    var j = i + 1 + cmd.length
+                    val args = ArrayList<String>(2)
+                    var ok = true
+                    for (argIndex in 0 until 2) {
+                        while (j < input.length && input[j].isWhitespace()) j++
+                        if (j >= input.length) { ok = false; break }
+                        when {
+                            input[j] == '{' -> {
+                                val close = findMatchingBrace(input, j)
+                                if (close < 0) { ok = false; break }
+                                args.add(input.substring(j, close + 1))
+                                j = close + 1
+                            }
+                            input[j] == '\\' -> {
+                                var k = j + 1
+                                if (k < input.length && !input[k].isLetter()) k++ else
+                                    while (k < input.length && input[k].isLetter()) k++
+                                args.add("{" + input.substring(j, k) + "}")
+                                j = k
+                            }
+                            else -> {
+                                args.add("{" + input[j] + "}")
+                                j++
+                            }
+                        }
+                    }
+                    if (ok && args.size == 2) {
+                        sb.append('\\').append(cmd).append(args[0]).append(args[1])
+                        i = j
+                        continue
+                    }
+                }
+            }
+            sb.append(input[i])
+            i++
+        }
+        return sb.toString()
+    }
+
+    /** 控制空格 `\ `（反斜杠+空白）→ `\,`；`\\` 与 `\;` 等原有命令不受影响。 */
+    private val CONTROL_SPACE = Regex("""\\\s""")
+
+    private fun normalizeControlSpace(input: String): String {
+        if (!input.contains("\\ ")) return input
+        // 只把「反斜杠 + 单个空白」换成 thin space；连续两个反斜杠（换行 `\\`）先保护
+        val guard = "\u0000"
+        var s = input.replace("\\\\", guard)
+        s = s.replace(CONTROL_SPACE, "\\,")
+        s = s.replace(guard, "\\\\")
         return s
     }
 
