@@ -8,6 +8,7 @@ package me.rerere.rikkahub.data.repository
  *  · 行式   = 我方 2.5.x 记忆 + v4.8.92 单对话记忆（MemoryTools / AssistantMemoryPage 消费）
  * ───────────────────────────────────────────────────────────────*/
 
+import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -51,6 +52,11 @@ class MemoryRepository(
     companion object {
         const val GLOBAL_MEMORY_ID = "__global__"
         const val NEW_FILE_VERSION = "new"
+
+        /** v5.3.14：挂载层级（与 Assistant.manualMemoryMount / dreamMemoryMount 同口径） */
+        const val MOUNT_ASSISTANT_ONLY = 1
+        const val MOUNT_FOLDER = 2
+        const val MOUNT_CURRENT_CONVERSATION = 3
     }
 
     // ═══════════ 一、文件式记忆库（上游 3.0.0 记忆 2.0） ═══════════
