@@ -497,19 +497,9 @@ class MemoryRepository(
         memoryFileDAO.invalidate(allowedAssistantId, path, System.currentTimeMillis())
     }
 
-    @Suppress("UNUSED_PARAMETER")
-    private fun guardMemoryAccess(
-        entity: MemoryEntity,
-        allowedAssistantId: String,
-        currentConversationId: String?,
-    ) {
-        if (entity.assistantId != allowedAssistantId) {
-            error("该记忆不属于当前上下文，无法访问")
-        }
-        // v5.0.85（用户 B1 亲见：改同主题旧记录被拒「该记忆属于另一个对话，无法访问」）：
-        // **放开跨对话编辑/废弃** —— 同一助手内允许修正任意对话产生的旧口径；归属不变。
-        // 仅保留"跨助手不可访问"这一条硬边界。
-    }
+    // v5.3.13：`guardMemoryAccess(entity: MemoryEntity, ...)` 已删除 ——
+    // 它唯一的语义是「跨助手不可访问」，而统一表的 `resolvePathById(assistantId, id)`
+    // 在别的助手的库里根本找不到这个 id，**结构上已经保证了这条边界**，无需再判一次。
 }
 
 /** 助手读写的记忆库：开启全局记忆后所有助手共用一份 */
