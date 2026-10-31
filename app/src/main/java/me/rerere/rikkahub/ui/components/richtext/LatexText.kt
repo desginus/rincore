@@ -8,6 +8,7 @@ package me.rerere.rikkahub.ui.components.richtext
  * ───────────────────────────────────────────────────────────────*/
 
 import android.graphics.Rect
+import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column

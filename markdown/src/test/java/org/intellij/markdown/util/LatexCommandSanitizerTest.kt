@@ -210,26 +210,24 @@ class LatexCommandSanitizerTest {
     //   ① 控制空格 `\ `（反斜杠+空格）→ 归一为 `\,`
     //   ② 单 token 分数参数 `\dfrac13` → 补成 `\dfrac{1}{3}`
     // ══════════════════════════════════════════════════════════════════════
-    // v5.3.16 用例同源（v5.3.18 改用 BACKSLASH 常量拼接，语义见上）
-    private val USER_PIECEWISE = PIECEWISE_CTRL
 
     @Test
     fun `piecewise cases formula control space is normalized`() {
-        val out = clean(USER_PIECEWISE)
+        val out = clean(PIECEWISE_CTRL)
         assertFalse("控制空格（单反斜杠+空格）必须被归一化: $out", out.contains(BACKSLASH + " "))
         assertTrue("控制空格应变成 thin space \\,", out.contains("\\,\\text{或}"))
     }
 
     @Test
     fun `piecewise cases formula frac shorthand is expanded`() {
-        val out = clean(USER_PIECEWISE)
+        val out = clean(PIECEWISE_CTRL)
         assertFalse("\\dfrac13 必须补花括号: $out", out.contains("\\dfrac13"))
         assertTrue("应为 \\dfrac{1}{3}", out.contains("\\dfrac{1}{3}"))
     }
 
     @Test
     fun `piecewise cases formula keeps cases environment and alignment`() {
-        val out = clean(USER_PIECEWISE)
+        val out = clean(PIECEWISE_CTRL)
         assertTrue("cases 环境必须保留", out.contains("\\begin{cases}"))
         assertTrue("\\end{cases} 必须保留", out.contains("\\end{cases}"))
         assertTrue("行内对齐符 & 必须保留", out.contains("&"))
