@@ -100,6 +100,16 @@ jobs:
           echo "versionName=$VN"
           [ -n "$VN" ] || (echo "::error::versionName 为空" && exit 1)
 
+      # ★ v5.3.17 新增：mark.html 本地化后的端到端渲染验证（纯 node，约 1-2 秒）
+      #   背景：CI 只编译 Kotlin/Java，**从不执行 WebView 里的 JS**。v5.3.15（\xRightarrow
+      #   静默 0×0）与 v5.3.16（\ + \dfrac13 解析失败）两次公式缺陷都发生在一侧，
+      #   每次都是用户装上手机才发现。这一步用 node 加载**真实打包进 assets 的文件**
+      #   （markdown-it / katex / math-plugin / js-base64），把 mark.html 的
+      #   「markdown-it 渲染 → 提取公式占位 → katex.renderToString」完整跑一遍，
+      #   并校验零远程依赖、字体齐全、script/CSS 指向真实存在的本地文件。
+      - name: Render check (mark.html local assets)
+        run: node tools/test-mark-render.js
+
       # ★ 单次 Gradle 调用：编译门禁 → 单元测试 → 打包（增量复用，失败立即中止）
       #   --console=plain 让 `e:` 行直接出现在日志，便于外部脚本秒抓错误
       #

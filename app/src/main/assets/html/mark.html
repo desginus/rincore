@@ -6,10 +6,10 @@
     <title>Markdown Preview</title>
 
     <!-- KaTeX for LaTeX math rendering -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <link rel="stylesheet" href="./vendor/katex/katex.min.css">
 
     <!-- Highlight.js for syntax highlighting -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-dark.min.css">
+    <link rel="stylesheet" href="./vendor/hljs/atom-one-dark.min.css">
 
     <style>
         body {
@@ -171,18 +171,47 @@
 <body>
     <div id="content"></div>
 
-    <script type="module">
-        // Import markdown-it and plugins using esm.sh
-        import MarkdownIt from 'https://esm.sh/markdown-it@14.0.0';
-        import vscodemarkdownItKatex from 'https://esm.sh/@vscode/markdown-it-katex'
-        import markdownItTaskLists from 'https://esm.sh/markdown-it-task-lists@2.1.1';
+    <!-- v5.3.17 ★★★ 全部依赖本地化（用户要求「把 Codex 那套渲染库放回本地」）。
+         此前这 8 个依赖全部从 esm.sh / cdn.jsdelivr.net 远程加载：断网、弱网、
+         或被墙时整页渲染直接失败（连表格都出不来），且每次打开都要走一次网络。
+         现在全部来自 assets/html/vendor/，零网络请求。
 
-        import katex from 'https://esm.sh/katex@0.16.8';
-        // mhchem 扩展: 支持 \ce{} 等化学公式语法
-        import 'https://esm.sh/katex@0.16.8/dist/contrib/mhchem.mjs';
-        import hljs from 'https://esm.sh/highlight.js@11.9.0';
-        import mermaid from 'https://esm.sh/mermaid@10.6.1';
-        import { Base64 } from 'https://esm.sh/js-base64@3.7.5';
+         为什么用 UMD 普通 script 而不是 ESM import：
+         - katex / markdown-it / highlight.js / js-base64 / task-lists 的官方发布都是 UMD，
+           挂到 window.* 后由下面的 script 直接取用，不需要打包器；
+         - mermaid.min.js 虽然是 esbuild 的 ESM 产物，但它末尾自带
+           `globalThis["mermaid"] = ...default`，同样以普通 script 即可用；
+         - 去掉 type="module" 后不再受 ES Module 加载时序影响，脚本顺序即依赖顺序，
+           比原来的远程 ESM 更可预测。 -->
+    <script src="./vendor/katex/katex.min.js"></script>
+    <!-- mhchem 必须在 katex 之后：它检测全局 katex 并扩展 \ce{} 语法 -->
+    <script src="./vendor/katex/mhchem.min.js"></script>
+    <script src="./vendor/markdown-it/markdown-it.min.js"></script>
+    <script src="./vendor/markdown-it-task-lists.js"></script>
+    <script src="./vendor/hljs/hljs.min.js"></script>
+    <script src="./vendor/js-base64/base64.min.js"></script>
+    <script src="./mermaid.min.js"></script>
+    <!-- v5.3.17：math 插件独立成文件（可被 node 单测直接 require，见 tools/test-mark-render.js） -->
+    <script src="./vendor/math-plugin.js"></script>
+
+    <script>
+        // ── 从本地 UMD 取库（替代原来的 8 个 esm.sh import）──
+        const MarkdownIt = window.markdownit;
+        const markdownItTaskLists = window.markdownitTaskLists;
+        const katex = window.katex;
+        const hljs = window.hljs;
+        const mermaid = window.mermaid;
+        const Base64 = window.Base64;
+
+        if (!MarkdownIt || !katex || !hljs || !Base64) {
+            document.body.innerHTML = '<p style="color:#cc0000;font-family:monospace">' +
+                '本地渲染资源加载失败：markdown-it=' + !!MarkdownIt +
+                ' katex=' + !!katex + ' hljs=' + !!hljs + ' base64=' + !!Base64 +
+                '</p>';
+            throw new Error('local vendor assets missing');
+        }
+
+        // math 插件来自 ./vendor/math-plugin.js（本地文件，见上方 script 引用）
 
         // Configure markdown-it
         const md = new MarkdownIt({
@@ -206,9 +235,8 @@
         });
 
         // Add plugins
-        // 传入已加载 mhchem 扩展的 katex 实例, 否则插件会使用其内部自带的另一个 katex 实例,
-        // 导致 \ce 等 mhchem 语法无法识别 (Undefined control sequence: \ce)
-        md.use(vscodemarkdownItKatex, { katex });
+        // v5.3.17：本地 math 插件（见上文 mathPlugin），不再依赖 @vscode/markdown-it-katex
+        md.use(mathPlugin);
 
         md.use(markdownItTaskLists, {
             enabled: true,
@@ -325,9 +353,6 @@
 
         // Call the render function
         renderMarkdown();
-    </script>
-    <script nomodule>
-        alert('您的系统WebView不支持 ES Modules，请升级WebView或者系统!');
     </script>
 </body>
 </html>
