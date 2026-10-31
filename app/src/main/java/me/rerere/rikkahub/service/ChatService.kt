@@ -1015,6 +1015,10 @@ class ChatService(
                         folderId = folderId,
                         conversationId = conversation.id.toString(),
                         siblingConversationIds = siblingConversationIds,
+                        // v5.3.14：设置页那两组「挂载」Chip 从此真正生效
+                        //（此前只有 UI 与数据类字段，注入链根本没读 → 纯摆设）
+                        manualMount = assistant.manualMemoryMount,
+                        dreamMount = assistant.dreamMemoryMount,
                     ).map { it.toAssistantMemory() }
                 },
                 inputTransformers = buildList {

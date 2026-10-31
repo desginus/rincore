@@ -183,14 +183,44 @@ class MemoryRepository(
      * 调用方必须据此给用户反馈 —— 旧实现无条件返回 true，用户点了删除、
      * 实际一条都没命中（path 不匹配 / memoryId 用错桶）时也不会有任何提示。
      */
+    /**
+     * v5.3.14 ★★历史 path 形态候选（「以前的记忆删不掉」的根治）。
+     *
+     * v5.3.7 的迁移用 `memoryPathOf()` 生成 path，**不带前导 "/"**（`"标题.md"`），
+     * 而 `normalizePath()` 一律补成 `"/标题.md"` —— 两者永不相等，于是所有按
+     * 精确 path 匹配的 UPDATE / DELETE 对迁移过来的老记忆**全部 0 行命中**，
+     * 且旧实现静默返回，用户看到的正是「老记忆看得到、删不掉」。
+     *
+     * 现在统一走这个候选集合：原样 / 去空白 / 补斜杠 / 去斜杠 / 规范化结果，
+     * 无论 DB 里存的是哪种写法都能命中。**不改 DB 数据**（避免动 path 带来的连锁）。
+     */
+    private fun pathCandidates(raw: String): List<String> {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return emptyList()
+        val withSlash = if (trimmed.startsWith("/")) trimmed else "/$trimmed"
+        val normalized = MemoryFile.normalizePath(trimmed)
+        return listOfNotNull(
+            raw,
+            trimmed,
+            withSlash,
+            withSlash.removePrefix("/"),
+            normalized,
+            normalized?.removePrefix("/"),
+        ).filter { it.isNotBlank() }.distinct()
+    }
+
     suspend fun invalidateFile(memoryId: String, path: String, invalidated: Boolean = true): Boolean =
         writeLock.withLock {
-            val normalized = MemoryFile.normalizePath(path) ?: return@withLock false
-            val rows = memoryFileDAO.invalidate(
+            val candidates = pathCandidates(path)
+            if (candidates.isEmpty()) return@withLock false
+            val rows = memoryFileDAO.invalidateAny(
                 memoryId,
-                normalized,
+                candidates,
                 if (invalidated) System.currentTimeMillis() else null,
             )
+            if (rows == 0) {
+                Log.w("MemoryRepository", "invalidateFile: no row matched id=$memoryId path=$path candidates=$candidates")
+            }
             rows > 0
         }
 
@@ -201,26 +231,61 @@ class MemoryRepository(
      *  - 项目包级：当前对话属于该项目包时可见
      *  - 单对话级：仅本对话，或同项目包内其它对话（包内互通）可见
      */
+    /**
+     * v5.3.14 ★★挂载层级（用户报「挂载逻辑好像有问题」的真根因）。
+     *
+     * `Assistant.manualMemoryMount` / `dreamMemoryMount` 从 v5.0.86 起就存在于 UI 与数据类，
+     * 但 **v5.3.7 重写注入链时丢了对它们的消费** —— 用户在设置里选「仅助手级 / 仅当前对话」
+     * 对模型收到的内容**毫无影响**（纯 UI 摆设）。这里把判据接回注入链。
+     *
+     * 档位：1 = 仅助手级（`layer == ASSISTANT`）
+     *      2 = 项目包内（= 既有全量行为，默认值，保持向后兼容）
+     *      3 = 仅当前对话（助手级 + **本对话**的单对话记忆；不含同包其它对话）
+     */
     fun visibleForInjection(
         memory: MemoryFile,
         folderId: String?,
         conversationId: String?,
         siblingConversationIds: Collection<String> = emptyList(),
-    ): Boolean = when (memory.layer) {
-        MemoryLayer.ASSISTANT -> true
-        MemoryLayer.FOLDER -> folderId != null && memory.folderId == folderId
-        MemoryLayer.CONVERSATION ->
-            memory.conversationId == conversationId || memory.conversationId in siblingConversationIds
+        mountLevel: Int = MOUNT_FOLDER,
+    ): Boolean {
+        // 挂载层级先于归属判据：1/3 档会掐掉「层」上的可见性
+        when (mountLevel) {
+            MOUNT_ASSISTANT_ONLY -> if (memory.layer != MemoryLayer.ASSISTANT) return false
+            MOUNT_CURRENT_CONVERSATION -> {
+                val isAssistantLevel = memory.layer == MemoryLayer.ASSISTANT
+                val isThisConversation = memory.layer == MemoryLayer.CONVERSATION &&
+                    memory.conversationId != null && memory.conversationId == conversationId
+                if (!isAssistantLevel && !isThisConversation) return false
+            }
+            // MOUNT_FOLDER（默认）不做额外裁剪，走下面的归属判据
+        }
+        return when (memory.layer) {
+            MemoryLayer.ASSISTANT -> true
+            MemoryLayer.FOLDER -> folderId != null && memory.folderId == folderId
+            MemoryLayer.CONVERSATION ->
+                memory.conversationId == conversationId || memory.conversationId in siblingConversationIds
+        }
     }
 
-    /** 注入用：一次查出该上下文可见的全部记忆（已经是唯一存储，无需跨表拼装）。 */
+    /**
+     * 注入用：一次查出该上下文可见的全部记忆（已经是唯一存储，无需跨表拼装）。
+     *
+     * v5.3.14：按**来源**分别应用挂载层级 —— 主动写入用 [manualMount]，
+     * 做梦整理用 [dreamMount]（这正是设置页那两组 Chip 的语义）。
+     */
     suspend fun memoriesForInjection(
         memoryId: String,
         folderId: String?,
         conversationId: String?,
         siblingConversationIds: Collection<String> = emptyList(),
+        manualMount: Int = MOUNT_FOLDER,
+        dreamMount: Int = MOUNT_FOLDER,
     ): List<MemoryFile> = getFiles(memoryId)
-        .filter { visibleForInjection(it, folderId, conversationId, siblingConversationIds) }
+        .filter { file ->
+            val mount = if (file.isDream) dreamMount else manualMount
+            visibleForInjection(file, folderId, conversationId, siblingConversationIds, mount)
+        }
 
     suspend fun deleteFilesOfAssistant(assistantId: String) {
         memoryFileDAO.deleteFilesOfAssistant(assistantId)

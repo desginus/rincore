@@ -11,7 +11,8 @@ import org.junit.Test
 class MemoryRepositoryTest {
     // v5.3.10：MemoryRepository 自 v5.3.7 起是（统一表 DAO + 旧条目式 DAO）双参构造；
     // 测试只覆盖统一表语义，legacy DAO 用最小替身（真调用会抛 NotImplementedError）。
-    private val repository = MemoryRepository(FakeMemoryDAO())
+    private val dao = FakeMemoryDAO()
+    private val repository = MemoryRepository(dao)
     private val assistant = "assistant"
 
     private suspend fun create(path: String, content: String): MemoryFile {
@@ -252,5 +253,36 @@ class MemoryRepositoryTest {
     @Test
     fun `invalidating a missing path reports false instead of pretending success`() = runBlocking {
         assertEquals(false, repository.invalidateFile(assistant, "/topics/never-existed.md"))
+    }
+
+    // ═══ v5.3.14 回归护栏：「以前的记忆删不掉」 ═══
+    //
+    // v5.3.7 的迁移写入的 path **没有前导 "/"**（"旧标题.md"），而 normalizePath 会补成
+    // "/旧标题.md" → 精确匹配必然 0 行 → 老记忆改不了也删不掉（用户实测）。
+    // 修复：invalidateFile 走多形态候选（原样/有无斜杠/规范化），无论 DB 里哪种写法都能命中。
+    @Test
+    fun `legacy path without leading slash can still be invalidated`() = runBlocking {
+        // 直接按迁移产物形态入库（不带前导 /）
+        (dao as FakeMemoryDAO).upsertFile(
+            me.rerere.rikkahub.data.db.entity.MemoryFileEntity(
+                assistantId = assistant,
+                path = "旧标题.md",
+                content = "【旧标题】\n- 老记忆",
+                updatedAt = 1L,
+                source = "active",
+            )
+        )
+        assertEquals(1, repository.getFiles(assistant).size)
+
+        assertTrue("无前导 / 的历史 path 也必须能删", repository.invalidateFile(assistant, "旧标题.md"))
+        assertTrue(repository.getFiles(assistant).none { it.path == "旧标题.md" })
+    }
+
+    @Test
+    fun `invalidation matches regardless of slashes either way`() = runBlocking {
+        repository.writeFile(assistant, "/topics/a.md", "body", MemoryRepository.NEW_FILE_VERSION)
+        // 传不带斜杠的形态同样要命中
+        assertTrue(repository.invalidateFile(assistant, "topics/a.md"))
+        assertTrue(repository.getFiles(assistant).none { it.path == "/topics/a.md" })
     }
 }

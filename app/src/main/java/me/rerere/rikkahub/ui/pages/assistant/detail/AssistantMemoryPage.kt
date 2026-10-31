@@ -857,6 +857,8 @@ private fun MemoryMemoriesTab(
 
     // v4.8.92: 记忆范围管理 —— [整个助手] / [单对话记忆]
     var showConversationPicker by remember { mutableStateOf(false) }
+    // v5.3.14：编辑已有记忆时改归属到「单对话」用的选择器（与新建入口分开）
+    var showConversationScopePicker by remember { mutableStateOf(false) }
     // 对话标题缓存（来源标签 / 分组头；已删除对话 → 显示"已删除的对话"）
     val memoryTitles by produceState<Map<String, String>>(
         initialValue = emptyMap(), memories, conversationMemories,
@@ -919,20 +921,70 @@ private fun MemoryMemoriesTab(
                         )
                         FilterChip(
                             selected = memory.conversationId != null,
-                            onClick = {
-                                // 已属于某对话 → 保持；未归属 → 提示走新建入口
-                                if (memory.conversationId == null) {
-                                    pendingScopeHint = true
-                                }
-                            },
+                            // v5.3.14 ★用户定案：「点单对话只弹最近 5 个对话 + 置顶对话」——
+                            // 旧实现点这里只置一个错误提示（"请在新建时指定"），等于拒绝执行；
+                            // 现在直接打开选择器，选中即把归属改成该对话。
+                            onClick = { showConversationScopePicker = true },
                             label = { Text("单对话") },
                         )
                     }
-                    if (pendingScopeHint && memory.conversationId == null) {
+                    if (memory.conversationId != null) {
                         Text(
-                            text = "单对话归属请在新建时指定（右上角 + → 选择归属对话）",
+                            text = "当前归属：仅该对话可见（点「助手级」可取消）",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    // v5.3.14 ★单对话归属选择器：置顶对话 + 最近 5 个（按更新时间倒序，置顶优先）
+                    if (showConversationScopePicker) {
+                        val candidates by produceState<List<Conversation>>(
+                            initialValue = emptyList(),
+                            key1 = memory.path,
+                        ) {
+                            val all = runCatching { loadRecentConversations() }.getOrDefault(emptyList())
+                            // 置顶优先（SQL 已排序，这里再显式分一次以兼容不同数据源）
+                            value = all.filter { it.isPinned } + all.filterNot { it.isPinned }.take(5)
+                        }
+                        AlertDialog(
+                            onDismissRequest = { showConversationScopePicker = false },
+                            title = { Text("归属到哪个对话") },
+                            text = {
+                                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                    if (candidates.isEmpty()) {
+                                        Text(
+                                            text = "还没有对话。先新建一个对话，再回来指定归属。",
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                    candidates.forEach { conv ->
+                                        TextButton(
+                                            onClick = {
+                                                showConversationScopePicker = false
+                                                // 归属互斥：挂到单对话必须清空项目包归属
+                                                update(
+                                                    memory.copy(
+                                                        folderId = null,
+                                                        conversationId = conv.id.toString(),
+                                                    )
+                                                )
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) {
+                                            Text(
+                                                text = (if (conv.isPinned) "📌 " else "") + conv.title,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { showConversationScopePicker = false }) {
+                                    Text(stringResource(R.string.assistant_page_cancel))
+                                }
+                            },
                         )
                     }
                 }

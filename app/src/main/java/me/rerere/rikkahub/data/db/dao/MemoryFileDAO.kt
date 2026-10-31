@@ -63,4 +63,24 @@ interface MemoryFileDAO {
 
     @Query("SELECT * FROM memory_file WHERE assistant_id = :assistantId AND source = :source AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY path")
     fun getFilesBySourceFlow(assistantId: String, source: String): Flow<List<MemoryFileEntity>>
+
+    // ═══ v5.3.14 ★★历史 path 形态兼容（「以前的记忆删不掉」的真根因）═══
+    //
+    // v5.3.7 的 MIGRATION_37_38 用 `memoryPathOf()` 生成 path，**没有前导 "/"**
+    //（`"标题.md"`）；而 `MemoryFile.normalizePath()` 一律补成 `"/标题.md"`。
+    // 于是所有按 path 精确匹配的 UPDATE / DELETE 对**迁移过来的老记忆全部 0 行命中**，
+    // 表现就是「老记忆看得到、改不了、删不掉」（且旧实现静默返回）。
+    // 下面两个用 `IN (:paths)` 的方法由 Repository 传入多种形态（原样 / 有无斜杠 / 规范化），
+    // 无论 DB 里存的是哪种写法都能命中。
+    @Query("UPDATE memory_file SET invalidated_at = :at WHERE assistant_id = :assistantId AND path IN (:paths)")
+    suspend fun invalidateAny(assistantId: String, paths: List<String>, at: Long?): Int
+
+    @Query("DELETE FROM memory_file WHERE assistant_id = :assistantId AND path IN (:paths)")
+    suspend fun deleteFileAny(assistantId: String, paths: List<String>)
+
+    @Query("UPDATE memory_file SET folder_id = :folderId, conversation_id = :conversationId, updated_at = :at WHERE assistant_id = :assistantId AND path IN (:paths)")
+    suspend fun updateScopeAny(assistantId: String, paths: List<String>, folderId: String?, conversationId: String?, at: Long): Int
+
+    @Query("UPDATE memory_file SET content = :content, updated_at = :at WHERE assistant_id = :assistantId AND path IN (:paths)")
+    suspend fun updateContentAny(assistantId: String, paths: List<String>, content: String, at: Long): Int
 }

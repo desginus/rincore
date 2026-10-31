@@ -104,4 +104,61 @@ internal class FakeMemoryDAO : MemoryFileDAO {
     override suspend fun deleteFilesOfConversation(conversationId: String) {
         files.value = files.value.filterNot { it.conversationId == conversationId }
     }
+
+    // ═══ v5.3.14 多形态 path 匹配（历史数据兼容）═══
+
+    override suspend fun invalidateAny(assistantId: String, paths: List<String>, at: Long?): Int {
+        var hit = 0
+        files.value = files.value.map {
+            if (it.assistantId == assistantId && it.path in paths) {
+                hit++
+                it.copy(invalidatedAt = at)
+            } else {
+                it
+            }
+        }
+        return hit
+    }
+
+    override suspend fun deleteFileAny(assistantId: String, paths: List<String>) {
+        files.value = files.value.filterNot { it.assistantId == assistantId && it.path in paths }
+    }
+
+    override suspend fun updateScopeAny(
+        assistantId: String,
+        paths: List<String>,
+        folderId: String?,
+        conversationId: String?,
+        at: Long,
+    ): Int {
+        var hit = 0
+        files.value = files.value.map {
+            if (it.assistantId == assistantId && it.path in paths) {
+                hit++
+                it.copy(folderId = folderId, conversationId = conversationId, updatedAt = at)
+            } else {
+                it
+            }
+        }
+        return hit
+    }
+
+    override suspend fun updateContentAny(
+        assistantId: String,
+        paths: List<String>,
+        content: String,
+        at: Long,
+    ): Int {
+        var hit = 0
+        files.value = files.value.map {
+            if (it.assistantId == assistantId && it.path in paths) {
+                hit++
+                it.copy(content = content, updatedAt = at)
+            } else {
+                it
+            }
+        }
+        return hit
+    }
+
 }
