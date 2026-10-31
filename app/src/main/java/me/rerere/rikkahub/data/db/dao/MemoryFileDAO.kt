@@ -8,12 +8,24 @@ import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
 
 @Dao
 interface MemoryFileDAO {
-    @Query("SELECT * FROM memory_file WHERE assistant_id = :assistantId ORDER BY path")
+    // ═══ v5.3.12 ★★软删（invalidated_at）的唯一口径 ═══
+    //
+    // 此前 `getFilesOfAssistantFlow` / `getFilesOfAssistant` **没有过滤 invalidated_at**，
+    // 而 `getFilesOfConversationFlow` / `getFilesBySourceFlow` 有 —— 同一张表两套读法。
+    // 后果：用户在记忆页点删除 → `invalidateFile` 写入失效标记 → **列表照常显示该条**
+    // = 用户视角「做梦整理的记忆无法删除」（真实根因，不是 UI、不是权限）。
+    //
+    // 现在的规则（读过滤 / 写可见）：
+    //  · 给 UI / 注入用的**读取查询**一律带 `invalidated_at IS NULL OR = 0`；
+    //  · 给 `update()` 判存用的 **`getFile` 不过滤** —— 它必须看到已失效的条目，
+    //    才能把原 `invalidatedAt` 原样写回，保证「用户删掉的内容不会被模型/做梦写复活」。
+    @Query("SELECT * FROM memory_file WHERE assistant_id = :assistantId AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY path")
     fun getFilesOfAssistantFlow(assistantId: String): Flow<List<MemoryFileEntity>>
 
-    @Query("SELECT * FROM memory_file WHERE assistant_id = :assistantId ORDER BY path")
+    @Query("SELECT * FROM memory_file WHERE assistant_id = :assistantId AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY path")
     suspend fun getFilesOfAssistant(assistantId: String): List<MemoryFileEntity>
 
+    /** 写入判存专用：**不过滤**失效标记（见上方规则说明）。 */
     @Query("SELECT * FROM memory_file WHERE assistant_id = :assistantId AND path = :path")
     suspend fun getFile(assistantId: String, path: String): MemoryFileEntity?
 
@@ -47,7 +59,7 @@ interface MemoryFileDAO {
     suspend fun updateSource(assistantId: String, path: String, source: String, at: Long)
 
     @Query("UPDATE memory_file SET invalidated_at = :at WHERE assistant_id = :assistantId AND path = :path")
-    suspend fun invalidate(assistantId: String, path: String, at: Long?)
+    suspend fun invalidate(assistantId: String, path: String, at: Long?): Int
 
     @Query("SELECT * FROM memory_file WHERE assistant_id = :assistantId AND source = :source AND (invalidated_at IS NULL OR invalidated_at = 0) ORDER BY path")
     fun getFilesBySourceFlow(assistantId: String, source: String): Flow<List<MemoryFileEntity>>

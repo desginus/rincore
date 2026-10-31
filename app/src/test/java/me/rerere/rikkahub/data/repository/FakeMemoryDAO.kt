@@ -68,10 +68,17 @@ internal class FakeMemoryDAO : MemoryFileDAO {
         }
     }
 
-    override suspend fun invalidate(assistantId: String, path: String, at: Long?) {
+    override suspend fun invalidate(assistantId: String, path: String, at: Long?): Int {
+        var hit = 0
         files.value = files.value.map {
-            if (it.assistantId == assistantId && it.path == path) it.copy(invalidatedAt = at) else it
+            if (it.assistantId == assistantId && it.path == path) {
+                hit++
+                it.copy(invalidatedAt = at)
+            } else {
+                it
+            }
         }
+        return hit
     }
 
     override fun getFilesBySourceFlow(assistantId: String, source: String): Flow<List<MemoryFileEntity>> =

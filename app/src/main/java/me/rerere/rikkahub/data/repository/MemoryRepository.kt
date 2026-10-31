@@ -170,11 +170,22 @@ class MemoryRepository(
         }
 
     /** 软删（失效标记）：不再注入、不再展示，但留痕。 */
+    /**
+     * v5.3.12 ★★删除 = **软删（失效标记）+ 读侧过滤**，两者必须成对。
+     *
+     * 返回 `true` 表示**真的有这一条并且状态被改了**（DAO 影响行数 > 0）。
+     * 调用方必须据此给用户反馈 —— 旧实现无条件返回 true，用户点了删除、
+     * 实际一条都没命中（path 不匹配 / memoryId 用错桶）时也不会有任何提示。
+     */
     suspend fun invalidateFile(memoryId: String, path: String, invalidated: Boolean = true): Boolean =
         writeLock.withLock {
             val normalized = MemoryFile.normalizePath(path) ?: return@withLock false
-            memoryFileDAO.invalidate(memoryId, normalized, if (invalidated) System.currentTimeMillis() else null)
-            true
+            val rows = memoryFileDAO.invalidate(
+                memoryId,
+                normalized,
+                if (invalidated) System.currentTimeMillis() else null,
+            )
+            rows > 0
         }
 
     /**

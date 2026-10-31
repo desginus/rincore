@@ -217,4 +217,40 @@ class MemoryRepositoryTest {
             file.displayBody.trim(),
         )
     }
+
+    // ═══ v5.3.12 回归护栏：软删必须「读侧消失 + 写入不复活」 ═══
+    //
+    // 这条测试锁定的正是用户实测的「做梦整理的记忆无法被删除」：
+    // 旧 DAO 的 getFilesOfAssistantFlow/getFilesOfAssistant 不过滤 invalidated_at，
+    // 导致 invalidateFile 写入了失效标记、列表照常显示该条 = 删不掉。
+    @Test
+    fun `deleting a dream memory hides it from reads and later writes do not resurrect it`() = runBlocking {
+        val path = "/topics/dream-delete.md"
+        repository.writeFile(
+            assistant,
+            path,
+            "【做梦主题】\n- [stated] 内容",
+            MemoryRepository.NEW_FILE_VERSION,
+            source = "dream",
+        )
+        assertTrue(repository.getFiles(assistant).any { it.path == path })
+
+        assertTrue(repository.invalidateFile(assistant, path))
+        assertTrue(
+            "删除后列表必须立刻看不到该条",
+            repository.getFiles(assistant).none { it.path == path },
+        )
+
+        // 模型或做梦整理再写同一路径：不得复活（用户已明确删除）
+        repository.writeFile(assistant, path, "【做梦主题】\n- [stated] 新内容", source = "dream")
+        assertTrue(
+            "已删除的记忆不应被后续写入复活",
+            repository.getFiles(assistant).none { it.path == path },
+        )
+    }
+
+    @Test
+    fun `invalidating a missing path reports false instead of pretending success`() = runBlocking {
+        assertEquals(false, repository.invalidateFile(assistant, "/topics/never-existed.md"))
+    }
 }
