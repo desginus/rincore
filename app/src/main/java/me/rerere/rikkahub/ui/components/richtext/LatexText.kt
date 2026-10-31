@@ -9,8 +9,13 @@ package me.rerere.rikkahub.ui.components.richtext
 
 import android.graphics.Rect
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -20,7 +25,9 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
 import org.intellij.markdown.util.LatexCommandSanitizer
 import ru.noties.jlatexmath.JLatexMathDrawable
 import ru.noties.jlatexmath.JLatexMathSplitter
@@ -34,7 +41,12 @@ fun assumeLatexSize(latex: String, fontSize: Float): Rect {
             .padding(0)
             .build()
             .bounds
-    }.getOrElse { Rect(0, 0, 0, 0) }
+    }.getOrElse {
+        // v5.3.15：失败时**不能返回 0×0** —— 行内排版会按 0 尺寸占位，
+        // 而 LatexText 现在会渲染错误块（有高度），尺寸预估与真实绘制不一致
+        // 会把整行文字挤成一团。给一个保守的最小占位（可见即可）。
+        android.graphics.Rect(0, 0, (fontSize * 6f).toInt().coerceAtLeast(96), (fontSize * 1.6f).toInt())
+    }
 }
 
 @Composable
@@ -51,41 +63,130 @@ fun LatexText(
     )
     val density = LocalDensity.current
 
-    val drawable = remember(latex, fontSize, style) {
-        runCatching {
-            with(density) {
-                getLatexDrawable(
-                    latex = processLatex(latex),
-                    fontSize = fontSize.toPx(),
-                    color = style.color.toArgb(),
-                    background = style.background.toArgb()
-                )
-            }
-        }.onFailure {
-            it.printStackTrace()
-        }.getOrNull()
+    // ══════════════════════════════════════════════════════════════════════
+    // v5.3.15 ★★★ 用户实测缺陷二：**失败必须可见**（原本是静默空白）
+    //
+    // 真根因：jlatexmath 遇到不支持的宏（如 \xRightarrow）时**不抛异常**，而是
+    // 产出 bounds 为 0×0 的 drawable。旧代码判据是 `drawable != null` → 走进
+    // 正常分支 → Canvas 尺寸 0.dp×0.dp → 屏幕上什么都没有，也没有任何提示。
+    // 用户原话：「当前空白表现比报错严重，属于静默失败。」
+    //
+    // 现在的判据三层：
+    //   1) 宏白名单预检命中 → 不进渲染管线，直接错误块；
+    //   2) 抛异常 → 错误块（带异常消息）；
+    //   3) **返回非 null 但 bounds ≤ 0** → 同样判失败（这是本次的真病灶）。
+    // 错误块内容：红色原式 + 错误消息 + 出错位置。
+    // ══════════════════════════════════════════════════════════════════════
+    val processed = remember(latex) { processLatex(latex) }
+
+    val render = remember(processed, fontSize, style, density) {
+        val unsupported = LatexCommandSanitizer.unsupportedMacros(processed)
+        if (unsupported.isNotEmpty()) {
+            LatexRender.Failed(
+                reason = "含渲染器不支持的宏：${unsupported.joinToString(" ")}",
+                position = processed.indexOf(unsupported.first()).takeIf { it >= 0 },
+            )
+        } else {
+            runCatching {
+                with(density) {
+                    getLatexDrawable(
+                        latex = processed,
+                        fontSize = fontSize.toPx(),
+                        color = style.color.toArgb(),
+                        background = style.background.toArgb()
+                    )
+                }
+            }.fold(
+                onSuccess = { d ->
+                    if (d != null && d.bounds.width() > 0 && d.bounds.height() > 0) {
+                        LatexRender.Ok(d)
+                    } else {
+                        LatexRender.Failed(
+                            reason = "渲染器产出空图形（0×0）—— 该公式含不支持的语法，已拦截静默空白",
+                            position = null,
+                        )
+                    }
+                },
+                onFailure = { e ->
+                    LatexRender.Failed(
+                        reason = e.message?.take(160)?.ifBlank { null }
+                            ?: (e::class.java.simpleName ?: "未知错误"),
+                        position = null,
+                    )
+                },
+            )
+        }
     }
 
-    if (drawable != null) {
-        with(density) {
+    when (val r = render) {
+        is LatexRender.Ok -> with(density) {
             Canvas(
                 modifier = modifier
                     .size(
-                        width = drawable.bounds.width().toDp(),
-                        height = drawable.bounds.height().toDp()
+                        width = r.drawable.bounds.width().toDp(),
+                        height = r.drawable.bounds.height().toDp()
                     )
             ) {
-                drawable.draw(drawContext.canvas.nativeCanvas)
+                r.drawable.draw(drawContext.canvas.nativeCanvas)
             }
         }
-    } else {
-        // v4.8.119: 渲染失败回落显示去壳公式 (processLatex 剥掉 $…$/\\(…\\) 定界符),
-        // 旧实现回落显示原文 `$x$` — 用户看到美元符残壳, 误以为"渲染没触发"。
-        Text(
-            text = processLatex(latex),
+
+        is LatexRender.Failed -> LatexErrorBlock(
+            original = latex,
+            reason = r.reason,
+            position = r.position,
             style = style,
-            modifier = modifier
+            modifier = modifier,
         )
+    }
+}
+
+/** v5.3.15：公式渲染结果 —— 三态，**不存在"静默什么都不画"的第四态**。 */
+private sealed interface LatexRender {
+    data class Ok(val drawable: JLatexMathDrawable) : LatexRender
+    data class Failed(val reason: String, val position: Int?) : LatexRender
+}
+
+/**
+ * v5.3.15 ★错误块：红色原式 + 错误消息 + 出错位置。
+ *
+ * 来自用户要求「解析失败时渲染红色原式加错误消息与出错位置，禁止返回空节点」：
+ * 用户必须能一眼看出**哪一段是公式**、**为什么失败**、**失败在哪**，
+ * 而不是面对一片空白去猜是不是没渲染。
+ */
+@Composable
+private fun LatexErrorBlock(
+    original: String,
+    reason: String,
+    position: Int?,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .background(
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.30f),
+                shape = RoundedCornerShape(6.dp),
+            )
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+    ) {
+        Text(
+            text = original,
+            style = style.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.error,
+        )
+        Text(
+            text = "公式渲染失败：$reason",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+        if (position != null) {
+            Text(
+                text = "出错位置：第 ${position + 1} 个字符附近",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+            )
+        }
     }
 }
 

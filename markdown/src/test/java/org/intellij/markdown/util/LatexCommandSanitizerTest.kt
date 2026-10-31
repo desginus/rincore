@@ -93,4 +93,112 @@ class LatexCommandSanitizerTest {
         )
         assertEquals(once, LatexCommandSanitizer.sanitize(once))
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // v5.3.15 ★★★ 用户实测 1~9 回归：双线伸展箭头族（\xRightarrow 家族）
+    //
+    // 缺陷：块级 $$ 模式下 \xRightarrow 解析失败 → jlatexmath 不抛异常而是产出
+    // 0 尺寸 drawable → 渲染端 drawable != null 走正常分支 → Canvas 0×0 → 空白无提示。
+    // 修复：在 sanitize() 内把双线族归一化到 \Rightarrow + \overset/\underset。
+    // 这组用例锁死「双线族永不以原样进渲染器」。
+    // ══════════════════════════════════════════════════════════════════════
+    private fun clean(latex: String) = LatexCommandSanitizer.sanitize(latex)
+
+    private fun assertNoUnsupported(latex: String) {
+        val hit = LatexCommandSanitizer.unsupportedMacros(latex)
+        assertTrue("不应命中不支持名单，实际=$hit", hit.isEmpty())
+    }
+
+    @Test
+    fun `case1 inline xRightarrow is normalized`() {
+        val out = clean("a \\xRightarrow{b} c")
+        assertFalse("不得残留 \\xRightarrow: $out", out.contains("\\xRightarrow"))
+        assertTrue("必须换成双线 \\Rightarrow: $out", out.contains("\\Rightarrow"))
+        assertTrue("标签必须保留: $out", out.contains("\\overset{b}"))
+        assertNoUnsupported(out)
+    }
+
+    @Test
+    fun `case2 block xRightarrow is normalized`() {
+        val out = clean("a \\xRightarrow{b} c")
+        assertFalse(out.contains("\\xRightarrow"))
+        assertTrue(out.contains("\\overset{b}{\\Rightarrow}"))
+    }
+
+    @Test
+    fun `case3 xrightarrow is untouched`() {
+        assertEquals("a \\xrightarrow{b} c", clean("a \\xrightarrow{b} c"))
+    }
+
+    @Test
+    fun `case4 stackrel over Rightarrow is untouched`() {
+        assertEquals("a \\stackrel{b}{\\Rightarrow} c", clean("a \\stackrel{b}{\\Rightarrow} c"))
+    }
+
+    @Test
+    fun `case5 bare Rightarrow is untouched`() {
+        assertEquals("a \\Rightarrow b", clean("a \\Rightarrow b"))
+    }
+
+    @Test
+    fun `case6 underbrace is untouched`() {
+        assertEquals("\\underbrace{x+y}_{z}", clean("\\underbrace{x+y}_{z}"))
+    }
+
+    @Test
+    fun `case7 text with chinese is untouched`() {
+        assertEquals("\\text{全部情况，逐格}", clean("\\text{全部情况，逐格}"))
+    }
+
+    @Test
+    fun `case8 long formula with Rightarrow only is untouched`() {
+        val src = "\\frac{a}{b}\\Rightarrow\\frac{c}{d}\\Rightarrow\\frac{e}{f}" +
+            "\\Rightarrow\\frac{g}{h}\\Rightarrow\\frac{i}{j}"
+        assertEquals(src, clean(src))
+    }
+
+    @Test
+    fun `case9 double line arrow family never reaches the renderer`() {
+        listOf(
+            "a \\xRightarrow{b} c",
+            "a \\xLeftarrow{b} c",
+            "a \\xLeftrightarrow{b} c",
+            "a \\implies b",
+            "a \\impliedby b",
+            "a \\iff b",
+        ).forEach { input ->
+            val out = clean(input)
+            assertFalse("双线族必须归一化，漏了: $input -> $out", out.contains("\\x"))
+            assertNoUnsupported(out)
+        }
+    }
+
+    @Test
+    fun `xRightarrow with optional below label maps to underset`() {
+        val out = clean("a \\xRightarrow[below]{above} c")
+        assertTrue(out.contains("\\underset{below}"))
+        assertTrue(out.contains("\\overset{above}"))
+        assertFalse(out.contains("\\xRightarrow"))
+    }
+
+    @Test
+    fun `xRightarrow without arguments becomes bare double arrow`() {
+        val out = clean("a \\xRightarrow c")
+        assertFalse(out.contains("\\xRightarrow"))
+        assertTrue(out.contains("\\Rightarrow"))
+    }
+
+    @Test
+    fun `unsupported macro detection`() {
+        assertTrue(LatexCommandSanitizer.unsupportedMacros("\\ce{H2O}").contains("\\ce"))
+        assertTrue(LatexCommandSanitizer.unsupportedMacros("x \\cancel{y}").contains("\\cancel"))
+        assertTrue(LatexCommandSanitizer.unsupportedMacros("a \\Rightarrow b").isEmpty())
+    }
+
+    @Test
+    fun `macro prefix does not misfire`() {
+        assertTrue("\\cell 不是 \\ce", LatexCommandSanitizer.unsupportedMacros("\\cell").isEmpty())
+        val out = clean("\\xRightarrows")
+        assertTrue("\\xRightarrows 不得被拆解", out.contains("\\xRightarrows"))
+    }
 }
