@@ -122,7 +122,11 @@ object LatexCommandSanitizer {
         // 只把「反斜杠 + 单个空白」换成 thin space；连续两个反斜杠（换行 `\\`）先保护
         val guard = "\u0000"
         var s = input.replace("\\\\", guard)
-        s = s.replace(CONTROL_SPACE, "\\,")
+        // ⚠ v5.3.16 实测教训：`Regex.replace(Regex, String)` 会把替换串里的 `\` 当转义符
+        // （与 `$` 同族语义），`\,` 是非法转义 → **反斜杠被吞掉**，`\ ` 变成 `,` 而不是 `\,`。
+        // 本行必须用 lambda 形式（lambda 的返回值不做转义解释），否则归一化结果静默错误，
+        // 公式里会留下裸逗号（jlatexmath 仍会解析失败）。这是本地 kotlinc 跑出来的实证。
+        s = s.replace(CONTROL_SPACE) { "\\," }
         s = s.replace(guard, "\\\\")
         return s
     }

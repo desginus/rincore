@@ -99,7 +99,10 @@ class RetryPolicyTest {
             fastFailStreak = RetryDecision.FAST_FAIL_THRESHOLD - 1,
             jitter = false,
         )
-        assertEquals(500L, (v as RetryVerdict.Retry).delayMs)
+        // v5.3.16：v5.0.90 把退避 base 从 500ms 调到 350ms（cap 8s→6s），
+        // 但本条断言一直停留在 500L —— 从那时起它就是错的，只是测试直到 v5.3.10
+        // 才被接进 CI，一直没真正执行过。按实现（RetryPolicy:56/71 base=350L）校正。
+        assertEquals(350L, (v as RetryVerdict.Retry).delayMs)
     }
 
     @Test
@@ -124,7 +127,9 @@ class RetryPolicyTest {
             retryAfterMs = 30_000L,
             jitter = false,
         )
-        assertEquals(15_000L, (v as RetryVerdict.Retry).delayMs)
+        // v5.3.16：实现是 `retryAfterMs != null -> retryAfterMs`（服务器说等多久就等多久，
+        // RetryAfter.parse 已统一封顶 120s），故 30s 原样返回；旧断言写的 15s 是过期值。
+        assertEquals(30_000L, (v as RetryVerdict.Retry).delayMs)
     }
 
     @Test
