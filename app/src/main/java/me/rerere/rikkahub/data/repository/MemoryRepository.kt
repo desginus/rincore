@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.db.dao.MemoryFileDAO
 import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
 import me.rerere.rikkahub.data.model.Assistant
@@ -810,4 +812,20 @@ private fun String.replaceAt(index: Int, length: Int, replacement: String): Stri
         }
     }
     return substring(0, start) + replacement + substring(end)
+
+    // ═══ v5.3.23 ★旧格式记忆（迁移产物）的统计与清理 ═══
+    //
+    // 这一类记忆没有 frontmatter，内容是 v5.0.x 的版本发布流水账；它们**不再参与注入**
+    // （见 `buildMemoryPrompt` 的 `<legacy_entries>`），只在记忆页可见。
+    // 用户确认后可以一次性物理删除 —— 这是唯一允许的「物理删除整批」入口，
+    // 与日常的单条软删（`invalidateFile`）分属两种语义，不要混用。
+
+    /** 当前记忆库里「旧格式」记忆的条数（用于 UI 显示可清理量）。 */
+    suspend fun countLegacyFiles(memoryId: String): Int = memoryFileDAO.countLegacyFiles(memoryId)
+
+    /** 物理删除当前记忆库里的全部「旧格式」记忆，返回删除行数。 */
+    suspend fun purgeLegacyFiles(memoryId: String): Int = withContext(Dispatchers.IO) {
+        memoryFileDAO.deleteLegacyFiles(memoryId)
+    }
+
 }

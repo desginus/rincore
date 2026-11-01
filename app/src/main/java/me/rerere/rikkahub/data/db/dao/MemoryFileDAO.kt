@@ -101,4 +101,26 @@ interface MemoryFileDAO {
     /** 供「同名文件已存在于其它范围」判定使用（不过滤软删，语义由调用方决定）。 */
     @Query("SELECT COUNT(*) FROM memory_file WHERE assistant_id = :assistantId AND path IN (:paths)")
     suspend fun countFilesAny(assistantId: String, paths: List<String>): Int
+
+    // ═══ v5.3.23 ★旧格式记忆的统计与清理 ═══
+    //
+    // 「旧格式」= content 不以 `---`（frontmatter 起始）开头 —— 也就是 v5.3.7 迁移搬进来、
+    // 之后从未被新架构改写过的那些版本流水账。新架构写入的文件一定以 frontmatter 开头
+    // （`MemoryFile.contentWith` 保证），所以这条判据能精确区分两类，不会误删新记忆。
+    //
+    // 注意：这两个是**物理删除**，用于用户在记忆页显式确认后的清理动作；日常删除仍走软删
+    // （`invalidate`），两者语义不混用。
+
+    @Query(
+        "SELECT COUNT(*) FROM memory_file " +
+            "WHERE assistant_id = :assistantId AND substr(ltrim(content), 1, 3) <> '---'"
+    )
+    suspend fun countLegacyFiles(assistantId: String): Int
+
+    @Query(
+        "DELETE FROM memory_file " +
+            "WHERE assistant_id = :assistantId AND substr(ltrim(content), 1, 3) <> '---'"
+    )
+    suspend fun deleteLegacyFiles(assistantId: String): Int
+
 }

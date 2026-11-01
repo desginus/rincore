@@ -65,6 +65,31 @@ data class MemoryFile(
             .orEmpty()
             .take(120)
 
+    /**
+     * 是否「新架构写入的结构化记忆」。
+     *
+     * ★v5.3.23：注入优先级的分层依据。
+     *
+     * 新架构（模型按 `<memory_format>` 调 `memory_write`）写出的文件**一定带 frontmatter**
+     * （name / title / description / aliases）；而 v5.3.7 的 `MIGRATION_37_38` 把历史条目
+     * 搬进 `memory_file` 时**只写 content 原文、不生成 frontmatter** —— 那批就是「旧记忆」，
+     * 内容多为当时的版本发布流水账，数量大、时效差。
+     *
+     * 两者混在同一份清单里时，旧记忆会按「最近更新」把结构化记忆挤出注入预算，
+     * 于是模型看到的全是过时的版本记录，反而看不到「你是谁、在做什么」。
+     */
+    val isStructured: Boolean get() = frontmatter.toMap().isNotEmpty()
+
+    /**
+     * 注入优先级：0=核心档案（profile/preferences，全文注入）
+     * 1=结构化记忆（新架构）2=旧记忆（迁移产物，仅作低置信背景）。
+     */
+    val tier: Int get() = when {
+        path == PROFILE_PATH || path == PREFERENCES_PATH -> 0
+        isStructured -> 1
+        else -> 2
+    }
+
     val aliases: List<String> get() = frontmatter.getList("aliases")
 
     /** 去掉 frontmatter 后的正文 */

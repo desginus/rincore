@@ -1010,7 +1010,7 @@ class ChatService(
                             conversationRepo.getConversationIdsOfFolder(fid).map { it.toString() }.toSet()
                         }.getOrDefault(emptySet())
                     } ?: emptySet()
-                    memoryRepository.memoriesForInjection(
+                    val injected = memoryRepository.memoriesForInjection(
                         memoryId = memoryId,
                         folderId = folderId,
                         conversationId = conversation.id.toString(),
@@ -1020,6 +1020,19 @@ class ChatService(
                         manualMount = assistant.manualMemoryMount,
                         dreamMount = assistant.dreamMemoryMount,
                     )
+                    // v5.3.23 ★可观测：记录「本轮注入给模型的记忆构成」。
+                    // 排查「模型好像不记得我」时先看这条：结构化条数=0 说明库是旧数据或没写入；
+                    // legacy 条数很大而注入为 0 是**预期行为**（旧格式不进注入）。
+                    runCatching {
+                        val structured = injected.count { it.isStructured }
+                        val legacy = injected.size - structured
+                        Log.i(
+                            "MemoryInject",
+                            "inject memoryId=$memoryId structured=$structured legacy=$legacy " +
+                                "(legacy not injected by design, readable via memory_list)",
+                        )
+                    }
+                    injected
                     // ★v5.3.21 关键：不再 `.map { it.toAssistantMemory() }`。
                     // 这一行此前把统一的 MemoryFile **降级成旧 DTO**，导致下游 GenerationHandler
                     // 只能调到 `GenerationPrompts.buildMemoryPrompt(List<AssistantMemory>)` ——

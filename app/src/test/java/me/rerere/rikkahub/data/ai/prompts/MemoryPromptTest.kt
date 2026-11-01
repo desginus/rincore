@@ -127,4 +127,81 @@ class MemoryPromptTest {
         )
         assertTrue("清单里应能看到正文摘要", text.contains("RinCore v5.0.25 正式版已发布"))
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // v5.3.23 ★★★「旧记忆优先级在新架构之下」的回归护栏
+    //
+    // 现状：用户库里有 40+ 条 v5.3.7 迁移来的旧记忆（无 frontmatter 的版本流水账）。
+    // 若与结构化记忆共用同一份清单预算，它们会按 updatedAt 把 profile/topics/areas
+    // 挤出注入内容 —— 模型只能看到过时日志。以下三条锁定分层、预算与优先级规则。
+    // ══════════════════════════════════════════════════════════════════════
+
+    private fun structured(path: String, text: String, at: Long) = MemoryFile(
+        path = path,
+        content = "---\nname: ${path.substringAfterLast('/').removeSuffix(".md")}\ndescription: $text\n---\n\n$text",
+        updatedAt = at,
+    )
+
+    private fun legacy(path: String, at: Long) = MemoryFile(
+        path = path,
+        content = "【历史记录 $path】\n- 当时的版本发布流水账",
+        updatedAt = at,
+    )
+
+    @Test
+    fun `legacy entries never crowd out structured memory`() {
+        val structuredFiles = listOf(
+            structured("/topics/food.md", "用户饮食偏好", 100L),
+            structured("/areas/rincore.md", "项目进展", 90L),
+        )
+        // 旧记忆的更新时间都比结构化记忆新 —— 旧实现按时间排序会把它们排到前面
+        val legacyFiles = (0 until 15).map { legacy("/历史记录-$it.md", 1_000L + it) }
+        val text = buildMemoryPrompt(structuredFiles + legacyFiles)
+
+        assertTrue("必须给出分项数字", text.contains("<breakdown structured=\"2\" legacy=\"15\" />"))
+        // 结构化记忆整行都在 legacy 区块之前
+        val structuredIdx = text.indexOf("/topics/food.md")
+        val legacyIdx = text.indexOf("<legacy_notes")
+        assertTrue("结构化清单必须存在", structuredIdx >= 0)
+        assertTrue("必须有旧记忆区块", legacyIdx >= 0)
+        assertTrue("结构化记忆必须排在旧记忆之前", structuredIdx < legacyIdx)
+
+        // 旧记忆完全不进注入：只留一行统计，且逐条路径一个都不许出现
+        assertTrue(
+            "旧记忆必须给出统计行",
+            text.contains("<legacy_entries count=\"15\" injected=\"false\">"),
+        )
+        val legacyBlock = text.substring(legacyIdx)
+        val leaked = legacyBlock.lineSequence().count { it.startsWith("/历史记录-") }
+        assertEquals("旧记忆不得逐条注入", 0, leaked)
+    }
+
+    @Test
+    fun `prompt states that structured memory outranks legacy notes`() {
+        val text = buildMemoryPrompt(listOf(legacy("/历史记录.md", 1L)))
+        assertTrue("必须声明优先级规则", text.contains("## Precedence"))
+        assertTrue(
+            "必须明确旧记忆是低置信背景",
+            text.contains("older and lower confidence"),
+        )
+        assertTrue(
+            "必须明确冲突时以结构化记忆与用户为准",
+            text.contains("the structured file and the user win"),
+        )
+    }
+
+    @Test
+    fun `pinned profile is truncated with a read hint instead of blowing the prompt`() {
+        val huge = MemoryFile(
+            path = "/profile.md",
+            content = "---\nname: profile\n---\n\n" + "字".repeat(5_000),
+            updatedAt = 1L,
+        )
+        val text = buildMemoryPrompt(listOf(huge))
+        assertTrue("超长档案必须截断", text.contains("(truncated at 4000 chars"))
+        assertTrue("截断后必须提示用 memory_read 读全", text.contains("call memory_read with path"))
+        // 截断不能把整份 5000 字都塞进去
+        val profileBlock = text.substringAfter("<profile").substringBefore("</profile>")
+        assertTrue("注入长度必须有上限（<=4200）", profileBlock.length <= 4_200)
+    }
 }
