@@ -1019,7 +1019,14 @@ class ChatService(
                         //（此前只有 UI 与数据类字段，注入链根本没读 → 纯摆设）
                         manualMount = assistant.manualMemoryMount,
                         dreamMount = assistant.dreamMemoryMount,
-                    ).map { it.toAssistantMemory() }
+                    )
+                    // ★v5.3.21 关键：不再 `.map { it.toAssistantMemory() }`。
+                    // 这一行此前把统一的 MemoryFile **降级成旧 DTO**，导致下游 GenerationHandler
+                    // 只能调到 `GenerationPrompts.buildMemoryPrompt(List<AssistantMemory>)` ——
+                    // 那是 v5.0.x 的条目式旧实现（全量 content 塞 JSON、还叫模型用 v5.3.7 已删除的
+                    // `memory_tool`）。而真正为记忆 2.0 写的 `<memory_system>` 结构化 prompt
+                    // （profile/preferences 全文 + listing 索引 + 何时读/何时写规则 + 防注入声明）
+                    // 在 MemoryPrompts 里，**之前零调用点**。保持 MemoryFile 类型即可让它生效。
                 },
                 inputTransformers = buildList {
                     addAll(inputTransformers)

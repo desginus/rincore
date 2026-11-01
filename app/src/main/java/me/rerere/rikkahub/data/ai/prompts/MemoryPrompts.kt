@@ -6,6 +6,14 @@ import java.time.Instant
 import java.time.ZoneId
 
 // 写入格式规则，主对话和后台整理共用
+/**
+ * v5.3.21：注入到 system prompt 的记忆清单最多列多少条。
+ *
+ * 每行约 100 字符（path + 描述 + aliases + 日期），60 条 ≈ 6KB。记忆无限增长时
+ * 不至于把上下文挤爆；超出部分由 memory_list / memory_read 按需取。
+ */
+private const val MEMORY_LISTING_MAX = 60
+
 private val MEMORY_FORMAT_PROMPT = """
     <memory_format>
     ## File structure
@@ -232,11 +240,23 @@ private fun StringBuilder.appendMemoryState(files: List<MemoryFile>) {
     appendPinnedFile("preferences", files.find { it.path == MemoryFile.PREFERENCES_PATH })
     appendLine()
     appendLine("<memory_listing>")
-    val listed = files.filter { it.path != MemoryFile.PROFILE_PATH && it.path != MemoryFile.PREFERENCES_PATH }
+    val listed = files
+        .filter { it.path != MemoryFile.PROFILE_PATH && it.path != MemoryFile.PREFERENCES_PATH }
+        // ★v5.3.21：按最近更新倒序 —— 与「记忆是活的工作上下文」一致，
+        // 最近变过的内容更可能和当前问题相关（业界 mem0/Zep 的时间衰减同思路）。
+        .sortedByDescending { it.updatedAt }
     if (listed.isEmpty()) {
         appendLine("(no files yet)")
     } else {
-        listed.forEach { appendLine(it.toListingLine()) }
+        // 显式告诉模型总量：此前只有清单，模型无法判断"记忆库有多大、我是不是全看到了"
+        appendLine("<count>${listed.size}</count>")
+        listed.take(MEMORY_LISTING_MAX).forEach { appendLine(it.toListingLine()) }
+        if (listed.size > MEMORY_LISTING_MAX) {
+            appendLine(
+                "(+${listed.size - MEMORY_LISTING_MAX} more files not shown — " +
+                    "call memory_list to see the rest, or memory_read with a path you expect)"
+            )
+        }
     }
     appendLine("</memory_listing>")
 }

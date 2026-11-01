@@ -270,8 +270,13 @@ fun buildMemoryTools(
                 conversationId = readConversationId,
             )
             toolOutput {
+                // ★v5.3.21 `readVisibleFiles` 返回的是**非空** Map（只含命中的 path），
+                // 所以旧写法 `files.filterValues { it == null }` 恒为空集 → `not_found`
+                // 从未出现过：模型请求一个不存在的文件时只拿到 `files: []`，无法区分
+                // 「这份记忆不存在 / 被删了」和「读取失败」。改为用「请求集合 - 命中集合」求差。
+                val notFound = paths.filter { it !in files }
                 put("files", buildJsonArray {
-                    files.values.filterNotNull().forEach { file ->
+                    files.values.forEach { file ->
                         add(buildJsonObject {
                             put("path", file.path)
                             put("version", file.version)
@@ -279,9 +284,13 @@ fun buildMemoryTools(
                         })
                     }
                 })
-                val notFound = files.filterValues { it == null }.keys
                 if (notFound.isNotEmpty()) {
                     put("not_found", buildJsonArray { notFound.forEach { add(it) } })
+                    put(
+                        "not_found_hint",
+                        "These paths are not in the current context's memory. " +
+                            "Either they do not exist, belong to another scope, or were deleted."
+                    )
                 }
             }
         }

@@ -53,6 +53,17 @@ internal fun buildCacheAnchor(modelName: String) = """
 - If raw reasoning contains any of the above, clean it into plain text BEFORE emitting.
 - Reasoning is a working draft, not a performance. No stage directions, no sound effects.""".trimIndent()
 
+/**
+ * ⚠ v5.3.21 起**已无调用点**，保留仅为回滚对照。
+ *
+ * 这是 v5.0.x 的条目式旧实现：把所有记忆的 `id + content` 整体塞成 JSON 数组，
+ * 并在正文里写「memories stored via the memory_tool」—— 而 `memory_tool` 在 v5.3.7
+ * 的记忆统一里**已被删除**，模型看到这句话会去调一个不存在的工具。
+ * 现在的唯一实现是 `me.rerere.rikkahub.data.ai.prompts.buildMemoryPrompt(List<MemoryFile>)`
+ * （`<memory_system>` 结构化：profile/preferences 全文 + listing 索引 + 读写规则 + 防注入声明）。
+ * 新增代码不得调用本函数。
+ */
+@Suppress("unused")
 internal fun buildMemoryPrompt(memories: List<AssistantMemory>) =
     if (memories.isEmpty()) ""
     else buildString {

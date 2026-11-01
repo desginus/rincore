@@ -315,7 +315,7 @@ class GenerationHandler(
         inputTransformers: List<InputMessageTransformer> = emptyList(),
         outputTransformers: List<OutputMessageTransformer> = emptyList(),
         assistant: Assistant,
-        memories: List<AssistantMemory>? = null,
+        memories: List<me.rerere.rikkahub.data.model.MemoryFile>? = null,
         tools: List<Tool> = emptyList(),
         maxSteps: Int = 256,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
@@ -1403,7 +1403,7 @@ class GenerationHandler(
         providerImpl: Provider<ProviderSetting>,
         provider: ProviderSetting,
         tools: List<Tool>,
-        memories: List<AssistantMemory>,
+        memories: List<me.rerere.rikkahub.data.model.MemoryFile>,
         stream: Boolean,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
         conversationSystemPrompt: String? = null,
@@ -1509,7 +1509,10 @@ class GenerationHandler(
             toolsPromptLen = toolPrompts.sumOf { it.length }
 
             // volatile 部分: 记忆 (易变, 放缓存前缀之后)
-            val memoryPrompt = if (assistant.enableMemory) buildMemoryPrompt(memories = memories) else ""
+            // v5.3.21 ★改调记忆 2.0 结构化 prompt（MemoryPrompts 版）
+            val memoryPrompt = if (assistant.enableMemory) {
+                me.rerere.rikkahub.data.ai.prompts.buildMemoryPrompt(memories)
+            } else ""
             memPromptLen = memoryPrompt.length
 
             // v3.6.105: 强制启动技能 — 对话开始时把技能正文注入 system 尾部
@@ -1642,7 +1645,8 @@ class GenerationHandler(
         // 尾部追加, 之前的图片/文档/工具历史缓存全部保留。
         if (assistant.enableMemory) {
             // buildList 内的 memoryPrompt 局部变量作用域不外泄, 在此重算
-            val tailMemoryPrompt = buildMemoryPrompt(memories = memories)
+            // v5.3.21 ★同上（尾部注入点）
+            val tailMemoryPrompt = me.rerere.rikkahub.data.ai.prompts.buildMemoryPrompt(memories)
             if (tailMemoryPrompt.isNotBlank()) {
                 val memBlock = "\n\n<memory>\n" + tailMemoryPrompt + "\n</memory>"
                 val lastUserIdx = built.indexOfLast { it.role == MessageRole.USER }
