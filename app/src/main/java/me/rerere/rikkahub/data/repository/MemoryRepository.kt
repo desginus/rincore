@@ -773,6 +773,21 @@ class MemoryRepository(
     // v5.3.13：`guardMemoryAccess(entity: MemoryEntity, ...)` 已删除 ——
     // 它唯一的语义是「跨助手不可访问」，而统一表的 `resolvePathById(assistantId, id)`
     // 在别的助手的库里根本找不到这个 id，**结构上已经保证了这条边界**，无需再判一次。
+    // ═══ v5.3.23 ★旧格式记忆（迁移产物）的统计与清理 ═══
+    //
+    // 这一类记忆没有 frontmatter，内容是 v5.0.x 的版本发布流水账；它们**不再参与注入**
+    // （见 `buildMemoryPrompt` 的 `<legacy_entries>`），只在记忆页可见。
+    // 用户确认后可以一次性物理删除 —— 这是唯一允许的「物理删除整批」入口，
+    // 与日常的单条软删（`invalidateFile`）分属两种语义，不要混用。
+
+    /** 当前记忆库里「旧格式」记忆的条数（用于 UI 显示可清理量）。 */
+    suspend fun countLegacyFiles(memoryId: String): Int = memoryFileDAO.countLegacyFiles(memoryId)
+
+    /** 物理删除当前记忆库里的全部「旧格式」记忆，返回删除行数。 */
+    suspend fun purgeLegacyFiles(memoryId: String): Int = withContext(Dispatchers.IO) {
+        memoryFileDAO.deleteLegacyFiles(memoryId)
+    }
+
 }
 
 /** 助手读写的记忆库：开启全局记忆后所有助手共用一份 */
@@ -812,20 +827,5 @@ private fun String.replaceAt(index: Int, length: Int, replacement: String): Stri
         }
     }
     return substring(0, start) + replacement + substring(end)
-
-    // ═══ v5.3.23 ★旧格式记忆（迁移产物）的统计与清理 ═══
-    //
-    // 这一类记忆没有 frontmatter，内容是 v5.0.x 的版本发布流水账；它们**不再参与注入**
-    // （见 `buildMemoryPrompt` 的 `<legacy_entries>`），只在记忆页可见。
-    // 用户确认后可以一次性物理删除 —— 这是唯一允许的「物理删除整批」入口，
-    // 与日常的单条软删（`invalidateFile`）分属两种语义，不要混用。
-
-    /** 当前记忆库里「旧格式」记忆的条数（用于 UI 显示可清理量）。 */
-    suspend fun countLegacyFiles(memoryId: String): Int = memoryFileDAO.countLegacyFiles(memoryId)
-
-    /** 物理删除当前记忆库里的全部「旧格式」记忆，返回删除行数。 */
-    suspend fun purgeLegacyFiles(memoryId: String): Int = withContext(Dispatchers.IO) {
-        memoryFileDAO.deleteLegacyFiles(memoryId)
-    }
-
 }
+
