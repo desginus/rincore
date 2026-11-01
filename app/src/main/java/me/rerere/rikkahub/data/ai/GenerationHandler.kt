@@ -523,8 +523,13 @@ class GenerationHandler(
                             repository = memoryRepo,
                             assistantId = memoryAssistantId,
                             source = "active",
+                            // 写入归属：由 assistant.memoryWriteScope 锚定
                             folderId = folderIdOfConv.takeIf { writeScope == 1 },
                             conversationId = convId.takeIf { writeScope == 2 },
+                            // v5.3.19 ★读取上下文：与写入归属**解耦**，恒取对话真实归属 ——
+                            // 工具层据此只让模型看到「注入链也会注入」的那些记忆（防越权读取）
+                            readFolderId = folderIdOfConv,
+                            readConversationId = convId,
                         ).let(this::addAll)
                     }
                     // v3.11.24: 任务清单工具 — 始终注入 (框架工具, 静态, 零 DB;
@@ -610,8 +615,13 @@ class GenerationHandler(
                             repository = memoryRepo,
                             assistantId = memoryAssistantId,
                             source = "active",
+                            // 写入归属：由 assistant.memoryWriteScope 锚定
                             folderId = folderIdOfConv.takeIf { writeScope == 1 },
                             conversationId = convId.takeIf { writeScope == 2 },
+                            // v5.3.19 ★读取上下文：与写入归属**解耦**，恒取对话真实归属 ——
+                            // 工具层据此只让模型看到「注入链也会注入」的那些记忆（防越权读取）
+                            readFolderId = folderIdOfConv,
+                            readConversationId = convId,
                         ).let(this::addAll)
                     }
                     addAll(tools)

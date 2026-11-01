@@ -222,6 +222,18 @@ fun buildMemoryTools(
     source: String = "active",
     folderId: String? = null,
     conversationId: String? = null,
+    // ═══ v5.3.19 ★★读取上下文（与写入归属**解耦**）═══
+    //
+    // 上面三个参数只决定「新建条目写进哪个范围」；而工具**读取**的可见范围必须由
+    // 「当前对话属于哪个项目包/哪个对话」决定，否则会出现两种越权：
+    //   · 旧实现读 `getFiles(assistantId)` / `getFile(assistantId, path)` —— 只按记忆库
+    //     过滤，**完全不管归属** → 模型在项目包 A 里能读到包 B 的记忆、甚至别的对话的
+    //     单对话级记忆（注入链裁掉了，工具层却能绕过去读）；
+    //   · 反过来若直接复用写入归属（writeScope=0 时 folderId=null）→ 本包记忆注入里有、
+    //     工具却读不到，模型会以为记忆丢了。
+    // 现在显式分开：读取一律走 `visibleForInjection` 同一判据。
+    readFolderId: String? = null,
+    readConversationId: String? = null,
 ): List<Tool> = listOf(
     Tool(
         name = MemoryToolNames.READ,
@@ -248,7 +260,15 @@ fun buildMemoryTools(
             }.take(MAX_READ_PATHS)
             if (paths.isEmpty()) error("path is required")
 
-            val files = paths.associateWith { repository.getFile(assistantId, it) }
+            // v5.3.19 ★越权读取的唯一防线：只读**当前上下文可见**的记忆
+            val files = paths.associateWith {
+                repository.readVisibleFile(
+                    memoryId = assistantId,
+                    path = it,
+                    folderId = readFolderId,
+                    conversationId = readConversationId,
+                )
+            }
             toolOutput {
                 put("files", buildJsonArray {
                     files.values.filterNotNull().forEach { file ->
@@ -374,7 +394,12 @@ fun buildMemoryTools(
         },
         execute = { args ->
             val prefix = (args.jsonObject["path_prefix"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-            val files = repository.getFiles(assistantId).filter { it.path.startsWith(prefix) }
+            // v5.3.19 ★同理：清单也只列当前上下文可见的（旧实现列全库 → 越权窥视其它范围）
+            val files = repository.listVisibleFiles(
+                memoryId = assistantId,
+                folderId = readFolderId,
+                conversationId = readConversationId,
+            ).filter { it.path.startsWith(prefix) }
             toolOutput {
                 put("files", buildJsonArray {
                     files.forEach { file ->

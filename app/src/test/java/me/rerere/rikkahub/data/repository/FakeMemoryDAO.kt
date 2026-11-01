@@ -143,6 +143,34 @@ internal class FakeMemoryDAO : MemoryFileDAO {
         return hit
     }
 
+    // ═══ v5.3.19：多形态读取 / 改来源 / 计数（Repository 新增依赖）═══
+
+    override suspend fun getFilesAny(assistantId: String, paths: List<String>): List<MemoryFileEntity> =
+        files.value
+            .filter { it.assistantId == assistantId && it.path in paths }
+            .sortedBy { it.path }
+
+    override suspend fun countFilesAny(assistantId: String, paths: List<String>): Int =
+        files.value.count { it.assistantId == assistantId && it.path in paths }
+
+    override suspend fun updateSourceAny(
+        assistantId: String,
+        paths: List<String>,
+        source: String,
+        at: Long,
+    ): Int {
+        var hit = 0
+        files.value = files.value.map {
+            if (it.assistantId == assistantId && it.path in paths) {
+                hit++
+                it.copy(source = source, updatedAt = at)
+            } else {
+                it
+            }
+        }
+        return hit
+    }
+
     override suspend fun updateContentAny(
         assistantId: String,
         paths: List<String>,

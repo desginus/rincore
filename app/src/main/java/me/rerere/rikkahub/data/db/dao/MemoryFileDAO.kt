@@ -83,4 +83,22 @@ interface MemoryFileDAO {
 
     @Query("UPDATE memory_file SET content = :content, updated_at = :at WHERE assistant_id = :assistantId AND path IN (:paths)")
     suspend fun updateContentAny(assistantId: String, paths: List<String>, content: String, at: Long): Int
+
+    @Query("UPDATE memory_file SET source = :source, updated_at = :at WHERE assistant_id = :assistantId AND path IN (:paths)")
+    suspend fun updateSourceAny(assistantId: String, paths: List<String>, source: String, at: Long): Int
+
+    /**
+     * v5.3.19 ★**多形态读取**（不带软删过滤 —— 调用方决定语义）。
+     *
+     * 为什么不复用 `getFile`：`getFile` 只按**规范化后**的 path 精确匹配，而 DB 里可能存着
+     * v5.3.7 迁移生成的无前导斜杠 path（`旧标题.md`）。`update()` 用它判存时会把老记忆
+     * 当成「不存在」→ 于是「编辑一条老记忆」变成「新建一条带斜杠的同名记忆」→
+     * 用户看到**同一主题两条**（这正是「记忆重复」的结构性来源之一）。
+     */
+    @Query("SELECT * FROM memory_file WHERE assistant_id = :assistantId AND path IN (:paths) ORDER BY path")
+    suspend fun getFilesAny(assistantId: String, paths: List<String>): List<MemoryFileEntity>
+
+    /** 供「同名文件已存在于其它范围」判定使用（不过滤软删，语义由调用方决定）。 */
+    @Query("SELECT COUNT(*) FROM memory_file WHERE assistant_id = :assistantId AND path IN (:paths)")
+    suspend fun countFilesAny(assistantId: String, paths: List<String>): Int
 }

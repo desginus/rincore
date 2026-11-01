@@ -35,6 +35,7 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.repository.MemoryWriteResult
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.data.repository.memoryId
 import kotlin.uuid.Uuid
@@ -284,15 +285,25 @@ class AssistantDetailVM(
             val content = memory.content.ifBlank { return@launch }
             val path = memory.path?.takeIf { it.isNotBlank() }
                 ?: me.rerere.rikkahub.data.model.pathFromContent(content)
-            memoryRepository.writeFile(
-                assistantId = memoryId,
-                path = path,
-                content = content,
-                ifVersion = if (memory.path == null) MemoryRepository.NEW_FILE_VERSION else null,
-                source = "active",
-                folderId = memory.folderId,
-                conversationId = memory.conversationId,
-            )
+            // v5.3.19：检查写入结果 —— 旧实现丢弃返回值，同名冲突/超限时**什么都不会发生**
+            // 且用户毫无提示。现在至少把失败原因写日志（Repository 侧已能区分三种结果）。
+            when (
+                val result = memoryRepository.writeFile(
+                    assistantId = memoryId,
+                    path = path,
+                    content = content,
+                    ifVersion = if (memory.path == null) MemoryRepository.NEW_FILE_VERSION else null,
+                    source = "active",
+                    folderId = memory.folderId,
+                    conversationId = memory.conversationId,
+                )
+            ) {
+                is MemoryWriteResult.Success -> Unit
+                is MemoryWriteResult.Rejected ->
+                    Log.w("AssistantDetailVM", "addMemory rejected: ${result.reason}")
+                is MemoryWriteResult.Conflict ->
+                    Log.w("AssistantDetailVM", "addMemory conflict: path=$path")
+            }
         }
     }
 
@@ -301,8 +312,22 @@ class AssistantDetailVM(
             // v5.3.7 ★统一记忆：正文与归属都写在同一张表（path 定位）
             val memoryId = memoryIdOf(assistant.value)
             val path = memory.path ?: return@launch
-            memoryRepository.writeFile(memoryId, path, memory.content)
-            memoryRepository.updateScope(memoryId, path, memory.folderId, memory.conversationId)
+            // v5.3.19：两步都要检查 —— 正文写失败时不该再改归属（否则归属改了、内容没改，
+            // 用户看到"改完退出重进内容回退、归属却变了"这种半成功状态）。
+            when (val w = memoryRepository.writeFile(memoryId, path, memory.content)) {
+                is MemoryWriteResult.Success -> {
+                    val scoped = memoryRepository.updateScope(
+                        memoryId, path, memory.folderId, memory.conversationId,
+                    )
+                    if (!scoped) {
+                        Log.w("AssistantDetailVM", "updateMemory: scope update matched no row, path=$path")
+                    }
+                }
+                is MemoryWriteResult.Rejected ->
+                    Log.w("AssistantDetailVM", "updateMemory rejected: ${w.reason}")
+                is MemoryWriteResult.Conflict ->
+                    Log.w("AssistantDetailVM", "updateMemory conflict: path=$path")
+            }
         }
     }
 
@@ -346,12 +371,11 @@ class AssistantDetailVM(
         memoryConsolidationScheduler.organize(memoryId)
     }
 
-    /** 上游 3.0.0：删除记忆文件（与 AssistantMemory 版重载并存） */
-    fun deleteMemory(memory: MemoryFile) {
-        viewModelScope.launch {
-            memoryRepository.deleteFile(memoryIdOf(assistant.value), memory.path)
-        }
-    }
+    // v5.3.19 ★删除 `deleteMemory(memory: MemoryFile)` 重载（全库 0 调用点）。
+    // 它走的是**物理删除**（DELETE FROM），与 UI 另一条 `deleteMemory(AssistantMemory)`
+    // 的**软删**（invalidated_at）形成第二套删除语义 —— 正是「两套方案」在 UI 层的残留。
+    // 现在删除只有一条路：`deleteMemory(AssistantMemory)` → `invalidateFile`（软删）。
+
 
     fun checkAvatarDelete(old: Assistant, new: Assistant) {
         if (old.avatar is Avatar.Image && old.avatar != new.avatar) {

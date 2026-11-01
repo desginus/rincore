@@ -285,4 +285,99 @@ class MemoryRepositoryTest {
         assertTrue(repository.invalidateFile(assistant, "topics/a.md"))
         assertTrue(repository.getFiles(assistant).none { it.path == "/topics/a.md" })
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // v5.3.19 ★★记忆系统全结构体检后的回归护栏（6 条）
+    //
+    // 这六条锁定的都是「旧实现会静默做错事」的路径 —— 它们不报错、不崩溃，
+    // 只是让用户看到「记忆重复 / 改不动 / 越权看到别人的记忆」，因此只能靠测试发现。
+    // ══════════════════════════════════════════════════════════════════════
+
+    private suspend fun seedLegacy(path: String, content: String, folderId: String? = null, conversationId: String? = null) {
+        dao.upsertFile(
+            me.rerere.rikkahub.data.db.entity.MemoryFileEntity(
+                assistantId = assistant,
+                path = path,
+                content = content,
+                updatedAt = 1L,
+                source = "active",
+                folderId = folderId,
+                conversationId = conversationId,
+            )
+        )
+    }
+
+    @Test
+    fun `legacy path can be read by normalized form`() = runBlocking {
+        seedLegacy("旧标题.md", "老记忆正文")
+        // 用户/模型总是传带斜杠的规范形态；旧实现会返回 null（明明在列表里）
+        val found = repository.getFile(assistant, "/旧标题.md")
+        assertEquals("老记忆正文", found?.content)
+    }
+
+    @Test
+    fun `editing a legacy path migrates instead of duplicating`() = runBlocking {
+        seedLegacy("旧标题.md", "老内容")
+        val result = repository.writeFile(assistant, "/旧标题.md", "新内容")
+        assertTrue(result is MemoryWriteResult.Success)
+        // 关键：不能变成两条（一条无斜杠、一条有斜杠）
+        val all = dao.getFilesOfAssistant(assistant)
+        assertEquals("归一化写入后应只有一条", 1, all.size)
+        assertEquals("/旧标题.md", all.first().path)
+        assertEquals("新内容", all.first().content)
+    }
+
+    @Test
+    fun `changing scope of a legacy path reports true`() = runBlocking {
+        seedLegacy("旧标题.md", "老内容")
+        // 旧实现：normalizePath 单形态 → 0 行命中，但返回恒 true（假成功）
+        assertTrue(repository.updateScope(assistant, "/旧标题.md", "folder-A", null))
+        val file = repository.getFile(assistant, "/旧标题.md")
+        assertEquals("folder-A", file?.folderId)
+    }
+
+    @Test
+    fun `changing scope of a truly missing path reports false`() = runBlocking {
+        // 旧实现恒 true —— 用户点了「归属」看不出失败
+        assertTrue(!repository.updateScope(assistant, "/nope.md", "folder-A", null))
+    }
+
+    @Test
+    fun `cross scope overwrite is rejected`() = runBlocking {
+        // 助手级（全员可见）已有 /topics/x.md
+        repository.writeFile(assistant, "/topics/x.md", "助手级内容", MemoryRepository.NEW_FILE_VERSION)
+        // 项目包里想写同一路径 —— 旧实现会直接覆盖助手级那条（保密内容串成全员可见）
+        val r = repository.writeFile(
+            assistant, "/topics/x.md", "包内私密内容",
+            ifVersion = null, folderId = "folder-A",
+        )
+        assertTrue("跨范围覆盖必须被拒绝: $r", r is MemoryWriteResult.Rejected)
+        // 助手级内容必须原样保留
+        assertEquals("助手级内容", repository.getFile(assistant, "/topics/x.md")?.content)
+    }
+
+    @Test
+    fun `reading respects scope so other scopes are invisible`() = runBlocking {
+        repository.writeFile(assistant, "/a.md", "助手级", MemoryRepository.NEW_FILE_VERSION)
+        repository.writeFile(assistant, "/b.md", "包A私密", MemoryRepository.NEW_FILE_VERSION, folderId = "folder-A")
+        repository.writeFile(assistant, "/c.md", "对话X私密", MemoryRepository.NEW_FILE_VERSION, conversationId = "conv-X")
+
+        // 在「项目包 B / 对话 Y」的上下文里读：
+        assertTrue("助手级在任何上下文都可见", repository.readVisibleFile(assistant, "/a.md", "folder-B", "conv-Y") != null)
+        assertNull("别人的项目包不可见", repository.readVisibleFile(assistant, "/b.md", "folder-B", "conv-Y"))
+        assertNull("别人的单对话不可见", repository.readVisibleFile(assistant, "/c.md", "folder-B", "conv-Y"))
+        // 本包上下文可见自己的包记忆
+        assertEquals("包A私密", repository.readVisibleFile(assistant, "/b.md", "folder-A", "conv-Z")?.content)
+        // 本对话可见自己的对话记忆
+        assertEquals("对话X私密", repository.readVisibleFile(assistant, "/c.md", "folder-B", "conv-X")?.content)
+    }
+
+    @Test
+    fun `add memory auto suffixes on title conflict`() = runBlocking {
+        val first = repository.addMemory(assistant, "同标题\n第一条")
+        val second = repository.addMemory(assistant, "同标题\n第二条")
+        assertTrue("两次新建必须都能落库", dao.getFilesOfAssistant(assistant).size == 2)
+        assertTrue("第一条内容保留", repository.getFile(assistant, first.path)?.content == "同标题\n第一条")
+        assertTrue("第二条内容保留", repository.getFile(assistant, second.path)?.content == "同标题\n第二条")
+    }
 }

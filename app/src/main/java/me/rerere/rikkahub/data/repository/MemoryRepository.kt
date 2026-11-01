@@ -75,9 +75,17 @@ class MemoryRepository(
             .filter { it.invalidatedAt == null || it.invalidatedAt == 0L }
             .map { it.toMemoryFile() }
 
+    /**
+     * v5.3.19 ★**多形态读取**。
+     *
+     * 旧实现只按 `normalizePath()` 后的精确 path 查（一定带前导 `/`），而 DB 里可能存着
+     * v5.3.7 迁移生成的**无前导斜杠** path。后果是「这条记忆明明在列表里，但按 path 查不到」，
+     * 进而让 `update()` 把它当成新文件写入 → 同一主题变成两条（记忆重复的真实来源之一）。
+     */
     suspend fun getFile(assistantId: String, path: String): MemoryFile? {
-        val normalized = MemoryFile.normalizePath(path) ?: return null
-        return memoryFileDAO.getFile(assistantId, normalized)?.toMemoryFile()
+        val candidates = pathCandidates(path)
+        if (candidates.isEmpty()) return null
+        return memoryFileDAO.getFilesAny(assistantId, candidates).firstOrNull()?.toMemoryFile()
     }
 
     /**
@@ -136,18 +144,38 @@ class MemoryRepository(
         Edit.Content(current + separator + line.trimEnd('\n', '\r') + "\n")
     }
 
+    /**
+     * v5.3.19 ★★**删除 = 软删**（全链路唯一语义）。
+     *
+     * 旧实现对模型侧 `memory_delete` 走 `DELETE FROM`（物理删除），而 UI 删除走
+     * `invalidateFile`（软删）—— 同一个动作两套语义：模型删掉的记忆**无法恢复、无法追溯**，
+     * 用户删掉的反而是软删。更糟的是它按 normalizePath 单形态匹配，迁移来的老 path 删不掉。
+     *
+     * 现在：软删（写 `invalidated_at`）+ 多形态匹配。「真物理删除」只保留在
+     * [purgeFile] 与级联清理（删助手 / 删对话）里使用。
+     */
     suspend fun deleteFile(
         assistantId: String,
         path: String,
         ifVersion: String? = null,
     ): MemoryWriteResult = writeLock.withLock {
-        val normalized = MemoryFile.normalizePath(path) ?: return invalidPath(path)
-        val current = memoryFileDAO.getFile(assistantId, normalized)?.toMemoryFile()
-        if (current == null || (ifVersion != null && ifVersion != current.version)) {
+        val current = getFile(assistantId, path) ?: return MemoryWriteResult.Conflict(null)
+        if (ifVersion != null && ifVersion != current.version) {
             return MemoryWriteResult.Conflict(current)
         }
-        memoryFileDAO.deleteFile(assistantId, normalized)
+        val candidates = pathCandidates(path)
+        val rows = memoryFileDAO.invalidateAny(assistantId, candidates, System.currentTimeMillis())
+        if (rows == 0) {
+            Log.w("MemoryRepository", "deleteFile: no row matched id=$assistantId path=$path")
+            return MemoryWriteResult.Conflict(null)
+        }
         MemoryWriteResult.Success(null)
+    }
+
+    /** 物理删除（仅用于「用户明确要彻底清掉」或级联清理；正常删除一律用 [deleteFile]）。 */
+    suspend fun purgeFile(assistantId: String, path: String) = writeLock.withLock {
+        val candidates = pathCandidates(path)
+        if (candidates.isNotEmpty()) memoryFileDAO.deleteFileAny(assistantId, candidates)
     }
 
     // ═══════════ 一·B、统一记忆门面（v5.3.7）═══════════
@@ -163,22 +191,34 @@ class MemoryRepository(
         folderId: String?,
         conversationId: String?,
     ): Boolean = writeLock.withLock {
-        val normalized = MemoryFile.normalizePath(path) ?: return@withLock false
-        val existing = memoryFileDAO.getFile(memoryId, normalized) ?: return@withLock false
+        // v5.3.19 ★两个修复：
+        //  (a) 走多形态候选（旧版 `normalizePath` 单形态，对迁移来的老 path 恒 0 行命中）；
+        //  (b) 返回**真实影响行数**（旧版返回 `existing.path.isNotEmpty()`，恒 true =
+        //      无论改没改成功都说成功，用户看到"归属改完退出重进又回去了")。
+        val candidates = pathCandidates(path)
+        if (candidates.isEmpty()) return@withLock false
         val fid = folderId?.takeIf { it.isNotBlank() }
         val cid = conversationId?.takeIf { it.isNotBlank() }
         val finalCid = cid
         val finalFid = if (finalCid != null) null else fid
-        memoryFileDAO.updateScope(memoryId, normalized, finalFid, finalCid, System.currentTimeMillis())
-        existing.path.isNotEmpty()
+        val rows = memoryFileDAO.updateScopeAny(memoryId, candidates, finalFid, finalCid, System.currentTimeMillis())
+        if (rows == 0) {
+            Log.w("MemoryRepository", "updateScope: no row matched id=$memoryId path=$path candidates=$candidates")
+        }
+        rows > 0
     }
 
     /** 改来源（主动 / 做梦）。 */
     suspend fun updateSource(memoryId: String, path: String, source: String): Boolean =
         writeLock.withLock {
-            val normalized = MemoryFile.normalizePath(path) ?: return@withLock false
-            memoryFileDAO.updateSource(memoryId, normalized, source, System.currentTimeMillis())
-            true
+            // v5.3.19：多形态 + 真实影响行数（旧版恒 true，改不动也说成功）
+            val candidates = pathCandidates(path)
+            if (candidates.isEmpty()) return@withLock false
+            val rows = memoryFileDAO.updateSourceAny(memoryId, candidates, source, System.currentTimeMillis())
+            if (rows == 0) {
+                Log.w("MemoryRepository", "updateSource: no row matched id=$memoryId path=$path")
+            }
+            rows > 0
         }
 
     /** 软删（失效标记）：不再注入、不再展示，但留痕。 */
@@ -293,6 +333,54 @@ class MemoryRepository(
             visibleForInjection(file, folderId, conversationId, siblingConversationIds, mount)
         }
 
+    /**
+     * v5.3.19 ★★**工具层的越权读取防线**。
+     *
+     * 旧实现：`memory_read` / `memory_list` 直接用 `getFile(assistantId, path)` /
+     * `getFiles(assistantId)` —— **只按记忆库过滤，不按归属过滤**。于是模型在
+     * 项目包 A 的对话里可以 `memory_read` 到项目包 B 的记忆、甚至**别的对话的单对话级记忆**
+     * （注入链明明已经按归属裁剪过，工具层却能绕过）。
+     *
+     * 现在工具层统一走这里：先按注入判据（含 mountLevel）算出当前上下文可见集合，再按 path 匹配。
+     */
+    suspend fun readVisibleFile(
+        memoryId: String,
+        path: String,
+        folderId: String?,
+        conversationId: String?,
+        siblingConversationIds: Collection<String> = emptyList(),
+        manualMount: Int = MOUNT_FOLDER,
+        dreamMount: Int = MOUNT_FOLDER,
+    ): MemoryFile? {
+        val candidates = pathCandidates(path).toSet()
+        if (candidates.isEmpty()) return null
+        return memoriesForInjection(
+            memoryId = memoryId,
+            folderId = folderId,
+            conversationId = conversationId,
+            siblingConversationIds = siblingConversationIds,
+            manualMount = manualMount,
+            dreamMount = dreamMount,
+        ).firstOrNull { it.path in candidates }
+    }
+
+    /** v5.3.19：工具层 `memory_list` 用 —— 当前上下文可见的全部记忆。 */
+    suspend fun listVisibleFiles(
+        memoryId: String,
+        folderId: String?,
+        conversationId: String?,
+        siblingConversationIds: Collection<String> = emptyList(),
+        manualMount: Int = MOUNT_FOLDER,
+        dreamMount: Int = MOUNT_FOLDER,
+    ): List<MemoryFile> = memoriesForInjection(
+        memoryId = memoryId,
+        folderId = folderId,
+        conversationId = conversationId,
+        siblingConversationIds = siblingConversationIds,
+        manualMount = manualMount,
+        dreamMount = dreamMount,
+    )
+
     suspend fun deleteFilesOfAssistant(assistantId: String) {
         memoryFileDAO.deleteFilesOfAssistant(assistantId)
     }
@@ -319,7 +407,11 @@ class MemoryRepository(
         edit: (current: String) -> Edit,
     ): MemoryWriteResult = writeLock.withLock {
         val normalized = MemoryFile.normalizePath(path) ?: return invalidPath(path)
-        val current = memoryFileDAO.getFile(assistantId, normalized)?.toMemoryFile()
+        // v5.3.19 ★多形态判存：DB 里可能存着迁移生成的无前导斜杠 path。
+        // 旧实现只按 normalized 查 → 老记忆被当成"不存在" → 编辑变成新建 → 同一主题两条。
+        val candidates = pathCandidates(path)
+        val currentEntity = memoryFileDAO.getFilesAny(assistantId, candidates).firstOrNull()
+        val current = currentEntity?.toMemoryFile()
         val versionMatches = when (ifVersion) {
             null -> current != null || allowCreate
             NEW_FILE_VERSION -> current == null && allowCreate
@@ -337,8 +429,33 @@ class MemoryRepository(
                     "Merge duplicates and drop outdated details instead of adding more."
             )
         }
-        // v5.3.7：归属与来源 —— 已存在的条目保留原值（追加内容不改归属），新条目采用入参
+        // ═══ v5.3.19 ★★跨范围覆盖保护（越权写的唯一入口就在这里）═══
+        //
+        // 主键是 `(assistant_id, path)` —— **同一助手内不同归属不能有同名 path**。
+        // 于是「项目包 A 里写 /topics/x.md」如果助手级已有同名文件，Upsert 会直接把内容
+        // 覆盖到**助手级那条**上（归属保持不变）→ 包级写入串成"全员可见"。
+        // 反过来「助手级上下文写 /topics/x.md」也会覆盖包级的私有记忆。
+        // 这里显式拒绝跨范围覆盖，宁可让模型换一个路径（错误信息会告诉它）。
         val existing = current
+        if (existing != null) {
+            val inConv = conversationId?.takeIf { it.isNotBlank() }
+            val inFolder = if (inConv != null) null else folderId?.takeIf { it.isNotBlank() }
+            val inScope = inConv ?: inFolder
+            val exScope = existing.conversationId ?: existing.folderId
+            val crossScope = if (inScope == null) exScope != null else exScope != inScope
+            if (crossScope) {
+                val where = when {
+                    exScope == null -> "助手级"
+                    existing.conversationId != null -> "某个单对话"
+                    else -> "某个项目包"
+                }
+                return MemoryWriteResult.Rejected(
+                    "$normalized already exists in a different scope（$where）。" +
+                        "Pick a different path instead of overwriting another scope's memory."
+                )
+            }
+        }
+        // v5.3.7：归属与来源 —— 已存在的条目保留原值（追加内容不改归属），新条目采用入参
         val finalConversationId = existing?.conversationId ?: conversationId?.takeIf { it.isNotBlank() }
         val finalFolderId = if (finalConversationId != null) {
             null
@@ -356,6 +473,11 @@ class MemoryRepository(
             conversationId = finalConversationId,
             invalidatedAt = existing?.invalidatedAt,
         )
+        // v5.3.19 ★老 path 归一化迁移：DB 里那条如果是不带前导斜杠的旧形态，
+        // 直接 upsert 会**新增一行**（主键含 path）→ 同一主题两条。这里先把旧形态行删掉。
+        if (currentEntity != null && currentEntity.path != normalized) {
+            memoryFileDAO.deleteFileAny(assistantId, listOf(currentEntity.path))
+        }
         memoryFileDAO.upsertFile(entity)
         MemoryWriteResult.Success(entity.toMemoryFile())
     }
@@ -471,10 +593,16 @@ class MemoryRepository(
     // Operit 脚本运行时（memory.create/update/delete/move/link）零改动即自动统一。
 
     /** 按 [AssistantMemory.id]（= path.hashCode）在指定记忆库里找出真实 path。 */
-    private suspend fun resolvePathById(assistantId: String, id: Long): String? =
-        memoryFileDAO.getFilesOfAssistant(assistantId)
-            .firstOrNull { it.path.hashCode().toLong() == id }
-            ?.path
+    private suspend fun resolvePathById(assistantId: String, id: Long): String? {
+        // v5.3.19 ★`id` 是 `path.hashCode()` 派生的，理论上可能**冲突**（不同 path 同 hash）。
+        // 冲突时取哪条都是错的，所以这里显式记录，避免"改了一条不相干的记忆"无从排查。
+        val matches = memoryFileDAO.getFilesOfAssistant(assistantId)
+            .filter { it.path.hashCode().toLong() == id }
+        if (matches.size > 1) {
+            Log.w("MemoryRepository", "resolvePathById: hash collision for id=$id -> ${matches.map { it.path }}")
+        }
+        return matches.firstOrNull()?.path
+    }
 
     suspend fun updateContent(id: Long, content: String): AssistantMemory {
         val path = resolvePathById(GLOBAL_MEMORY_ID, id)
@@ -514,37 +642,65 @@ class MemoryRepository(
         // v5.1.14 ★统一写入判据：归属**互斥** —— 挂了单对话就不再是项目包记忆
         val normalizedConversationId = conversationId
         val normalizedFolderId = if (normalizedConversationId != null) null else folderId
-        // v5.3.8：路径由正文首行派生（可读），同名冲突加时间后缀保证唯一
-        var path = me.rerere.rikkahub.data.model.pathFromContent(content)
-        if (memoryFileDAO.getFile(assistantId, path) != null) {
-            path = path.removeSuffix(".md") + "-" + System.currentTimeMillis().toString().takeLast(6) + ".md"
+        // v5.3.19 ★★★三处修复（旧实现会「点了新建什么都没发生」）：
+        //  (a) `pathFromContent` 产出的 path **不带前导斜杠**，而 `normalizePath` 一律补 `/` →
+        //      旧代码先用不带斜杠的 path 查重（永远查不到），再以 NEW_FILE_VERSION 写入
+        //      （内部按带斜杠的 path 判存 → 命中旧条目）→ 返回 Conflict；
+        //  (b) 旧代码**完全不看 writeFile 的返回值** → Conflict 被静默吞掉，然后
+        //      `getFile(不带斜杠)` 又 normalize 出去读到了**旧的那一条**并当成功返回 ——
+        //      用户视角「新建记忆没反应/变成了另一条」；
+        //  (c) 冲突后缀用 `System.currentTimeMillis().takeLast(6)`，同一毫秒内并发会重复。
+        val basePath = me.rerere.rikkahub.data.model.pathFromContent(content)
+            .let { if (it.startsWith("/")) it else "/$it" }
+        var attempt = 0
+        while (true) {
+            val path = if (attempt == 0) basePath else basePath.removeSuffix(".md") + "-$attempt.md"
+            when (
+                val result = writeFile(
+                    assistantId = assistantId,
+                    path = path,
+                    content = content,
+                    ifVersion = NEW_FILE_VERSION,
+                    source = if (source == "dream") "dream" else "active",
+                    folderId = normalizedFolderId,
+                    conversationId = normalizedConversationId,
+                )
+            ) {
+                is MemoryWriteResult.Success ->
+                    return result.file?.toAssistantMemory()
+                        ?: error("记忆写入失败（回读为空）: $path")
+
+                is MemoryWriteResult.Rejected -> error(result.reason)
+                is MemoryWriteResult.Conflict -> {
+                    attempt++
+                    if (attempt > 50) error("记忆写入失败：同名路径冲突过多（$basePath）")
+                }
+            }
         }
-        writeFile(
-            assistantId = assistantId,
-            path = path,
-            content = content,
-            ifVersion = NEW_FILE_VERSION,
-            source = if (source == "dream") "dream" else "active",
-            folderId = normalizedFolderId,
-            conversationId = normalizedConversationId,
-        )
-        return getFile(assistantId, path)?.toAssistantMemory()
-            ?: error("记忆写入失败: $path")
     }
 
     suspend fun copyMemories(fromAssistantId: String, toAssistantId: String) {
         val files = getFiles(fromAssistantId)
         if (files.isEmpty()) return
         files.forEach { file ->
-            writeFile(
-                assistantId = toAssistantId,
-                path = file.path,
-                content = file.content,
-                ifVersion = NEW_FILE_VERSION,
-                source = file.source,
-                folderId = file.folderId,
-                conversationId = null, // 跨助手复制：对话归属不能带过去（对话属于源助手）
-            )
+            // v5.3.19：检查结果 —— 目标助手已有同 path 时会 Conflict，旧实现静默跳过（复制"少了几条"）
+            when (
+                val r = writeFile(
+                    assistantId = toAssistantId,
+                    path = file.path,
+                    content = file.content,
+                    ifVersion = NEW_FILE_VERSION,
+                    source = file.source,
+                    folderId = file.folderId,
+                    conversationId = null, // 跨助手复制：对话归属不能带过去（对话属于源助手）
+                )
+            ) {
+                is MemoryWriteResult.Success -> Unit
+                is MemoryWriteResult.Conflict ->
+                    Log.w("MemoryRepository", "copyMemories: skip existing path=${file.path}")
+                is MemoryWriteResult.Rejected ->
+                    Log.w("MemoryRepository", "copyMemories: rejected ${file.path}: ${r.reason}")
+            }
         }
     }
 

@@ -334,23 +334,29 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                 val scopedFiles = memories.filter { m ->
                     val sourceOk = if (memoryCategory == MemoryCategory.DREAM) m.isDream else !m.isDream
                     val layerOk = when (memoryScope) {
-                        MemoryScope.ASSISTANT -> m.layer == me.rerere.rikkahub.data.model.MemoryLayer.ASSISTANT
+                        // ★v5.3.19 修复「模型看得到、页面看不到」（v5.0.87 已修过一次，v5.3.7 重写时又退回）：
+                        // 旧实现「整个助手」档只显示 `layer == ASSISTANT` 的条目 —— 于是包层/对话层记忆
+                        // 在这一档**完全不可见**，而注入链照样把它们喂给模型。
+                        // 现在：这一档 = 该记忆库**全部**归属（助手级 + 项目包级 + 单对话级分组）。
+                        MemoryScope.ASSISTANT -> true
                         MemoryScope.FOLDER -> m.layer == me.rerere.rikkahub.data.model.MemoryLayer.FOLDER
                         MemoryScope.CONVERSATION -> m.layer == me.rerere.rikkahub.data.model.MemoryLayer.CONVERSATION
                     }
                     sourceOk && layerOk
                 }
                 // 助手级/项目包级走平铺列表；单对话级走按对话分组的列表（保持既有 UI 结构）
-                val scopedMemories = if (memoryScope == MemoryScope.CONVERSATION) {
-                    emptyList<me.rerere.rikkahub.data.model.AssistantMemory>()
-                } else {
-                    scopedFiles.map { it.toAssistantMemory() }.distinctBy { it.id }
-                }
-                val scopedConversationMemories = if (memoryScope == MemoryScope.CONVERSATION) {
-                    scopedFiles.map { it.toAssistantMemory() }.distinctBy { it.id }
-                } else {
-                    emptyList<me.rerere.rikkahub.data.model.AssistantMemory>()
-                }
+                // v5.3.19 ★按**层级**拆分（不再按「当前档」拆分）：
+                // 助手级/项目包级 → 平铺；单对话级 → 按对话分组。
+                // 旧实现只有「单对话」档才出现分组 —— 于是「整个助手」档里对话级记忆彻底消失。
+                val scopedMemories = scopedFiles
+                    .filter { it.layer != me.rerere.rikkahub.data.model.MemoryLayer.CONVERSATION }
+                    // ★去重键用 path（唯一真键）；用 id（= path.hashCode）会在 hash 冲突时**丢条目**
+                    .map { it.toAssistantMemory() }
+                    .distinctBy { it.path }
+                val scopedConversationMemories = scopedFiles
+                    .filter { it.layer == me.rerere.rikkahub.data.model.MemoryLayer.CONVERSATION }
+                    .map { it.toAssistantMemory() }
+                    .distinctBy { it.path }
                 // v5.0.81 ★做梦状态卡（用户："点击做梦之后会在上面有提示、抽屉页也会出现提示，
                 // 你这个和其他的没对上"）—— 复用与设置 tab「立即整理」**同一个组件**，
                 // 状态/转圈/最近一次结果完全一致；onOrganize 分流：带对话 id = 主动做梦
