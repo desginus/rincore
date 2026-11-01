@@ -460,7 +460,14 @@ class MemoryRepository(
             is Edit.Reject -> return MemoryWriteResult.Rejected(result.reason)
             is Edit.Content -> result.content
         }
-        if (content.toByteArray().size > MemoryFile.MAX_BYTES) {
+        // v5.3.22 ★**补回原版 3.1.1 的判据**（我们移植时写成了无条件拦截）：
+        //   `size > MAX_BYTES && size > current?.content?.size ?: 0`
+        // 原版注释写得很清楚：「只拦会让文件变大的超限写入：迁移来的旧记忆可能本来就超限，
+        // 得允许一点点删小」。我们无条件拦 = **超限的历史记忆连删内容都被拒**，
+        // 用户视角就是「这条记忆怎么改都改不动」，而唯一的解法恰恰是让它变小。
+        val newSize = content.toByteArray().size
+        val oldSize = current?.content?.toByteArray()?.size ?: 0
+        if (newSize > MemoryFile.MAX_BYTES && newSize > oldSize) {
             return MemoryWriteResult.Rejected(
                 "$normalized would exceed the ${MemoryFile.MAX_BYTES / 1024}KB limit. " +
                     "Merge duplicates and drop outdated details instead of adding more."
@@ -780,5 +787,27 @@ private fun MemoryFileEntity.toMemoryFile() = MemoryFile(
     invalidatedAt = invalidatedAt,
 )
 
-private fun String.replaceAt(index: Int, length: Int, replacement: String): String =
-    substring(0, index) + replacement + substring(index + length)
+/**
+ * v5.3.22 ★**补回原版 3.1.1 的边界处理**（移植 3.0.0 时丢了）。
+ *
+ * 原版 `MemoryRepository.kt:186-200` 的 `replaceAt`：删掉的是**完整一行**时，
+ * 连相邻的那个换行一起去掉，不留空行。我们此前只剩一行 substring 拼接 ——
+ * 模型用 `memory_str_replace(old_str="整行文本", new_str="")` 删条目时，
+ * 每删一次就在文件里留一个空白行，记忆文件越用越稀。
+ */
+private fun String.replaceAt(index: Int, length: Int, replacement: String): String {
+    var start = index
+    var end = index + length
+    if (replacement.isEmpty()) {
+        val atLineStart = start == 0 || this[start - 1] == '\n'
+        val atLineEnd = end == this.length || this[end] == '\n'
+        if (atLineStart && atLineEnd) {
+            if (end < this.length) {
+                end++
+            } else if (start > 0) {
+                start--
+            }
+        }
+    }
+    return substring(0, start) + replacement + substring(end)
+}

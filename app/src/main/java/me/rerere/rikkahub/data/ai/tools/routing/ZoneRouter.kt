@@ -112,7 +112,10 @@ class ZoneRouter(
         for ((prefix, zoneId) in prefixRules) {
             if (name.startsWith(prefix)) hit(zoneId)?.let { return it }
         }
-        if (name == "memory_tool") hit("对话工具/记忆")?.let { return it }
+        // v5.3.22 ★记忆六工具统一路由到记忆区。
+        // 旧实现只认已删除的 `memory_tool` → memory_read/write/str_replace/append/delete/list
+        // 全部掉进关键词兜底，在工具矩阵里找不到「记忆」这一区。
+        if (name.startsWith("memory_")) hit("对话工具/记忆")?.let { return it }
         if (name.startsWith("mcp__")) {
             val server = name.removePrefix("mcp__").split("__").firstOrNull().orEmpty().lowercase()
             mcpServerZoneDefaults[server]?.let { hit(it) }?.let { return it }

@@ -103,4 +103,54 @@ class MemoryFileTest {
 
         assertEquals(listOf("a, b", "吃的，喝的", "c"), original.edited(aliases = original.aliases + "c").aliases)
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // v5.3.22 ★★★历史记忆「在模型眼里是瞎子」的回归护栏
+    //
+    // v5.3.7 的迁移只写 content 原文、不生成 frontmatter；而 description 旧实现
+    // 只读 frontmatter → 这批记忆在 <memory_listing> 里全是 "(no description)"
+    // → 模型无从判断该不该读 → 记忆系统实际失效。下面锁定「必须有兜底」。
+    // ══════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun `description falls back to body first line when frontmatter is absent`() {
+        // 典型的迁移产物：没有 frontmatter，正文首行是【标题】包裹
+        val file = MemoryFile(
+            path = "/memory_123.md",
+            content = "【RinCore v5.0.25 正式版已发布】\n- 正式可用版\n- 下载链接…",
+            updatedAt = 1L,
+        )
+        assertEquals(
+            "RinCore v5.0.25 正式版已发布",
+            file.description,
+        )
+    }
+
+    @Test
+    fun `description falls back to list-item text`() {
+        val file = MemoryFile(
+            path = "/a.md",
+            content = "- [stated] 用户住在杭州\n- 其他内容",
+            updatedAt = 1L,
+        )
+        assertEquals("用户住在杭州", file.description)
+    }
+
+    @Test
+    fun `frontmatter description wins over fallback`() {
+        val file = MemoryFile(
+            path = "/b.md",
+            content = "---\nname: b\ndescription: 用户偏好简洁回答\n---\n\n正文首行不该被用",
+            updatedAt = 1L,
+        )
+        assertEquals("用户偏好简洁回答", file.description)
+    }
+
+    @Test
+    fun `fallback description is capped and never blank for non-empty content`() {
+        val long = "很长的标题" + "x".repeat(300)
+        val file = MemoryFile(path = "/c.md", content = long, updatedAt = 1L)
+        assertTrue("必须有兜底内容", file.description.isNotEmpty())
+        assertTrue("必须截断到 120 字以内", file.description.length <= 120)
+    }
 }

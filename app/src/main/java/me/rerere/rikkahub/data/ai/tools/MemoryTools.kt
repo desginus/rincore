@@ -100,96 +100,12 @@ internal fun memoryHealthCheck(content: String): String? {
     return null
 }
 
-fun buildMemoryTools(
-    json: Json,
-    onCreation: suspend (String) -> AssistantMemory,
-    onUpdate: suspend (Long, String) -> AssistantMemory,
-    onDelete: suspend (Long) -> Unit
-): List<Tool> = listOf(
-    Tool(
-        name = "memory_tool",
-        description = """
-            The memory tool stores long-term information across conversations.
-            Use `action` to control the operation: `create` (add), `edit` (update), `delete` (remove).
-            - No relevant record: `create` + `content`
-            - Existing relevant record: `edit` + `id` + `content`
-            - Outdated/irrelevant record: `delete` + `id`
-            Memories will automatically appear in the <memories> tag in later conversations.
-            New memories follow the assistant's memory scope setting: assistant-wide by default;
-            when 单对话记忆 (conversation-scoped memory) is on, they are mounted to the CURRENT
-            conversation only — visible/editable there, and destroyed with that conversation.
-            Do not store sensitive information (e.g., ethnicity, religion, sexual orientation, political views, sex life, criminal records).
-            You may store: preferred name, preferences, plans, work-related notes, chat style preferences, first chat time, etc.
-            Do not show memory content directly in the conversation unless the user explicitly asks.
-            Similar memories should be merged; prefer updating existing records.
 
-            Examples:
-            {"action":"create","content":"User prefers brief replies and is more active on weekends."}
-            {"action":"edit","id":12,"content":"User’s preferred name updated to “A-Xing”, prefers Chinese replies."}
-            {"action":"delete","id":7}
-        """.trimIndent(),
-        parameters = {
-            InputSchema.Obj(
-                properties = buildJsonObject {
-                    put("action", buildJsonObject {
-                        put("type", "string")
-                        put(
-                            "enum",
-                            buildJsonArray {
-                                add("create")
-                                add("edit")
-                                add("delete")
-                            }
-                        )
-                        put("description", "Operation to perform: create, edit, or delete")
-                    })
-                    put("id", buildJsonObject {
-                        put("type", "integer")
-                        put("description", "The id of the memory record (required for edit/delete)")
-                    })
-                    put("content", buildJsonObject {
-                        put("type", "string")
-                        put("description", "The content of the memory record (required for create/edit)")
-                    })
-                },
-                required = listOf("action")
-            )
-        },
-        execute = {
-            val params = it.jsonObject
-            val action = params["action"]?.jsonPrimitive?.contentOrNull ?: error("action is required")
-            val payload = when (action) {
-                "create" -> {
-                    val content = params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
-                    // v3.11.24: 健康门 — 污染/退化/超限内容拒绝落库 (返回 error 给模型纠正)
-                    memoryHealthCheck(content)?.let { error(it) }
-                    json.encodeToJsonElement(AssistantMemory.serializer(), onCreation(content))
-                }
-
-                "edit" -> {
-                    val id = params["id"]?.jsonPrimitive?.longOrNull ?: error("id is required")
-                    val content = params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
-                    // v3.11.24: 健康门 — 编辑同受检, 防绕道 (删除重建路径也过此门)
-                    memoryHealthCheck(content)?.let { error(it) }
-                    json.encodeToJsonElement(AssistantMemory.serializer(), onUpdate(id, content))
-                }
-
-                "delete" -> {
-                    val id = params["id"]?.jsonPrimitive?.longOrNull ?: error("id is required")
-                    onDelete(id)
-                    buildJsonObject {
-                        put("success", true)
-                        put("id", id)
-                    }
-                }
-
-                else -> error("unknown action: $action, must be one of [create, edit, delete]")
-            }
-            listOf(UIMessagePart.Text(payload.toString()))
-        }
-    )
-)
-
+/**
+ * v5.3.22：**恢复被误删的定义** —— 清理旧条目式重载时把它一起删掉了，
+    导致 MemoryConsolidator 等处 `Unresolved reference: MemoryToolNames`。
+    ci-check 的 D 规则（符号被删仍被引用）正是为这类误删准备的。
+ */
 object MemoryToolNames {
     const val READ = "memory_read"
     const val WRITE = "memory_write"
@@ -202,17 +118,6 @@ object MemoryToolNames {
     val WRITES = setOf(WRITE, STR_REPLACE, APPEND, DELETE)
 }
 
-// ══ RinCore 兼容层（B1 并树）：上游 3.0.0 记忆 2.0「文件式记忆库」工具（MemoryConsolidator/ChatToolFactory 消费） ══
-private const val MAX_READ_PATHS = 20
-
-private const val IF_VERSION_DESCRIPTION =
-    "The version returned by the most recent read or write of this file"
-
-/**
- * 记忆库的读写工具，[assistantId] 决定操作哪个记忆库（助手自己的或全局的）。
- *
- * 何时读、何时写由 system prompt 里的记忆片段约束，这里只描述每个工具本身。
- */
 fun buildMemoryTools(
     repository: MemoryRepository,
     assistantId: String,

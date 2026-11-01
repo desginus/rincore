@@ -35,7 +35,35 @@ data class MemoryFile(
     private val frontmatter by lazy { SkillFrontmatterParser.parse(content) }
 
     /** frontmatter 里的一句话描述，用于清单 */
-    val description: String get() = frontmatter["description"]?.trim().orEmpty()
+    /**
+     * 清单里的一句话描述。
+     *
+     * ★v5.3.22 关键修复：frontmatter 没写 description 时**用正文首行兜底**。
+     *
+     * 旧实现只读 frontmatter —— 而 v5.3.7 的 `MIGRATION_37_38` 把历史条目搬进
+     * `memory_file` 时**只写 content 原文、不生成 frontmatter**，于是这批记忆的
+     * description 恒为空 → 注入的 `<memory_listing>` 里全变成
+     *     `/memory_261020175231.md | (no description) | updated: 2026-10-20`
+     * → 模型**完全不知道这份记忆讲什么** → 不会去 `memory_read` → 记忆系统
+     * 对用户实际失效（这正是「改成索引式以后模型好像不记得我了」的机制）。
+     */
+    val description: String
+        get() = frontmatter["description"]?.trim()?.takeIf { it.isNotEmpty() }
+            ?: autoDescription
+
+    /** 正文首行作为兜底描述（去掉列表符、`[stated]` 标记、`【】` 包裹），截 120 字。 */
+    private val autoDescription: String
+        get() = body.lineSequence()
+            .map { raw ->
+                raw.trim()
+                    .removePrefix("- ").removePrefix("* ").removePrefix("+ ")
+                    .removePrefix("[stated]").trim()
+                    .removePrefix("【").removeSuffix("】")
+                    .trim()
+            }
+            .firstOrNull { it.isNotEmpty() }
+            .orEmpty()
+            .take(120)
 
     val aliases: List<String> get() = frontmatter.getList("aliases")
 

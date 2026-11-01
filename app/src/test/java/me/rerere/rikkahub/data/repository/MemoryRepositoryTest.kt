@@ -424,4 +424,51 @@ class MemoryRepositoryTest {
     fun `batch visible read returns empty for empty input`() = runBlocking {
         assertTrue(repository.readVisibleFiles(assistant, emptyList(), null, null).isEmpty())
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // v5.3.22 ★★补回原版 3.1.1 的两条边界（移植 3.0.0 时丢失，用户实测"越用越稀"）
+    //
+    // 原版 MemoryRepository.kt:186-200 与 :150 各有一段判据，我们的重写版
+    // 简化成一行 substring / 无条件拦大小 —— 这是「不看原版」的直接代价。
+    // ══════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun `replace removing a whole line leaves no blank line`() = runBlocking {
+        val initial = "- 第一行\n- 要删的行\n- 第三行"
+        repository.writeFile(assistant, "/a.md", initial, MemoryRepository.NEW_FILE_VERSION)
+        val version = repository.getFile(assistant, "/a.md")!!.version
+
+        // 删掉完整的一行（含它前面的换行处理）
+        val r = repository.replaceInFile(assistant, "/a.md", "- 要删的行\n", "", version)
+        assertTrue("替换应成功: $r", r is MemoryWriteResult.Success)
+        val out = repository.getFile(assistant, "/a.md")!!.content
+        assertEquals("- 第一行\n- 第三行", out)
+        assertTrue("不得出现连续空行: <$out>", !out.contains("\n\n"))
+    }
+
+    @Test
+    fun `oversized legacy memory can still be shrunk`() = runBlocking {
+        // 模拟迁移来的超限旧记忆（> 48KB）
+        val huge = "x".repeat(MemoryFile.MAX_BYTES + 1024)
+        dao.upsertFile(
+            me.rerere.rikkahub.data.db.entity.MemoryFileEntity(
+                assistantId = assistant,
+                path = "/legacy.md",
+                content = huge,
+                updatedAt = 1L,
+                source = "active",
+            )
+        )
+        // 原版判据：只拦"变大"的超限写入 → 变小必须放行
+        val r = repository.writeFile(assistant, "/legacy.md", "只有一小段")
+        assertTrue("超限旧记忆必须允许改小，实际=$r", r is MemoryWriteResult.Success)
+        assertEquals("只有一小段", repository.getFile(assistant, "/legacy.md")?.content)
+    }
+
+    @Test
+    fun `oversized new write is still rejected`() = runBlocking {
+        val huge = "x".repeat(MemoryFile.MAX_BYTES + 1024)
+        val r = repository.writeFile(assistant, "/new-huge.md", huge, MemoryRepository.NEW_FILE_VERSION)
+        assertTrue("超限的新写入必须拒绝: $r", r is MemoryWriteResult.Rejected)
+    }
 }

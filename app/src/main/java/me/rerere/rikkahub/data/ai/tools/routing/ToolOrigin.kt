@@ -23,10 +23,14 @@ fun toolOriginOf(name: String): ToolOrigin = when {
     name.startsWith("mcp__") -> ToolOrigin.MCP
     name.startsWith("plugin__") || name.startsWith("operit__") || name.startsWith("clawhub_") -> ToolOrigin.PLUGIN
     name.startsWith("workspace_") ||
+        // v5.3.22 ★记忆六工具（memory_read/write/str_replace/append/delete/list）
+        // 是系统内建能力，此前只登记了已删除的 `memory_tool` → 新六件被判成 LOCAL，
+        // 在工具箱/分区里归错类。
+        name.startsWith("memory_") ||
         name in CORE_MATRIX_TOOLS ||
         name in setOf(
             "manage_mcp_servers", "plugin_install", "task_tool",
-            "read_image", "upload_fetch", "memory_tool", "ask_user",
+            "read_image", "upload_fetch", "ask_user",
         ) -> ToolOrigin.SYSTEM
     else -> ToolOrigin.LOCAL
 }

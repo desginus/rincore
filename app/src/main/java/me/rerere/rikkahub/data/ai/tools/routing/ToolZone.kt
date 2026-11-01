@@ -196,7 +196,7 @@ val DEFAULT_TOOL_ZONES: List<ToolZone> = listOf(
 
     // 7. 对话工具
     ToolZone("对话工具", "对话工具", null, "", "子代理、记忆、时间、高频率小工具", listOf("对话", "conversation", "子代理", "后台", "记住", "记忆", "时间", "token")),
-    ToolZone("对话工具/记忆", "记忆", "对话工具", "", "记忆读写管理、对话搜索、最近对话", listOf("memory", "memory_tool", "记忆", "记住", "备忘", "conversation_search", "recent_chats", "对话搜索", "最近对话", "历史搜索")),
+    ToolZone("对话工具/记忆", "记忆", "对话工具", "", "记忆读写管理、对话搜索、最近对话", listOf("memory", "记忆", "记住", "备忘", "conversation_search", "recent_chats", "对话搜索", "最近对话", "历史搜索")),
     ToolZone("对话工具/子代理", "子代理", "对话工具", "", "子代理调度", listOf("子代理", "subagent", "后台", "子对话", "代理")),
     ToolZone("对话工具/时间", "时间", "对话工具", "", "时间信息获取", listOf("当前时间", "时间", "get_time_info", "time", "时钟")),
     ToolZone("对话工具/小工具", "小工具", "对话工具", "", "JS 沙箱、Ask User、剪贴板等高频率工具", listOf("eval", "javascript", "js", "代码计算", "ask_user", "询问用户", "clipboard", "复制", "TTS", "tts", "朗读", "text_to_speech", "语音合成", "screen_time", "shutdown", "restart", "toast", "notification", "通知", "分享", "share", "download")),
