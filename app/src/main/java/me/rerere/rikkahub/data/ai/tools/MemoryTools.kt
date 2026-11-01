@@ -260,15 +260,15 @@ fun buildMemoryTools(
             }.take(MAX_READ_PATHS)
             if (paths.isEmpty()) error("path is required")
 
-            // v5.3.19 ★越权读取的唯一防线：只读**当前上下文可见**的记忆
-            val files = paths.associateWith {
-                repository.readVisibleFile(
-                    memoryId = assistantId,
-                    path = it,
-                    folderId = readFolderId,
-                    conversationId = readConversationId,
-                )
-            }
+            // v5.3.19 ★越权读取的唯一防线：只读**当前上下文可见**的记忆。
+            // v5.3.20 ★性能：旧写法对每个 path 单独调一次，等于 N 次全表扫描（N ≤ MAX_READ_PATHS=20）；
+            // 改为一次取可见集合并建索引（`readVisibleFiles`），模型一次读 20 个文件也只扫一遍。
+            val files = repository.readVisibleFiles(
+                memoryId = assistantId,
+                paths = paths,
+                folderId = readFolderId,
+                conversationId = readConversationId,
+            )
             toolOutput {
                 put("files", buildJsonArray {
                     files.values.filterNotNull().forEach { file ->

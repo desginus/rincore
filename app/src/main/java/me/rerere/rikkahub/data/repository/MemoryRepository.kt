@@ -364,6 +364,43 @@ class MemoryRepository(
         ).firstOrNull { it.path in candidates }
     }
 
+    /**
+     * v5.3.20 ★**批量可见读取**（性能修复）。
+     *
+     * 旧工具层写法是 `paths.associateWith { readVisibleFile(it) }` —— 而 `readVisibleFile`
+     * 内部每次都调 `memoriesForInjection`（= 一次 `getFiles` 全表 + 逐条判据）。
+     * `MAX_READ_PATHS = 20` 时就是 **一次 memory_read 触发 20 次全表扫描**；
+     * 记忆库上千条时表现为「模型读几个文件就卡一下」，且并发工具会叠加。
+     *
+     * 现在一次取可见集合、建 path 索引，再对每个入参 path 走多形态候选匹配。
+     * 返回的 key 是**调用方传入的原样 path**（可能不带前导 `/`），value 是命中的真实文件。
+     */
+    suspend fun readVisibleFiles(
+        memoryId: String,
+        paths: List<String>,
+        folderId: String?,
+        conversationId: String?,
+        siblingConversationIds: Collection<String> = emptyList(),
+        manualMount: Int = MOUNT_FOLDER,
+        dreamMount: Int = MOUNT_FOLDER,
+    ): Map<String, MemoryFile> {
+        if (paths.isEmpty()) return emptyMap()
+        val byPath = memoriesForInjection(
+            memoryId = memoryId,
+            folderId = folderId,
+            conversationId = conversationId,
+            siblingConversationIds = siblingConversationIds,
+            manualMount = manualMount,
+            dreamMount = dreamMount,
+        ).associateBy { it.path }
+        val result = LinkedHashMap<String, MemoryFile>(paths.size)
+        for (raw in paths) {
+            val hit = pathCandidates(raw).firstNotNullOfOrNull { byPath[it] } ?: continue
+            result[raw] = hit
+        }
+        return result
+    }
+
     /** v5.3.19：工具层 `memory_list` 用 —— 当前上下文可见的全部记忆。 */
     suspend fun listVisibleFiles(
         memoryId: String,

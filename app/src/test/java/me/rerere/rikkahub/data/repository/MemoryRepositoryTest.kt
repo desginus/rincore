@@ -380,4 +380,48 @@ class MemoryRepositoryTest {
         assertTrue("第一条内容保留", repository.getFile(assistant, first.path)?.content == "同标题\n第一条")
         assertTrue("第二条内容保留", repository.getFile(assistant, second.path)?.content == "同标题\n第二条")
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // v5.3.20 ★批量可见读取（性能回归护栏）
+    //
+    // 旧工具层对每个 path 单独调一次 readVisibleFile（内部全表扫描），
+    // MAX_READ_PATHS=20 时 = 一次 memory_read 触发 20 次全表。改批量后只扫一遍。
+    // 这条测试锁定「语义不变」：多形态 path 都能命中、跨范围仍然不可见。
+    // ══════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun `batch visible read resolves all candidates in one pass`() = runBlocking {
+        seedLegacy("旧标题.md", "老内容")                            // 无前导斜杠
+        repository.writeFile(assistant, "/a.md", "助手级", MemoryRepository.NEW_FILE_VERSION)
+        repository.writeFile(assistant, "/b.md", "包A", MemoryRepository.NEW_FILE_VERSION, folderId = "folder-A")
+        repository.writeFile(assistant, "/c.md", "对话X", MemoryRepository.NEW_FILE_VERSION, conversationId = "conv-X")
+
+        // 一次调用拿多个：规范形态、无斜杠形态、跨范围、不存在
+        val got = repository.readVisibleFiles(
+            memoryId = assistant,
+            paths = listOf("/旧标题.md", "a.md", "/b.md", "/c.md", "/nope.md"),
+            folderId = "folder-B",          // 在包 B 的上下文
+            conversationId = "conv-Y",      // 对话 Y 的上下文
+        )
+        assertEquals("老 path 的规范形态应命中", "老内容", got["/旧标题.md"]?.content)
+        assertEquals("无前导斜杠入参应命中", "助手级", got["a.md"]?.content)
+        assertTrue("别的项目包必须不可见", "/b.md" !in got)
+        assertTrue("别的单对话必须不可见", "/c.md" !in got)
+        assertTrue("不存在的 path 不应出现", "/nope.md" !in got)
+
+        // 本包/本对话上下文应命中
+        val mine = repository.readVisibleFiles(
+            memoryId = assistant,
+            paths = listOf("/b.md", "/c.md"),
+            folderId = "folder-A",
+            conversationId = "conv-X",
+        )
+        assertEquals("包A", mine["/b.md"]?.content)
+        assertEquals("对话X", mine["/c.md"]?.content)
+    }
+
+    @Test
+    fun `batch visible read returns empty for empty input`() = runBlocking {
+        assertTrue(repository.readVisibleFiles(assistant, emptyList(), null, null).isEmpty())
+    }
 }
