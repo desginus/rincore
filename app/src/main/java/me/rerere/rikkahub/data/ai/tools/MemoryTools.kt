@@ -118,6 +118,11 @@ object MemoryToolNames {
     val WRITES = setOf(WRITE, STR_REPLACE, APPEND, DELETE)
 }
 
+private const val MAX_READ_PATHS = 20
+
+private const val IF_VERSION_DESCRIPTION =
+    "The version returned by the most recent read or write of this file"
+
 fun buildMemoryTools(
     repository: MemoryRepository,
     assistantId: String,
