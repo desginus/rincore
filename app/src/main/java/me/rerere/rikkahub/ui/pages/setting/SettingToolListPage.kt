@@ -265,7 +265,10 @@ fun SettingToolListPage(
                                     // v4.8.92: 来源标签（技能/MCP/插件/系统/本地）—— 与 /@ 选择器同口径
                                     AssistChip(
                                         onClick = {},
-                                        label = { Text(toolOriginOf(tool.name).label, style = MaterialTheme.typography.labelSmall) },
+                                        // v5.3.28: 加「来源:」前缀 —— 这张卡片上并排两个 chip，
+                                        // 左边是**归属**（工具区），右边是**来源**（系统/本地/技能/MCP）。
+                                        // 用户此前把两者当成同一个信息，于是「归属:未分类 + 系统」看起来自相矛盾。
+                                        label = { Text("来源: ${toolOriginOf(tool.name).label}", style = MaterialTheme.typography.labelSmall) },
                                         modifier = Modifier.height(24.dp),
                                     )
                                     if (tool.name in settings.toolZoneLinks) {

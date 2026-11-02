@@ -246,4 +246,5 @@ jobs:
             --tests "me.rerere.rikkahub.data.ai.tools.MemoryToolsTest" \
             --tests "me.rerere.rikkahub.data.ai.prompts.MemoryPromptTest" \
             --tests "me.rerere.rikkahub.data.repository.MemoryRepositoryTest" \
-            --tests "me.rerere.rikkahub.data.repository.ConversationSessionManagerTest"
+            --tests "me.rerere.rikkahub.data.repository.ConversationSessionManagerTest" \
+            --tests "me.rerere.rikkahub.data.ai.tools.routing.ZoneOpsTest"
