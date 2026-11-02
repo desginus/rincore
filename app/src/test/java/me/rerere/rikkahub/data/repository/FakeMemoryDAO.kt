@@ -25,6 +25,22 @@ internal class FakeMemoryDAO : MemoryFileDAO {
     override suspend fun getFile(assistantId: String, path: String): MemoryFileEntity? =
         files.value.find { it.assistantId == assistantId && it.path == path }
 
+    // ═══ v5.3.23 新增的两个方法 ═══
+    // v5.3.26 把 unit-tests 提升为硬门禁后**第一次真正编译 test sourceSet**才发现：
+    // 替身没跟上接口 → 整个 test sourceSet 编译失败 → 681 个测试其实一直没跑。
+    override suspend fun countLegacyFiles(assistantId: String): Int =
+        files.value.count { it.assistantId == assistantId && !it.content.trimStart().startsWith("---") }
+
+    override suspend fun deleteLegacyFiles(assistantId: String): Int {
+        val legacy = files.value.count {
+            it.assistantId == assistantId && !it.content.trimStart().startsWith("---")
+        }
+        files.value = files.value.filterNot {
+            it.assistantId == assistantId && !it.content.trimStart().startsWith("---")
+        }
+        return legacy
+    }
+
     override suspend fun upsertFile(file: MemoryFileEntity) = upsertFiles(listOf(file))
 
     override suspend fun upsertFiles(files: List<MemoryFileEntity>) {

@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MemoryFileTest {
