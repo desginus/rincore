@@ -24,6 +24,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.tools.routing.CORE_MATRIX_TOOLS
+import me.rerere.rikkahub.data.ai.tools.routing.mergeBuiltinZones
 import me.rerere.rikkahub.data.ai.tools.routing.FALLBACK_ZONE_ID
 import me.rerere.rikkahub.data.ai.tools.routing.ZoneOps
 import me.rerere.rikkahub.data.ai.tools.routing.ZoneRouter
@@ -33,7 +34,8 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 
 /** 由当前设置构造路由器 —— 模型侧与 UI 侧唯一的构造口径 */
 fun zoneRouterOf(settings: Settings): ZoneRouter = ZoneRouter(
-    zones = settings.toolZones,
+    // v5.3.29 ★唯一来源：内置区由代码常量保证存在，settings 只承载用户自定义区。
+    zones = mergeBuiltinZones(settings.toolZones),
     links = settings.toolZoneLinks,
     hiddenZones = settings.hiddenZones,
     topLevelTools = topLevelToolSetOf(settings),

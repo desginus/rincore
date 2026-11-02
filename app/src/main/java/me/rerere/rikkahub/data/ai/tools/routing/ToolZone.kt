@@ -209,6 +209,12 @@ val DEFAULT_TOOL_ZONES: List<ToolZone> = listOf(
     ToolZone("技能", "技能", null, "", "Skill 能力模块，按功能场景组织", listOf("skill_", "技能", "skill", "能力模块")),
     ToolZone("插件", "插件", null, "", "插件能力模块（技能 + workspace 桥接工具）", listOf("plugin__", "插件", "plugin")),
     ToolZone("系统", "系统", null, "", "内部系统工具（仅用户明确要求管理工具区/MCP/插件时使用）", listOf("manage_zone", "manage_mcp_servers", "invoke_tools", "clawhub", "plugin_install")),
+    // ═══ v5.3.29 ★兜底区必须有**实体** ═══
+    // `classify()` 在什么都没命中时返回 FALLBACK_ZONE_ID（"未分类"），但此前
+    // DEFAULT_TOOL_ZONES 里从来没有这个区 → 返回的是一个树里不存在的 id →
+    // 工具矩阵只能把它显示成一段文字「未分类」，既不是一个能点开的区，
+    // 也无法把工具移进去/移出来（「幽灵区」）。
+    ToolZone(FALLBACK_ZONE_ID, FALLBACK_ZONE_ID, null, "", "未能归入任何工具区的工具（可手动移入具体工具区）", emptyList()),
 )
 
 /**
@@ -232,3 +238,24 @@ val DEFAULT_TOP_LEVEL_TOOLS: Set<String> = setOf(
     "upload_fetch", // v4.8.90: 上传码直取 —— 顶层常驻，任何对话都能直接定位用户上传的文件
     "task_tool",
 )
+
+/**
+ * v5.3.29 ★★「内置区」的唯一权威 = 本文件的 [DEFAULT_TOOL_ZONES]。
+ *
+ * 此前 `settings.toolZones` 同时承担两种职责：**内置区定义** 与 **用户自定义**。
+ * 而它只在升级时被 `ToolZoneMigration` 播种一次 —— 于是任何**后来新增/改动**的内置区
+ * 对老用户永远不可见（v5.3.25 找不到记忆工具、v5.3.28 仍显示「未分类」，都是这一个根因）。
+ *
+ * 现在把两者分开：
+ *   · 内置区：永远由代码常量提供（缺失即补，不看用户配置里有没有父区）；
+ *   · 用户自定义区：仍存在 `settings.toolZones`，原样保留、顺序不被打乱。
+ *
+ * 这样「工具矩阵 / 详情页 / 移动对话框 / 模型侧区域」读到的**是同一份区表**。
+ * 副作用（有意接受）：用户无法通过"删除"让某个内置区消失 —— 想隐藏请用
+ * `settings.hiddenZones`（它只影响地图呈现，不影响归类与加载）。
+ */
+fun mergeBuiltinZones(userZones: List<ToolZone>): List<ToolZone> {
+    val present = userZones.mapTo(HashSet()) { it.id }
+    val missing = DEFAULT_TOOL_ZONES.filter { it.id !in present }
+    return if (missing.isEmpty()) userZones else userZones + missing
+}

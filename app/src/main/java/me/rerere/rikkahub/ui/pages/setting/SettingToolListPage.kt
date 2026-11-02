@@ -229,7 +229,10 @@ fun SettingToolListPage(
                     // v5.3.26 ★记忆六工具由 assistant.enableMemory 硬性注入（GenerationHandler 里
         // `frameworkTools.filter { it.name !in MEMORY_TOOL_NAMES_ALL }` 会把它从顶层剔除），
         // 所以矩阵里允许勾「顶层直连」是个**假开关**（勾了不生效）。这里与核心件同样禁用。
-        val isCore = tool.name in CORE_MATRIX_TOOLS || tool.name in MemoryToolNames.ALL
+        // v5.3.29 ★记忆工具不再是"不可勾选的核心件" —— 它们和普通工具一样可以被组织。
+        // v5.3.26 曾把 MemoryToolNames.ALL 加进来，结果用户完全无法操作记忆工具（实测）。
+        // 记忆工具的**启停**由助手「记忆」开关决定；矩阵里的勾选/归属只影响组织与显示。
+        val isCore = tool.name in CORE_MATRIX_TOOLS
                     Card(
                         Modifier.fillMaxWidth().clickable {
                             if (multiSelect) {
@@ -353,7 +356,10 @@ fun SettingToolListPage(
         // v5.3.26 ★记忆六工具由 assistant.enableMemory 硬性注入（GenerationHandler 里
         // `frameworkTools.filter { it.name !in MEMORY_TOOL_NAMES_ALL }` 会把它从顶层剔除），
         // 所以矩阵里允许勾「顶层直连」是个**假开关**（勾了不生效）。这里与核心件同样禁用。
-        val isCore = tool.name in CORE_MATRIX_TOOLS || tool.name in MemoryToolNames.ALL
+        // v5.3.29 ★记忆工具不再是"不可勾选的核心件" —— 它们和普通工具一样可以被组织。
+        // v5.3.26 曾把 MemoryToolNames.ALL 加进来，结果用户完全无法操作记忆工具（实测）。
+        // 记忆工具的**启停**由助手「记忆」开关决定；矩阵里的勾选/归属只影响组织与显示。
+        val isCore = tool.name in CORE_MATRIX_TOOLS
         var target by remember(tool.name) { mutableStateOf(if (isCore) TOP_LEVEL_LABEL else currentOwner) }
         var editDesc by remember(tool.name) { mutableStateOf(settings.toolDescriptionOverrides[tool.name] ?: tool.description) }
         var editName by remember(tool.name) { mutableStateOf(settings.toolNameOverrides[tool.name] ?: "") }

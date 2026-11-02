@@ -75,37 +75,9 @@ object ZoneOps {
             if (z.id.isBlank() || !seen.add(z.id)) continue
             cleaned.add(z)
         }
-        // ═══ v5.3.28 ★★「记忆六工具显示未分类」的真正根因在这里 ═══
-        //
-        // `zoneRouterOf(settings)` 直接把 `settings.toolZones` 交给 ZoneRouter，
-        // 而 `DEFAULT_TOOL_ZONES` 只在 `ToolZoneMigration`（升级时**一次性**播种）里用过。
-        // 于是**之后新增的内置区**（v5.3.x 的「对话工具/记忆」等）永远不会进入老用户的配置
-        // → `ZoneRouter.hit("对话工具/记忆")` 返回 null → memory_* 落到 FALLBACK_ZONE_ID（未分类）。
-        //
-        // 三条补全规则（幂等、不覆盖用户改动）：
-        //   1) 完全没配过（新装用户）→ 播种全套内置区；
-        //   2) 缺「未分类」→ 补（它是归类兜底骨架）；
-        //   3) 缺**内置子区**且它的父区存在 → 补。父区不在就不补 ——
-        //      用户删掉整棵根区是明确的删除意图，不应被自动复活。
-        if (cleaned.isEmpty()) {
-            cleaned.addAll(DEFAULT_TOOL_ZONES)
-            DEFAULT_TOOL_ZONES.forEach { seen.add(it.id) }
-        }
-        if (!cleaned.any { it.id == FALLBACK_ZONE_ID }) {
-            DEFAULT_TOOL_ZONES.firstOrNull { it.id == FALLBACK_ZONE_ID }?.let {
-                cleaned.add(it)
-                seen.add(it.id)
-            }
-        }
-        for (z in DEFAULT_TOOL_ZONES) {
-            if (z.id in seen) continue
-            val parent = z.parentId ?: continue
-            if (parent !in seen) continue
-            cleaned.add(z)
-            seen.add(z.id)
-        }
-        // 固定 id → 合法 id 集合；父引用必须存在、不能是自己、不能成环
-        val ids = cleaned.mapTo(HashSet()) { it.id }
+        // v5.3.29: 合法性判据基于「合并内置区之后」的 id 集 ——
+        // 内置区存在但不在 settings.toolZones 里是正常状态，不能被当成非法引用清掉。
+        val ids = mergeBuiltinZones(cleaned).mapTo(HashSet()) { it.id }
         val fixed = cleaned.map { z ->
             val name = z.name.ifBlank { z.id.substringAfterLast('/') }.trim()
             var pid = z.parentId?.takeIf { it.isNotBlank() }
@@ -120,35 +92,10 @@ object ZoneOps {
             z.copy(name = name.ifBlank { z.id.substringAfterLast('/') }, parentId = pid)
         }
         val validIds = fixed.mapTo(HashSet()) { it.id }
-        // v5.3.28: 记忆六工具的归属不生效（注入链按 enableMemory 硬性注入），
-        // 清掉历史残留的 links，避免矩阵把「有人给它设过归属」当真。
-        val cleanLinks = s.toolZoneLinks
-            .filterValues { it in validIds }
-            .filterKeys { it !in me.rerere.rikkahub.data.ai.tools.MemoryToolNames.ALL }
+        val cleanLinks = s.toolZoneLinks.filterValues { it in validIds }
         val cleanHidden = s.hiddenZones.filter { it in validIds }.toSet()
-        // ═══ v5.3.28 ★记忆工具在「顶层直连」里的残留必须清掉 ═══
-        //
-        // 注入链 GenerationHandler 有 `frameworkTools.filter { it.name !in MEMORY_TOOL_NAMES_ALL }`：
-        // 即使把它们放进 topLevelAdditions，也会被剔除后由 buildMemoryTools 独立注入。
-        // 所以这个设置本身不生效，但 `topLevelToolSetOf` 仍会把它算作顶层工具 →
-        // 矩阵页 `zoneMap` 把它从区里剔除 → 界面显示「归为顶层」（正是用户看到的第三种说法）。
-        // 清掉残留后，归属只由 `memory_` 前缀规则决定，三处显示才会一致。
-        val memNames = me.rerere.rikkahub.data.ai.tools.MemoryToolNames.ALL + "memory_tool"
-        val cleanTopAdd = s.topLevelAdditions - memNames
-        val cleanTopRem = s.topLevelRemovals - memNames
-        return if (
-            fixed == s.toolZones &&
-            cleanLinks == s.toolZoneLinks &&
-            cleanHidden == s.hiddenZones &&
-            cleanTopAdd == s.topLevelAdditions &&
-            cleanTopRem == s.topLevelRemovals
-        ) s else s.copy(
-            toolZones = fixed,
-            toolZoneLinks = cleanLinks,
-            hiddenZones = cleanHidden,
-            topLevelAdditions = cleanTopAdd,
-            topLevelRemovals = cleanTopRem,
-        )
+        return if (fixed == s.toolZones && cleanLinks == s.toolZoneLinks && cleanHidden == s.hiddenZones) s
+        else s.copy(toolZones = fixed, toolZoneLinks = cleanLinks, hiddenZones = cleanHidden)
     }
 
     // ═══════════ 区操作 ═══════════
@@ -161,7 +108,9 @@ object ZoneOps {
         description: String = "",
         keywords: List<String> = emptyList(),
     ): Res {
-        val tree = ZoneTree(s.toolZones)
+        // v5.3.29: 解析目标区必须基于「合并内置区之后」的表 ——
+        // 否则内置区（如「搜索」）不在用户配置里时会解析失败，被误报「工具区不存在」。
+        val tree = ZoneTree(mergeBuiltinZones(s.toolZones))
         val cleanName = name.trim().trim('/')
         if (cleanName.isBlank()) return fail(s, "创建失败：工具区名不能为空。")
         if ('/' in cleanName) return fail(s, "创建失败：名字里不能带 '/' —— 层级请用 parent 指定；若想建在路径下，请先建好父区。")
@@ -210,7 +159,9 @@ object ZoneOps {
         description: String? = null,
         keywords: List<String>? = null,
     ): Res {
-        val tree = ZoneTree(s.toolZones)
+        // v5.3.29: 解析目标区必须基于「合并内置区之后」的表 ——
+        // 否则内置区（如「搜索」）不在用户配置里时会解析失败，被误报「工具区不存在」。
+        val tree = ZoneTree(mergeBuiltinZones(s.toolZones))
         val zone = tree.get(id) ?: return fail(s, "更新失败：工具区不存在（id $id）。")
         val applied = ArrayList<String>(4)
 
@@ -283,7 +234,9 @@ object ZoneOps {
      * 手动归属到被删区的工具交回自动归类；隐藏标记一并清除。
      */
     fun delete(s: Settings, id: String): Res {
-        val tree = ZoneTree(s.toolZones)
+        // v5.3.29: 解析目标区必须基于「合并内置区之后」的表 ——
+        // 否则内置区（如「搜索」）不在用户配置里时会解析失败，被误报「工具区不存在」。
+        val tree = ZoneTree(mergeBuiltinZones(s.toolZones))
         val zone = tree.get(id) ?: return fail(s, "删除失败：工具区不存在。")
         if (id == FALLBACK_ZONE_ID) return fail(s, "「$FALLBACK_ZONE_ID」是兜底工具区，不能删除（未归类工具的归宿）。")
         val children = tree.childrenOf(id)
@@ -319,14 +272,9 @@ object ZoneOps {
         if (tool in CORE_MATRIX_TOOLS) {
             return fail(s, "「$tool」是工具矩阵核心件，必须留在顶层（移出后模型将无法加载任何工具区）。")
         }
-        // v5.3.28 ★记忆六工具的开关唯一入口是助手的「记忆」开关：
-        // 注入链 `frameworkTools.filter { it.name !in MEMORY_TOOL_NAMES_ALL }` 会把它们
-        // 从顶层集合里剔除，再由 buildMemoryTools 独立注入 —— 所以任何「设归属 / 移回顶层」
-        // 都**不会生效**。与核心件同样拒绝，避免又造一个假开关。
-        if (tool in me.rerere.rikkahub.data.ai.tools.MemoryToolNames.ALL) {
-            return fail(s, "「$tool」由助手的「记忆」开关统一控制，不参与工具区归属（设了也不会生效）。")
-        }
-        val tree = ZoneTree(s.toolZones)
+        // v5.3.29: 解析目标区必须基于「合并内置区之后」的表 ——
+        // 否则内置区（如「搜索」）不在用户配置里时会解析失败，被误报「工具区不存在」。
+        val tree = ZoneTree(mergeBuiltinZones(s.toolZones))
         val isTop = target.trim() == TARGET_TOP_LEVEL
         val isAuto = target.trim() == TARGET_AUTO
         val zoneId = if (isTop || isAuto) null else tree.resolve(target.trim())
@@ -414,7 +362,9 @@ object ZoneOps {
 
     /** 工具区显示/隐藏（隐藏 = 不进地图省 token，仍可加载；与其它矩阵写同一事务口径） */
     fun setHidden(s: Settings, id: String, hidden: Boolean): Res {
-        val tree = ZoneTree(s.toolZones)
+        // v5.3.29: 解析目标区必须基于「合并内置区之后」的表 ——
+        // 否则内置区（如「搜索」）不在用户配置里时会解析失败，被误报「工具区不存在」。
+        val tree = ZoneTree(mergeBuiltinZones(s.toolZones))
         if (tree.get(id) == null) return fail(s, "隐藏失败：工具区不存在。")
         val next = s.copy(hiddenZones = if (hidden) s.hiddenZones + id else s.hiddenZones - id)
         return Res(
