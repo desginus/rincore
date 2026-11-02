@@ -278,11 +278,16 @@ object ConnectionWarmer {
                     // TLS 握手（移动网 0.5~2.5s）= 用户实测"工具回来就卡"。
                     //
                     // 改为：生成中**降频保活**而不是完全停。
-                    // v5.1.12 ★真 bug 修复：markWarm() 写入的 key 是 **host**（如 opencode.ai），
-                    // 这里原来用 **trimmed**（完整 baseUrl，如 https://opencode.ai/zen/go/v1）去查 →
-                    // 永远取不到 → sinceLastWarm 恒为极大值 → 180s 降频**从未生效**，
-                    // 生成中仍然每 60s ping 一次 = v5.1.2 要修的"抢 SSE 连接"问题实际一直存在。
-                    val sinceLastWarm = System.currentTimeMillis() - (lastWarmAtMs[host] ?: 0L)
+                    // ⚠️ v5.1.12 这里曾写「markWarm 写入的 key 是 host、这里用 trimmed 所以查不到」——
+                    // 那句话本身是错的（markWarm 一直写 trimmed），而且它**只改了注释没改代码**，
+                    // 于是本条判据在 v5.1.12~v5.3.31 之间始终是「拿 host 查 trimmed 的 map」= 恒查不到。
+                    // v5.3.32 已把下面这行改为 trimmed，并在 markWarm/isRecentlyWarm 统一形参名。
+                    // ═══ v5.3.32 ★★真 bug：这里原来用 `host` 去查，而 `markWarm()`
+                    // 写入的 key 是 **trimmed（完整 baseUrl）** —— 永远取不到 → sinceLastWarm
+                    // 恒为极大值 → 下面这段 80s 降频**从 v5.1.12 起就从未生效过**
+                    // （v5.1.12 的注释写了"真 bug 修复"，但改的是注释、代码没动）。
+                    // 统一用 trimmed：与 markWarm / isRecentlyWarm 三处同 key。
+                    val sinceLastWarm = System.currentTimeMillis() - (lastWarmAtMs[trimmed] ?: 0L)
                     // v5.1.12 ★180s 反而不保活：本文件下方注释自己写明"服务端空闲断连窗口 ~100s，
                     // 60s 留 40s 余量"——设 180s 意味着长工具期间连接必然被服务端断掉，
                     // 第二个请求仍要重做 TLS（就是用户说的"工具回来就卡"）。
@@ -387,13 +392,25 @@ object ConnectionWarmer {
     @Volatile
     private var appScopeRef: kotlinx.coroutines.CoroutineScope? = null
 
-    private fun markWarm(host: String) {
-        lastWarmAtMs[host] = System.currentTimeMillis()
+    // v5.3.32：key 统一为 **trimmed（完整 baseUrl，去尾斜杠）** —— 全库 3 个消费点
+    // （markWarm 写入 / 心跳降频判据 / isRecentlyWarm）必须同 key，
+    // 否则像 v5.1.12 那样"注释说修了、行为没变"。形参改名以免再有人误传 host。
+    private fun markWarm(warmKey: String) {
+        lastWarmAtMs[warmKey] = System.currentTimeMillis()
     }
 
-    /** 最近 70s 内心跳/探活成功过 — 连接池被视为新鲜 (服务端空闲断连窗口 ~100s, 留余量) */
-    private fun isRecentlyWarm(host: String): Boolean =
-        System.currentTimeMillis() - (lastWarmAtMs[host] ?: 0L) < 70_000L
+    /**
+     * 最近 [WARM_FRESH_MS] 内心跳/探活成功过 — 连接池被视为新鲜。
+     *
+     * v5.3.32 ★连锁修正：原阈值 70s，而心跳在**生成中**是 80s 一次（降频）。
+     * BUG-1 修好（80s 真正生效）之后，80s > 70s 会让轮首探活误判"不热"
+     * → 白做一次同步探活（上限 6s）→ **"修好一个 bug 反而变慢"**。
+     * 取 90s：> 80s（生成中心跳）、< 100s（服务端空闲断连窗口），两头都有余量。
+     */
+    private val WARM_FRESH_MS = 90_000L
+
+    private fun isRecentlyWarm(warmKey: String): Boolean =
+        System.currentTimeMillis() - (lastWarmAtMs[warmKey] ?: 0L) < WARM_FRESH_MS
 
     // v4.8.132 (用户实证: "工具返回后恢复间隔越来越久" — 单次探活挂 13.5s 复盘):
     // ① 失败冷却 — 网络坏窗口内 (如 IPv6 路由死) 探活会连环尝试多个地址, 单次可挂

@@ -245,14 +245,14 @@ class ChatVM(
         // 触发点 = "从空到非空"的**输入沿**（distinctUntilChanged，不逐键触发）；
         // 预热器内部再带 60s 防抖窗（proot 走热是秒级 IO，频繁重复毫无意义，60s 内合并）。
         // 旧启动预热（App.onCreate）已删 —— 启动期抢 IO，用户实测拖慢启动且收益有限。
-        viewModelScope.launch {
-            // v5.0.78 ★触发式沙箱预热（用户指令"改为每次开始在输入框中输入的时候进行一次"）
-            snapshotFlow { inputState.latestText.isNotEmpty() }
-                .distinctUntilChanged()
-                .collect { hasText ->
-                    if (hasText) { /* v5.0.92: 预热已改到输入栏打开时（见 warmProviderConnection） */ }
-                }
-        }
+        // v5.3.32 ★删除 v5.0.78 的"输入沿预热"空壳：v5.0.92 把触发点移到输入栏聚焦
+        // （ChatInput.onFocusChanged → warmProviderConnection）后，这里只剩
+        // `if (hasText) { }` 空块 —— 每次输入都跑一遍 snapshotFlow + distinctUntilChanged
+        // 却什么也不做。连接预热入口现在是：
+        //   ①应用启动：RikkaHubApp 后台线程 warmWithOkHttp + startProviderKeepAlive
+        //   ②回前台 / 进对话：RouteActivity.onResume → ProviderWarmup.warmCurrentChatModel
+        //   ③点输入框：ChatInput.onFocusChanged → ChatVM.warmProviderConnection
+        //   ④发送后：SandboxPrewarmer（沙箱，服务首个工具调用，与 TTFB 并行）
         // v5.0.83：持有会话引用（消 pin/unpin）—— 前台期间 session 绝不被空闲回收，
         // flow 绑定稳定；离开页面（onCleared）由 removeConversationReference 配对释放。
         chatService.pinConversationReference(_conversationId)
