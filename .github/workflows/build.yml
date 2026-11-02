@@ -231,7 +231,8 @@ jobs:
             gradle-${{ runner.os }}-
 
       - name: Run app unit tests
-        # v5.3.10：step 级 continue-on-error（GitHub Actions 只在 step 上支持该语义；
-        # 写在 job 上无效 —— 会导致整个 run 判红、阻断 release 判定）→ 测试失败可见但不卡发布。
-        continue-on-error: true
+        # v5.3.26 ★★从「软门禁」提升为**硬门禁**：v5.3.10 接通测试时怕 flaky 先用
+        # continue-on-error 观察，v5.3.11→v5.3.25 连续 15 个版本全绿，没有一条 flaky 记录。
+        # 保持软门禁等于「测试红了也能发版」—— 那测试就只是装饰，不能算工业可用。
+        # 若将来出现 flaky，必须先修测试或加 @Ignore 并写明原因，**不允许直接退回软门禁**。
         run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace --console=plain

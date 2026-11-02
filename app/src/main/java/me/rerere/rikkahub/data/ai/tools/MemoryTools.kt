@@ -116,6 +116,9 @@ object MemoryToolNames {
 
     /** 会改动记忆库的工具 */
     val WRITES = setOf(WRITE, STR_REPLACE, APPEND, DELETE)
+
+    /** 全部六件 —— 用于「由助手记忆开关控制、不参与顶层/域归属」的判定 */
+    val ALL = setOf(READ, WRITE, STR_REPLACE, APPEND, DELETE, LIST)
 }
 
 /**

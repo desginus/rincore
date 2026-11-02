@@ -1,6 +1,8 @@
 /* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.data.ai.tools.MemoryToolNames
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -224,7 +226,10 @@ fun SettingToolListPage(
                 items(filtered) { tool ->
                     val owner = ownerMap[tool.name] ?: router.classify(tool.name, tool.description)
                     val isChecked = tool.name in selectedNames
-                    val isCore = tool.name in CORE_MATRIX_TOOLS
+                    // v5.3.26 ★记忆六工具由 assistant.enableMemory 硬性注入（GenerationHandler 里
+        // `frameworkTools.filter { it.name !in MEMORY_TOOL_NAMES_ALL }` 会把它从顶层剔除），
+        // 所以矩阵里允许勾「顶层直连」是个**假开关**（勾了不生效）。这里与核心件同样禁用。
+        val isCore = tool.name in CORE_MATRIX_TOOLS || tool.name in MemoryToolNames.ALL
                     Card(
                         Modifier.fillMaxWidth().clickable {
                             if (multiSelect) {
@@ -342,7 +347,10 @@ fun SettingToolListPage(
     // ── 单工具归属 ──
     selectedTool?.let { tool ->
         val currentOwner = ownerMap[tool.name] ?: TOP_LEVEL_LABEL
-        val isCore = tool.name in CORE_MATRIX_TOOLS
+        // v5.3.26 ★记忆六工具由 assistant.enableMemory 硬性注入（GenerationHandler 里
+        // `frameworkTools.filter { it.name !in MEMORY_TOOL_NAMES_ALL }` 会把它从顶层剔除），
+        // 所以矩阵里允许勾「顶层直连」是个**假开关**（勾了不生效）。这里与核心件同样禁用。
+        val isCore = tool.name in CORE_MATRIX_TOOLS || tool.name in MemoryToolNames.ALL
         var target by remember(tool.name) { mutableStateOf(if (isCore) TOP_LEVEL_LABEL else currentOwner) }
         var editDesc by remember(tool.name) { mutableStateOf(settings.toolDescriptionOverrides[tool.name] ?: tool.description) }
         var editName by remember(tool.name) { mutableStateOf(settings.toolNameOverrides[tool.name] ?: "") }

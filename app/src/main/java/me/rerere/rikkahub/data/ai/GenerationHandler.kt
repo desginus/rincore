@@ -2453,12 +2453,8 @@ private fun mergeAdjacentTextParts(messages: List<UIMessage>): List<UIMessage> {
  * v5.3.7：记忆工具名全集 —— 用于「框架工具里若也带了记忆工具，就不要再重复注入」。
  * 旧条目式 `memory_tool` 已从注入链移除，保留在集合里只为过滤历史配置残留。
  */
-private val MEMORY_TOOL_NAMES_ALL: Set<String> = setOf(
-    "memory_tool",
-    me.rerere.rikkahub.data.ai.tools.MemoryToolNames.READ,
-    me.rerere.rikkahub.data.ai.tools.MemoryToolNames.WRITE,
-    me.rerere.rikkahub.data.ai.tools.MemoryToolNames.STR_REPLACE,
-    me.rerere.rikkahub.data.ai.tools.MemoryToolNames.APPEND,
-    me.rerere.rikkahub.data.ai.tools.MemoryToolNames.DELETE,
-    me.rerere.rikkahub.data.ai.tools.MemoryToolNames.LIST,
-)
+// v5.3.26 ★单一事实源：不再在此处重复列举六工具（曾与 MemoryToolNames 各写一份，
+// 一旦新增/改名就会漂移）。记忆工具的唯一定义在 `MemoryToolNames.ALL`。
+// ★注意必须带上旧名 "memory_tool"：历史配置的 topLevelAdditions 里可能残留它，
+// 不带就会被当成普通工具注入（虽已无此工具，但过滤集合语义要覆盖全部历史名）。
+private val MEMORY_TOOL_NAMES_ALL: Set<String> get() = MemoryToolNames.ALL + "memory_tool"

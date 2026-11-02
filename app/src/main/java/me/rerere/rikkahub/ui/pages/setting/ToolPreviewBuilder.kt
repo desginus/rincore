@@ -47,7 +47,10 @@ fun buildToolList(
             operitToolProvider = operitToolProvider,
             filesRoot = filesRoot,
         )
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+        // v5.3.26 ★不再静默：池构建失败时矩阵会只剩硬编码的记忆六工具，
+        // 用户看到的是「工具全没了」而不是「构建失败」——必须留痕。
+        android.util.Log.w("ToolPreviewBuilder", "buildAssistantToolPool failed; tool list will be partial", e)
         emptyList()
     }
     // ═══ v5.3.25 ★★「工具矩阵里找不到记忆工具」的真因就在这里 ═══
