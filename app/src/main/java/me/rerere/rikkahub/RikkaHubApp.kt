@@ -46,7 +46,6 @@ import me.rerere.rikkahub.di.repositoryModule
 import me.rerere.rikkahub.di.operitModule
 import me.rerere.rikkahub.di.viewModelModule
 import me.rerere.rikkahub.data.files.FilesManager
-import me.rerere.rikkahub.data.datastore.DEFAULT_PROVIDERS
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import android.widget.Toast
@@ -116,16 +115,14 @@ class RikkaHubApp : Application() {
         // 用于发行后线上问题追溯: 若 16KB 页设备上出现 native 崩溃,
         // 通过本条日志即可确认设备页大小与镜像版本。
         logDeviceEnvironment()
-        // 连接预热: 冷启动后预解析 DNS + 预建 TCP 到 API 端点, 首次请求延迟降低 200-500ms
-        // v3.11.10: 补 Claude 型 provider — 旧实现只暖 OpenAI 型, Console Go 等
-        // Claude 通道网关完全不预热 (用户: 打开软件就预热)
-        val warmUrls = DEFAULT_PROVIDERS
-            .filterIsInstance<me.rerere.ai.provider.ProviderSetting.OpenAI>()
-            .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
-        val warmClaudeUrls = DEFAULT_PROVIDERS
-            .filterIsInstance<me.rerere.ai.provider.ProviderSetting.Claude>()
-            .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
-        ConnectionWarmer.warmConfiguredProviders(this, warmUrls + warmClaudeUrls)
+        // ═══ v5.3.33 ★删除「Koin 启动前预热 DEFAULT_PROVIDERS」这一段（死代码）═══
+        //
+        // 它调用 warmConfiguredProviders → warmHost → 第一行就是 isWarmAllowed(url)，
+        // 而 isWarmAllowed 要读 SettingsStore（Koin）。此处 startKoin 尚未执行 →
+        // GlobalContext.getOrNull() 返回 null → **恒 false → 一次都没真正预热过**。
+        // 而且它扫的是 DEFAULT_PROVIDERS（api.openai.com / gemini 等内置模板，
+        // 用户多数根本没配）→ 即便能跑也是给不用的域名建连接。
+        // 真正的启动预热在下方 Thread("warmup-user-providers") 里按**用户配置**执行。
         startKoin {
             androidLogger()
             androidContext(this@RikkaHubApp)
@@ -180,7 +177,10 @@ class RikkaHubApp : Application() {
                         me.rerere.ai.provider.ProviderManager.claudeClient ?: httpClient, url
                     )
                 }
-                ConnectionWarmer.warmConfiguredProviders(this@RikkaHubApp, userUrls + claudeUrls)
+                // v5.3.33 ★删除裸 socket 预热（warmConfiguredProviders → warmHost）：
+                // 它只 connect+close 一次（注释自述"只暖 DNS 缓存, 不进池"），
+                // 而上面的 warmWithOkHttp 已经完成了 DNS+TCP+TLS **并真正进池** ——
+                // 再连一次纯属重复建连（多一次 TCP 握手 + 一个多余线程）。
                 // v3.13.4: Command Code 启动即预热 (用户定版: 应用启动预热,
                 // 非"发消息时") — 焦点 key 为 user_ 且开关开时, 启动线程预热
                 // api.commandcode.ai, 冷启动 10-20s 窗口在首条消息前消化
@@ -204,10 +204,13 @@ class RikkaHubApp : Application() {
                     commandCodeEnabled = st.commandCodeWarmEnabled,
                     opencodeEnabled = st.opencodeWarmEnabled,
                 )
-                // v4.7.18: 网络切换监听 — 接口变化时清理连接池 (防旧连接复用断流)
-                ConnectionWarmer.startNetworkMonitor(this@RikkaHubApp)
             }
         }, "warmup-user-providers").start()
+        // ═══ v5.3.33 ★网络切换监听移出预热线程 ═══
+        // 它是**功能保护**（WiFi↔蜂窝切换后旧连接已死，不清池就会复用死连接断流），
+        // 之前放在 runCatching 块末尾：任何一步预热抛异常就整段跳过 → 保护静默失效。
+        // 现在无条件注册（内部自行 runCatching，重复调用幂等）。
+        runCatching { ConnectionWarmer.startNetworkMonitor(this@RikkaHubApp) }
         this.createNotificationChannel()
 
         // v4.8.50: 预热管线 — 铺展瞬时高负载 (启动预热 + 会话预热消费者;

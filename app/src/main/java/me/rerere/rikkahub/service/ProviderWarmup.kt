@@ -43,7 +43,20 @@ object ProviderWarmup {
                 else -> null
             }
             val appScope = koin.get<me.rerere.rikkahub.AppScope>()
-            ConnectionWarmer.ensureProviderKeepAliveAuto(appScope, baseUrl, apiKey)
+            // ═══ v5.3.33 ★代理命中 → 主请求走 proxyClient → 预热必须同池，否则白做 ═══
+            // 判据与 DataSourceModule 的 ProxyRoute 完全一致：
+            //   proxyEnabled && proxyUrl 非空 && (!部分模式 || 该模型在勾选列表)
+            val ns = settings.networkSetting
+            val proxyOn = ns.proxyEnabled && ns.proxyUrl.isNotBlank() &&
+                (!ns.proxyPartialEnabled || model.modelId in ns.proxyModelIds)
+            val overrideClient = if (proxyOn) {
+                runCatching {
+                    koin.get<okhttp3.OkHttpClient>(
+                        org.koin.core.qualifier.named("proxy")
+                    )
+                }.getOrNull()
+            } else null
+            ConnectionWarmer.ensureProviderKeepAliveAuto(appScope, baseUrl, apiKey, overrideClient)
         }.onFailure {
             Log.w(TAG, "warm skipped: ${it.message}")
         }

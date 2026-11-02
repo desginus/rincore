@@ -873,7 +873,18 @@ class ChatService(
             if (!baseUrl.isNullOrBlank()) {
                 // v4.8.74: OC/CC 使用长保活池 — 与主请求同池 (原实现恒用 primary,
                 // OC/CC 心跳一直打错池 = 长池连接无人刷新, "工具后恢复慢"的另一半根因)
-                val client = if (baseUrl.contains("opencode.ai") || baseUrl.contains("commandcode.ai")) {
+                // ═══ v5.3.33 ★代理命中 → 主请求走 proxyClient → 心跳也必须同池 ═══
+                // （与 ProviderWarmup / DataSourceModule 的 ProxyRoute 判据一致）
+                val ns = settings.networkSetting
+                val proxyOn = ns.proxyEnabled && ns.proxyUrl.isNotBlank() &&
+                    (!ns.proxyPartialEnabled || model.modelId in ns.proxyModelIds)
+                val proxyClient = if (proxyOn) {
+                    runCatching {
+                        org.koin.core.context.GlobalContext.getOrNull()
+                            ?.getOrNull<okhttp3.OkHttpClient>(org.koin.core.qualifier.named("proxy"))
+                    }.getOrNull()
+                } else null
+                val client = proxyClient ?: if (baseUrl.contains("opencode.ai") || baseUrl.contains("commandcode.ai")) {
                     me.rerere.ai.provider.ProviderManager.opencodeClient ?: httpClient
                 } else {
                     httpClient

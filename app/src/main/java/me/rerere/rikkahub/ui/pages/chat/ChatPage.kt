@@ -144,8 +144,6 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import kotlinx.coroutines.delay
 import okhttp3.OkHttpClient
-import me.rerere.ai.provider.ProviderManager
-import me.rerere.rikkahub.service.ConnectionWarmer
 import me.rerere.rikkahub.service.warm.WarmPipeline
 import org.koin.core.parameter.parametersOf
 import kotlin.time.Duration.Companion.milliseconds
@@ -230,20 +228,28 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
 
     // v3.10.7: 打字防抖预热 — 输入停顿 1.5s 且未生成时预建连接
     // 比发送时预热更提前 (覆盖组装窗口不足), 进一步压缩 TTFT
-    val httpClient: OkHttpClient = koinInject()
-    LaunchedEffect(inputState.textContent.text) {
-        val text = inputState.textContent.text
-        if (text.isNotBlank() && loadingJob == null) {
-            delay(1_500)
-            val s = setting
-            val p = s.getCurrentChatModel()?.findProvider(s.providers)
-            if (p is ProviderSetting.OpenAI && p.baseUrl.isNotBlank()) {
-                ConnectionWarmer.warmWithOkHttp(
-                    httpClient, p.baseUrl,
-                    ProviderManager.opencodeClient
-                )
+    // ═══ v5.3.33 ★★★输入沿预热重写 ═══
+    //
+    // 旧实现的两个问题：
+    //  ①`LaunchedEffect(inputState.textContent.text)` 的 key 是**全文** —— 每敲一个字符就
+    //    取消上一个协程、再起一个新的，然后 `delay(1500)`。打字过程中协程被反复创建/取消，
+    //    真正执行到的时机完全不可预期（快打就不触发、停 1.5s 才触发）。
+    //  ②手工调 `warmWithOkHttp(...)` 绕过了代理判定 —— 代理用户的预热又进错池；
+    //    且只认 `OpenAI` 型 provider（Claude/Google 直接跳过）。
+    //
+    // 现在：只在「空 → 非空」这一个沿触发（与 v5.0.78 的原意一致），
+    // 并统一走 `ProviderWarmup.warmCurrentChatModel()` —— 与「回前台」「点输入框」
+    // 同一条路：预热门禁（只认 OC/CC + 开关）、代理池选择、幂等（已有心跳直接返回）。
+    LaunchedEffect(Unit) {
+        snapshotFlow { inputState.textContent.text.isNotBlank() }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect {
+                delay(1_500)
+                if (loadingJob == null) {
+                    me.rerere.rikkahub.service.ProviderWarmup.warmCurrentChatModel()
+                }
             }
-        }
     }
 
     // 初始化输入状态（处理传入的 files 和 text 参数）

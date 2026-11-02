@@ -113,6 +113,13 @@ object ConnectionWarmer {
         appScope: kotlinx.coroutines.CoroutineScope,
         baseUrl: String,
         apiKey: String? = null,
+        // ═══ v5.3.33 ★代理用户的预热必须进**代理池** ═══
+        // 主请求链路是 `effClient(provider).resolveProxy(route, modelId)` —— 代理命中时
+        // resolveProxy 会**覆盖** effClient 选出的长保活池，最终走 proxyClient。
+        // 而预热此前固定进 opencodeClient → 代理用户每 60s 辛辛苦苦建立的连接
+        // 主请求根本不会用 = 预热彻底白做（却仍在耗电耗流量）。
+        // 调用方（ProviderWarmup）判定代理命中后把 proxyClient 传进来即可。
+        overrideClient: OkHttpClient? = null,
     ) {
         val trimmed = baseUrl.trimEnd('/')
         if (trimmed.isBlank()) return
@@ -123,7 +130,8 @@ object ConnectionWarmer {
         val isOcCc = host == "opencode.ai" || host == "api.commandcode.ai"
         if (!isOcCc) return
         // 必须是主请求用的长保活池 —— 预热进错池等于没做（v3.10.5/v3.17.0 两次踩过）
-        val client = me.rerere.ai.provider.ProviderManager.opencodeClient
+        val client = overrideClient
+            ?: me.rerere.ai.provider.ProviderManager.opencodeClient
             ?: mainClient
             ?: return
         ensureProviderKeepAlive(appScope, client, trimmed, apiKey)

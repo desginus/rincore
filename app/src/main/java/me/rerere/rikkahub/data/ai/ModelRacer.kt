@@ -114,6 +114,12 @@ object ModelRacer {
         ids: List<Uuid>,
         timeoutMs: Long,
     ): Uuid? = supervisorScope {
+        // ═══ v5.3.33 ★探针必须进「主请求会用的那个池」 ═══
+        // 旧实现一律用默认池 client：探 opencode.ai 时建立的 TCP+TLS 躺在默认池里，
+        // 而主请求走 ProviderManager.opencodeClient（长保活池）→ **连接永不复用**，
+        // 等于每轮竞速都在白建 N 条 TLS（N=池内 provider 数，缓存 120s 后重来）。
+        // 现在与 ChatCompletionsAPI.effClient 同判据：OC/CC → 长保活池。
+        // 副作用是正向的：竞速顺带把热连接铺进了主请求要用的池。
         val client: OkHttpClient? = runCatching {
             GlobalContext.getOrNull()?.getOrNull<OkHttpClient>()
         }.getOrNull()
@@ -141,9 +147,14 @@ object ModelRacer {
                         .get()
                         .build()
                     val startedAt = System.currentTimeMillis()
+                    // v5.3.33：OC/CC 走主请求同款长保活池 —— 探针建立的连接会被主请求复用
+                    val probeHost = runCatching { java.net.URI(baseUrl).host }.getOrNull()
+                    val probeClient = if (probeHost == "opencode.ai" || probeHost == "api.commandcode.ai") {
+                        me.rerere.ai.provider.ProviderManager.opencodeClient ?: client
+                    } else client
                     withTimeout(PROBE_TIMEOUT_MS) {
                         // 任何响应码（含 401/404）都说明 DNS+TCP+TLS+首包已通 —— 正是要测的
-                        client.newCall(request).execute().close()
+                        probeClient.newCall(request).execute().close()
                     }
                     Log.d(
                         TAG,
