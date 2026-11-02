@@ -243,11 +243,14 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
     LaunchedEffect(Unit) {
         snapshotFlow { inputState.textContent.text.isNotBlank() }
             .distinctUntilChanged()
-            .filter { it }
-            .collect {
-                delay(1_500)
-                if (loadingJob == null) {
-                    me.rerere.rikkahub.service.ProviderWarmup.warmCurrentChatModel()
+            // 不用 Flow.filter（要额外 import，且 CI 报错过一次）——
+            // 直接在 collect 里判，语义一样、依赖更少。
+            .collect { hasText ->
+                if (hasText) {
+                    delay(1_500)
+                    if (loadingJob == null) {
+                        me.rerere.rikkahub.service.ProviderWarmup.warmCurrentChatModel()
+                    }
                 }
             }
     }
