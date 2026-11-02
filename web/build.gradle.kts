@@ -1,4 +1,5 @@
 import org.apache.tools.ant.taskdefs.condition.Os
+import java.time.Duration
 
 plugins {
     id("rikkahub.android.library")
@@ -13,7 +14,7 @@ val buildWebUi = tasks.register<Exec>("buildWebUi") {
 
     // v5.3.24：给 vite 构建加硬超时。CI 上 assembleResearch 曾连续三次挂死 30 分钟以上，
     // 而 buildWebUi 是唯一的外部进程任务（pnpm/vite），必须能自己失败而不是无限等。
-    timeout = java.time.Duration.ofMinutes(8)
+    timeout = Duration.ofMinutes(8)
     workingDir = webUiDir.asFile
     when {
         Os.isFamily(Os.FAMILY_MAC) -> commandLine("zsh", "-ic", "pnpm run build")
