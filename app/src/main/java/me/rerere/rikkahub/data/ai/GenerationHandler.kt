@@ -2457,4 +2457,5 @@ private fun mergeAdjacentTextParts(messages: List<UIMessage>): List<UIMessage> {
 // 一旦新增/改名就会漂移）。记忆工具的唯一定义在 `MemoryToolNames.ALL`。
 // ★注意必须带上旧名 "memory_tool"：历史配置的 topLevelAdditions 里可能残留它，
 // 不带就会被当成普通工具注入（虽已无此工具，但过滤集合语义要覆盖全部历史名）。
-private val MEMORY_TOOL_NAMES_ALL: Set<String> get() = MemoryToolNames.ALL + "memory_tool"
+private val MEMORY_TOOL_NAMES_ALL: Set<String>
+    get() = me.rerere.rikkahub.data.ai.tools.MemoryToolNames.ALL + "memory_tool"
