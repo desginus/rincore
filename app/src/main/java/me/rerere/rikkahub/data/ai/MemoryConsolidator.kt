@@ -198,6 +198,12 @@ class MemoryConsolidator(
             source = "dream",
             folderId = effectiveFolderForScope?.toString(),
             conversationId = if (effectiveScope == 2) batches.firstOrNull()?.conversation?.id?.toString() else null,
+            // v5.3.24 ★做梦整理也必须遵守挂载层级：用户把做梦记忆设成「仅助手级」后，
+            // 整理器不应再读到/改写包层与对话层的做梦记忆（否则注入看不见、整理却在改）。
+            manualMount = assistants.firstOrNull()?.manualMemoryMount
+                ?: MemoryRepository.MOUNT_FOLDER,
+            dreamMount = assistants.firstOrNull()?.dreamMemoryMount
+                ?: MemoryRepository.MOUNT_FOLDER,
         )
             .filter { (fullReview && effectiveScope == 0) || it.name != MemoryToolNames.DELETE } +
             createMemoryConversationTools(conversationRepo, assistantIds, allowedConversationIds = scopeConversationIds)

@@ -148,4 +148,55 @@ class MemoryToolsTest {
         assertEquals("true", deleted.string("deleted"))
         assertFalse(call(MemoryToolNames.LIST) {}.toString().contains("/people/mom.md"))
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // v5.3.24 ★★「设置成什么样，它就是什么样」的写入侧护栏
+    //
+    // 挂载层级决定模型能看见哪些层；若写入落进看不见的层，这条记忆下一轮
+    // 不会被注入 = 写了个黑洞。以下四条锁定收缩规则。
+    // ══════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun `write scope shrinks to the assistant level when mount is assistant only`() {
+        val (folder, conversation) = memoryWriteScopeFor(
+            mount = MemoryRepository.MOUNT_ASSISTANT_ONLY,
+            folderId = "folderA",
+            conversationId = "convA",
+        )
+        assertNull("仅助手级挂载下不应写入项目包", folder)
+        assertNull("仅助手级挂载下不应写入对话层", conversation)
+    }
+
+    @Test
+    fun `write scope keeps only the conversation when mount is this conversation`() {
+        val (folder, conversation) = memoryWriteScopeFor(
+            mount = MemoryRepository.MOUNT_CURRENT_CONVERSATION,
+            folderId = "folderA",
+            conversationId = "convA",
+        )
+        assertNull("仅当前对话挂载下项目包层不可见 → 不应写入", folder)
+        assertEquals("convA", conversation)
+    }
+
+    @Test
+    fun `write scope is unchanged at the folder mount`() {
+        val (folder, conversation) = memoryWriteScopeFor(
+            mount = MemoryRepository.MOUNT_FOLDER,
+            folderId = "folderA",
+            conversationId = null,
+        )
+        assertEquals("folderA", folder)
+        assertNull(conversation)
+    }
+
+    @Test
+    fun `blank scope values collapse to the assistant level`() {
+        val (folder, conversation) = memoryWriteScopeFor(
+            mount = MemoryRepository.MOUNT_FOLDER,
+            folderId = "   ",
+            conversationId = "",
+        )
+        assertNull("空白 folderId 必须归一为助手级", folder)
+        assertNull("空白 conversationId 必须归一为助手级", conversation)
+    }
 }

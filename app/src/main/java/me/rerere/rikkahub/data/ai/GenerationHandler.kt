@@ -530,6 +530,11 @@ class GenerationHandler(
                             // 工具层据此只让模型看到「注入链也会注入」的那些记忆（防越权读取）
                             readFolderId = folderIdOfConv,
                             readConversationId = convId,
+                            // v5.3.24 ★★挂载层级：工具读与注入链必须同一口径。
+                            // 此前只有注入链应用 mount，工具层恒走默认档 →
+                            // 设「仅助手级」后模型仍能用 memory_list 列出包层记忆。
+                            manualMount = assistant.manualMemoryMount,
+                            dreamMount = assistant.dreamMemoryMount,
                         ).let(this::addAll)
                     }
                     // v3.11.24: 任务清单工具 — 始终注入 (框架工具, 静态, 零 DB;
@@ -622,6 +627,11 @@ class GenerationHandler(
                             // 工具层据此只让模型看到「注入链也会注入」的那些记忆（防越权读取）
                             readFolderId = folderIdOfConv,
                             readConversationId = convId,
+                            // v5.3.24 ★★挂载层级：工具读与注入链必须同一口径。
+                            // 此前只有注入链应用 mount，工具层恒走默认档 →
+                            // 设「仅助手级」后模型仍能用 memory_list 列出包层记忆。
+                            manualMount = assistant.manualMemoryMount,
+                            dreamMount = assistant.dreamMemoryMount,
                         ).let(this::addAll)
                     }
                     addAll(tools)

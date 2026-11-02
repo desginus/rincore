@@ -471,4 +471,127 @@ class MemoryRepositoryTest {
         val r = repository.writeFile(assistant, "/new-huge.md", huge, MemoryRepository.NEW_FILE_VERSION)
         assertTrue("超限的新写入必须拒绝: $r", r is MemoryWriteResult.Rejected)
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // v5.3.24 ★★★三层归属 × 挂载层级 的可见性契约
+    //
+    // 用户视角的规则：设成「仅助手级」就只该看到助手级；「项目包内」看到
+    // 助手级 + 本包 + 包内对话（含同包兄弟）；「仅当前对话」看到助手级 + 本对话
+    // （**不含**同包兄弟）。改动任何一处判据都会让这三条先红。
+    // ══════════════════════════════════════════════════════════════════════
+
+    private suspend fun createIn(
+        path: String,
+        folderId: String? = null,
+        conversationId: String? = null,
+        source: String = "active",
+    ) {
+        repository.writeFile(
+            assistantId = assistant,
+            path = path,
+            content = "- [stated] x",
+            ifVersion = MemoryRepository.NEW_FILE_VERSION,
+            source = source,
+            folderId = folderId,
+            conversationId = conversationId,
+        )
+    }
+
+    private fun visiblePaths(mount: Int): Set<String> = runBlocking {
+        repository.memoriesForInjection(
+            memoryId = assistant,
+            folderId = "folderA",
+            conversationId = "convA",
+            siblingConversationIds = setOf("convA", "convB"),
+            manualMount = mount,
+            dreamMount = mount,
+        ).map { it.path }.toSet()
+    }
+
+    private fun seedLayers() = runBlocking {
+        createIn("/assistant.md")
+        createIn("/folder.md", folderId = "folderA")
+        createIn("/own.md", conversationId = "convA")
+        createIn("/sibling.md", conversationId = "convB")
+    }
+
+    @Test
+    fun `mount level decides which layers reach the model`() {
+        seedLayers()
+
+        assertEquals(
+            "仅助手级挂载只能看见助手级记忆",
+            setOf("/assistant.md"),
+            visiblePaths(MemoryRepository.MOUNT_ASSISTANT_ONLY),
+        )
+        assertEquals(
+            "项目包内挂载应看见全部四层（含同包兄弟对话）",
+            setOf("/assistant.md", "/folder.md", "/own.md", "/sibling.md"),
+            visiblePaths(MemoryRepository.MOUNT_FOLDER),
+        )
+        assertEquals(
+            "仅当前对话挂载应排除同包兄弟对话的记忆",
+            setOf("/assistant.md", "/own.md"),
+            visiblePaths(MemoryRepository.MOUNT_CURRENT_CONVERSATION),
+        )
+    }
+
+    @Test
+    fun `manual and dream mounts are applied separately`() {
+        seedLayers()
+        createIn("/dream-folder.md", folderId = "folderA", source = "dream")
+
+        val visible = runBlocking {
+            repository.memoriesForInjection(
+                memoryId = assistant,
+                folderId = "folderA",
+                conversationId = "convA",
+                siblingConversationIds = setOf("convA", "convB"),
+                manualMount = MemoryRepository.MOUNT_ASSISTANT_ONLY,
+                dreamMount = MemoryRepository.MOUNT_FOLDER,
+            ).map { it.path }.toSet()
+        }
+
+        assertTrue("主动记忆按 manualMount 收缩：包层条目不可见", "/folder.md" !in visible)
+        assertTrue("做梦记忆按 dreamMount 放开：包层做梦条目可见", "/dream-folder.md" in visible)
+        assertTrue("助手级主动记忆始终可见", "/assistant.md" in visible)
+    }
+
+    @Test
+    fun `listing and reading use the same visibility as injection`() {
+        seedLayers()
+
+        // 模型从上下文能看见的集合
+        val injected = runBlocking {
+            repository.memoriesForInjection(
+                memoryId = assistant,
+                folderId = "folderA",
+                conversationId = "convA",
+                siblingConversationIds = setOf("convA", "convB"),
+                manualMount = MemoryRepository.MOUNT_ASSISTANT_ONLY,
+            ).map { it.path }.toSet()
+        }
+        // 工具层 list 能列出的集合（必须与上面完全相同，否则「设置成什么样不是什么样」）
+        val listed = runBlocking {
+            repository.listVisibleFiles(
+                memoryId = assistant,
+                folderId = "folderA",
+                conversationId = "convA",
+                manualMount = MemoryRepository.MOUNT_ASSISTANT_ONLY,
+            ).map { it.path }.toSet()
+        }
+        // 工具层 read 一条包层记忆（应读不到）
+        val readFolderLevel = runBlocking {
+            repository.readVisibleFiles(
+                memoryId = assistant,
+                paths = listOf("/folder.md"),
+                folderId = "folderA",
+                conversationId = "convA",
+                manualMount = MemoryRepository.MOUNT_ASSISTANT_ONLY,
+            )
+        }
+
+        assertEquals("list 必须与注入同一口径", injected, listed)
+        assertTrue("包层记忆在仅助手级挂载下不可读", readFolderLevel.isEmpty())
+    }
 }

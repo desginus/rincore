@@ -118,6 +118,29 @@ object MemoryToolNames {
     val WRITES = setOf(WRITE, STR_REPLACE, APPEND, DELETE)
 }
 
+/**
+ * v5.3.24 ★**按挂载层级收缩写入归属**。
+ *
+ * 挂载层级（1=仅助手级 / 2=项目包内 / 3=仅当前对话）决定模型能看见哪些层。
+ * 若新建记忆写进一个**看不见的层**（例：挂载=仅助手级，写入却按 memoryWriteScope 进了项目包），
+ * 这条记忆下一轮不会被注入 —— 模型写了个黑洞，用户也永远等不到它生效。
+ * 因此把写入归属收缩到可见范围内（最差落到助手级，它永远可见）。
+ *
+ * @return (folderId, conversationId)，两者互斥，都为 null 表示助手级。
+ */
+internal fun memoryWriteScopeFor(
+    mount: Int,
+    folderId: String?,
+    conversationId: String?,
+): Pair<String?, String?> {
+    val conv = conversationId?.takeIf { it.isNotBlank() }
+    return when (mount) {
+        MemoryRepository.MOUNT_ASSISTANT_ONLY -> null to null
+        MemoryRepository.MOUNT_CURRENT_CONVERSATION -> null to conv
+        else -> folderId?.takeIf { it.isNotBlank() } to conv
+    }
+}
+
 private const val MAX_READ_PATHS = 20
 
 private const val IF_VERSION_DESCRIPTION =
@@ -144,7 +167,32 @@ fun buildMemoryTools(
     // 现在显式分开：读取一律走 `visibleForInjection` 同一判据。
     readFolderId: String? = null,
     readConversationId: String? = null,
-): List<Tool> = listOf(
+    // ═══ v5.3.24 ★★挂载层级（与设置页那两组 Chip 一一对应）═══
+    //
+    // 1 = 仅助手级 / 2 = 项目包内（默认）/ 3 = 仅当前对话。
+    //
+    // 旧实现只有**注入链**应用了挂载层级，工具层 `memory_read` / `memory_list` 一律走默认档
+    // → 用户把挂载设成「仅助手级」后，注入里确实没有包层记忆，但模型一个 `memory_list`
+    //   又能全部列出来、`memory_read` 还能读全文 —— **设置形同虚设**。
+    // 现在工具层与注入链共用同一判据（`memoriesForInjection`），设置成什么样就是什么样。
+    manualMount: Int = MemoryRepository.MOUNT_FOLDER,
+    dreamMount: Int = MemoryRepository.MOUNT_FOLDER,
+): List<Tool> {
+    // ═══ v5.3.24 ★★写入归属必须落在「可见范围内」═══
+    //
+    // 挂载层级决定模型能看见哪些层。若新建记忆写进一个**看不见的层**
+    // （例：挂载=仅助手级，写入按 memoryWriteScope 进了项目包），
+    // 这条记忆下一轮不会被注入 —— 模型写了个黑洞，用户也永远等不到它生效。
+    // 因此按挂载收缩写入归属；收缩后仍有层可用（最差就是助手级，它永远可见）。
+    val mount = if (source == "dream") dreamMount else manualMount
+    val (writeFolderId, writeConversationId) = memoryWriteScopeFor(mount, folderId, conversationId)
+    // 写给模型看的「本次新建落在哪」，避免它以为写进了包/对话层却再也读不到
+    val writeScopeLabel = when {
+        writeConversationId != null -> "the current conversation only (this conversation can see it)"
+        writeFolderId != null -> "the current project package (every conversation in the package can see it)"
+        else -> "the assistant level (every conversation of this assistant can see it)"
+    }
+    return listOf(
     Tool(
         name = MemoryToolNames.READ,
         description = "Read one or more memory files. Returns each file's content and version.",
@@ -178,6 +226,9 @@ fun buildMemoryTools(
                 paths = paths,
                 folderId = readFolderId,
                 conversationId = readConversationId,
+                // v5.3.24 ★与注入链同一判据：挂载层级决定模型能看见哪些层
+                manualMount = manualMount,
+                dreamMount = dreamMount,
             )
             toolOutput {
                 // ★v5.3.21 `readVisibleFiles` 返回的是**非空** Map（只含命中的 path），
@@ -209,6 +260,7 @@ fun buildMemoryTools(
         name = MemoryToolNames.WRITE,
         description = """
             Create a memory file or overwrite it entirely. content is the complete file; lines not included are removed.
+            New files are stored at: $writeScopeLabel. Editing an existing file keeps its original scope.
             if_version: pass "new" for a new file, or the version returned by the most recent read or write of an existing file.
         """.trimIndent(),
         parameters = {
@@ -231,8 +283,8 @@ fun buildMemoryTools(
                     content = content,
                     ifVersion = args.string("if_version"),
                     source = source,
-                    folderId = folderId,
-                    conversationId = conversationId,
+                    folderId = writeFolderId,
+                    conversationId = writeConversationId,
                 )
             }.toToolOutput(path)
         }
@@ -318,6 +370,8 @@ fun buildMemoryTools(
                 memoryId = assistantId,
                 folderId = readFolderId,
                 conversationId = readConversationId,
+                manualMount = manualMount,
+                dreamMount = dreamMount,
             ).filter { it.path.startsWith(prefix) }
             toolOutput {
                 put("files", buildJsonArray {
@@ -332,7 +386,8 @@ fun buildMemoryTools(
             }
         }
     ),
-)
+    )
+}
 
 /** 这次工具调用成功改动的记忆文件路径；不是写工具、还没执行或写入被拒绝时返回 null */
 fun UIMessagePart.Tool.memoryWritePath(): String? {
