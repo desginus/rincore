@@ -46,6 +46,11 @@ class WorkspaceRepository(
     private val rootfsInstaller: RootfsInstaller,
     private val settingsStore: SettingsStore,
     private val context: Context,
+    /**
+     * v5.3.27: 常驻 shell 会话池（可为 null —— 未注入时一切行为与旧版完全一致）。
+     * 只服务 `workspace_shell(session=...)` 这条可选路径，属**可失败旁路**。
+     */
+    private val sessionPool: me.rerere.rikkahub.data.workspace.ShellSessionPool? = null,
 ) {
     fun listFlow(): Flow<List<WorkspaceEntity>> = dao.listFlow()
 
@@ -642,6 +647,38 @@ class WorkspaceRepository(
         val file = java.io.File(areaRoot, resolvedPath)
         file.parentFile?.mkdirs()
         if (!file.exists()) file.createNewFile()
+    }
+
+    /**
+     * v5.3.27 ★在**常驻会话**里执行命令（复用同一个 proot + bash，不重启沙箱）。
+     *
+     * 一次性 `executeCommand` 每条命令都要重新载入 rootfs 并重建全部 bind mount，
+     * 渲染类命令还会在 proot 内再拉一次浏览器内核 —— 这是「慢得惊人」的来源。
+     * 同一 sessionKey 下连续命令只付一次启动成本。
+     *
+     * 池子未注入 / 会话起不来 / 执行异常 → **自动回退一次性执行**，功能绝不因此不可用。
+     */
+    suspend fun executeCommandInSession(
+        id: String,
+        sessionKey: String,
+        command: String,
+        cwd: String = "",
+        timeoutMillis: Long = WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
+    ): WorkspaceCommandResult = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.ensureWorkspace(workspace.root)
+        val pool = sessionPool
+        if (pool == null) {
+            manager.executeCommand(root = workspace.root, command = command, cwd = cwd, timeoutMillis = timeoutMillis)
+        } else {
+            pool.run(
+                key = "$id:$sessionKey",
+                root = workspace.root,
+                cwd = cwd,
+                command = command,
+                timeoutMillis = timeoutMillis,
+            )
+        }
     }
 
     suspend fun executeCommand(

@@ -961,6 +961,8 @@ private fun createShellTool(
         // v5.0.85（用户 C1/C5）：超时口径与固有不可用清单内置到工具说明，避免每次重新试错。
         append("TIMEOUT: default 120s, hard cap 660s (pass `timeout` in ms to raise; the tool layer kills it at the cap). ")
         append("If a command is killed by timeout, RE-RUN IT AS A workspace_job — do not retry in shell. ")
+        append("SPEED: pass the SAME `session` name to a sequence of commands to reuse one live sandbox — ")
+        append("each new call otherwise pays the full proot/rootfs startup again, which dominates short commands and is why render/convert steps feel very slow. ")
         append("NOT AVAILABLE in this rootfs (do not try): LibreOffice/soffice (proot lacks standard /proc, aborts) — use `officecli view <file> screenshot` for document preview; ")
         append("Playwright/Chromium may crash on some environments — retry once with --no-sandbox, else switch to weasyprint/pdftoppm. ")
         append("stderr noise like 'onnxruntime ... GPU device discovery failed' is harmless and is filtered from the result. ")
@@ -994,6 +996,18 @@ private fun createShellTool(
                         "Command timeout in seconds. Defaults to 120, max 600. Long tasks: use workspace_job instead."
                     )
                 })
+                // v5.3.27 ★会话复用：连续多条命令共享同一个常驻沙箱，省掉每条命令的 proot 启动开销
+                put("session", buildJsonObject {
+                    put("type", "string")
+                    put(
+                        "description",
+                        "Optional session name. Calls sharing the same name reuse ONE live sandbox " +
+                            "(a single proot + bash) instead of starting a new one per call — much faster " +
+                            "when running several commands in a row (render/convert pipelines, build steps). " +
+                            "The session is closed after 5 minutes of idleness. Omit it to keep the original " +
+                            "one-shot behaviour (fresh isolated proot per call)."
+                    )
+                })
             },
             required = listOf("command"),
         )
@@ -1009,7 +1023,19 @@ private fun createShellTool(
             ?.coerceIn(1L, SHELL_TIMEOUT_MAX_SECONDS)
             ?.times(1_000L)
             ?: WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS
-        val rawResult = workspaceRepository.executeCommand(workspaceId, command, cwd, timeoutMillis)
+        // v5.3.27: 传了 session 就走常驻会话（复用 proot，省启动开销）；不传=原行为
+        val sessionKey = params.string("session")?.trim()?.takeIf { it.isNotEmpty() }
+        val rawResult = if (sessionKey != null) {
+            workspaceRepository.executeCommandInSession(
+                id = workspaceId,
+                sessionKey = sessionKey,
+                command = command,
+                cwd = cwd,
+                timeoutMillis = timeoutMillis,
+            )
+        } else {
+            workspaceRepository.executeCommand(workspaceId, command, cwd, timeoutMillis)
+        }
         // v5.0.85（用户 C4）：过滤第三方 CLI 的已知无害 stderr 噪音（GPU 探测/libGL 等），
         // 避免被误读成任务失败；只过滤白名单关键字，其余原样保留。
         val result = rawResult.copy(

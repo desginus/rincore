@@ -264,13 +264,33 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
         if (vm.shareArgsConsumed) return@LaunchedEffect
         if (files.isEmpty() && text.isNullOrEmpty()) return@LaunchedEffect
         val fingerprint = ("${text.orEmpty()}|${files.joinToString("|") { it.toString() }}").hashCode().toString()
-        if (sharePrefs.contains(fingerprint)) {
-            android.util.Log.i("ChatPage", "share args already consumed (fp=$fingerprint) — skip")
+        // ═══ v5.3.27 ★★修「分享过一次的文档，之后很长时间都分享不进来」═══
+        //
+        // 旧实现把指纹**永久**写进 SharedPreferences 且只判 contains：
+        //   同一个文件第一次分享 → 写入 → 用户退出/切走 → 再次分享同一文件
+        //   → contains 命中 → 直接 skip → 界面跳转过来但什么都不导入。
+        // 表现就是用户说的「这个文档在很长一段时间内都无法正常分享」。
+        //
+        // 这个标记本来只是为「防止同一个 Intent 在 VM 重组/进程重建窗口内被消费两次」，
+        // 那个窗口是秒级的。所以改成**带时效**：只在 TTL 内抑制重复，过期即允许再次导入。
+        val nowMs = System.currentTimeMillis()
+        val lastConsumedAt = if (sharePrefs.contains(fingerprint)) sharePrefs.getLong(fingerprint, 0L) else 0L
+        if (lastConsumedAt > 0L && nowMs - lastConsumedAt < SHARE_DEDUP_TTL_MS) {
+            android.util.Log.i(
+                "ChatPage",
+                "share args consumed ${nowMs - lastConsumedAt}ms ago (< ${SHARE_DEDUP_TTL_MS}ms TTL) — skip fp=$fingerprint",
+            )
             vm.shareArgsConsumed = true
             return@LaunchedEffect
         }
-        if (sharePrefs.all.size > 100) sharePrefs.edit().clear().apply()
-        sharePrefs.edit().putLong(fingerprint, System.currentTimeMillis()).apply()
+        // 只清过期指纹，不清全部（清全部会让同一秒内的重复消费重新变可能）
+        if (sharePrefs.all.size > 100) {
+            val cutoff = nowMs - SHARE_DEDUP_TTL_MS
+            val editor = sharePrefs.edit()
+            sharePrefs.all.forEach { (k, v) -> if ((v as? Long ?: 0L) < cutoff) editor.remove(k) }
+            editor.apply()
+        }
+        sharePrefs.edit().putLong(fingerprint, nowMs).apply()
         vm.shareArgsConsumed = true
         // 回灌内容不落草稿（否则重启后会从草稿里再冒出来）
         vm.suppressNextDraftSave = true
@@ -1158,3 +1178,12 @@ private fun TopBar(
         )
     }
 }
+
+/**
+ * v5.3.27: 分享参数去重的时效窗口。
+ *
+ * 去重本身是必要的（防同一 Intent 在 VM 重组/进程重建时被消费两次），
+ * 但**不能永久** —— 永久去重会导致「同一个文档分享过一次之后就再也分享不进来」。
+ * 30s 足以覆盖重组/重建窗口，又不会阻断用户正常地再次分享同一个文件。
+ */
+private const val SHARE_DEDUP_TTL_MS = 30_000L

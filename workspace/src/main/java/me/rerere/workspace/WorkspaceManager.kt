@@ -367,6 +367,37 @@ class WorkspaceManager(
         )
     }
 
+    /**
+     * v5.3.27 ★启动一个**常驻 bash**（killOnExit = false），供上层复用同一 proot 进程执行多条命令。
+     *
+     * 为什么需要：一次性 executeCommand 每次都要重新启动 proot 并重建全部 bind mount
+     * （rootfs、/dev /proc /sys、/dev/shm、skills/upload/tool_outputs…），单条命令里
+     * 有 1~3s 是纯启动开销；渲染类命令还要在 proot 内再拉一次浏览器内核，
+     * 于是「渲染一条就慢得惊人」。复用同一 bash 后，第 2 条起只剩命令本身耗时。
+     *
+     * 生命周期由调用方负责（close / destroy）；这里只保证进程起来了。
+     * 返回 null = 该工作区不可用（rootfs 未安装等），调用方应回退一次性执行。
+     */
+    fun launchPersistentShell(root: String, cwd: String = ""): Process? {
+        val workingDir = fileSystem.resolve(filesDir(root), cwd)
+        if (!workingDir.exists() || !workingDir.isDirectory) return null
+        return shellRunner.launchProcess(
+            WorkspaceShellContext(
+                root = root,
+                command = "exec /bin/bash --noprofile --norc",
+                cwd = cwd,
+                filesDir = filesDir(root),
+                linuxDir = linuxDir(root),
+                tempDir = tempDir(root),
+                workingDir = workingDir,
+                timeoutMillis = DEFAULT_COMMAND_TIMEOUT_MS,
+                stdin = null,
+                bindMounts = bindMounts,
+                killOnExit = false,
+            )
+        )
+    }
+
     /** 启动常驻进程 (不等待) — MCP stdio 桥接: workspace 内启动 Python/Node MCP 服务器 */
     fun launchProcess(
         root: String,

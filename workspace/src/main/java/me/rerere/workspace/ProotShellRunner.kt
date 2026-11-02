@@ -138,6 +138,22 @@ class ProotShellRunner(
             "TERM=xterm-256color",
             "LANG=C.UTF-8",
             "LC_ALL=C.UTF-8",
+            // ═══ v5.3.27 ★★修「模型反复汇报 Python 有问题 / 输出乱码」═══
+            //
+            // `LANG=C.UTF-8` 在精简 rootfs 里经常**没有对应的 locale 定义**（只有 C/POSIX），
+            // 于是 Python 启动时检测到的首选编码是 **ascii**：任何中文/emoji 的 print、
+            // 或 stdout 重定向都会抛
+            //     UnicodeEncodeError: 'ascii' codec can't encode character ...
+            // 模型看到 traceback 就报「Python 解释器/转译有问题」，用户也看到乱码。
+            //
+            // 这三条直接给 Python 强制 UTF-8，不依赖系统 locale 是否存在：
+            //  - PYTHONUTF8=1：等价于全局 -X utf8（3.7+），文件/标准流/路径全用 UTF-8
+            //  - PYTHONIOENCODING：stdout/stderr/stdin 显式 UTF-8（覆盖 PYTHONUTF8 之外的老版本）
+            //  - PYTHONDONTWRITEBYTECODE：不写 __pycache__（沙箱每次冷启动时这类小文件
+            //    写入既慢又可能因权限/时间戳异常导致「上次能跑这次报错」）
+            "PYTHONUTF8=1",
+            "PYTHONIOENCODING=utf-8",
+            "PYTHONDONTWRITEBYTECODE=1",
         )
         // v4.8.110 (B4): 调用方环境变量 — `env -i` 白名单之后追加 (重建环境时注入)。
         // key 必须合法环境变量名 (非法跳过); 值经 argv 传递, 无 shell 解析, 无需转义。

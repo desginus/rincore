@@ -97,9 +97,12 @@ val repositoryModule = module {
         WorkspaceTerminalSessionManager(get(), get())
     }
 
+    // v5.3.27: 常驻 shell 会话池（workspace_shell 的 session 旁路）
+    single { me.rerere.rikkahub.data.workspace.ShellSessionPool(get()) }
+
     single {
         // v4.5.24: + Context (内置工具注入 assets/rin-tools → rootfs /usr/local/bin)
-        WorkspaceRepository(get(), get(), get(), get(), get())
+WorkspaceRepository(get(), get(), get(), get(), get(), getOrNull())
     }
 
     single {
