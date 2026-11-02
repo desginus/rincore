@@ -123,14 +123,24 @@ jobs:
       #   v5.3.10 先以**独立非阻塞 job**（见文件末尾 unit-tests）把测试真正跑起来：
       #   `app/src/test` 有 56 个文件长期未编译，接通后立刻暴露大批腐化（会话层测试
       #   与被重写 3 次的 ConversationSession 完全脱节）。修完再升级为硬门禁。
-      - name: Build (compile → test → assemble)
-        run: |
-          ./gradlew \
-            :app:compileResearchKotlin \
-            :ai:compileDebugUnitTestKotlin \
-            :markdown:test \
-            assembleResearch \
-            --no-daemon --stacktrace --build-cache --console=plain -Dorg.gradle.workers.max=2
+      # v5.3.24 ★拆成四个 step：v5.3.24 起 build 步骤连续两次挂死 30 分钟以上，
+      # 四个 gradle 任务挤在一条命令里时无法判断卡在哪一个（job 未结束拿不到日志）。
+      # 拆开后每个 step 有独立超时与独立日志，挂死点一眼可见。
+      - name: Compile app (research)
+        timeout-minutes: 15
+        run: ./gradlew :app:compileResearchKotlin --no-daemon --stacktrace --build-cache --console=plain -Dorg.gradle.workers.max=2
+
+      - name: Test markdown
+        timeout-minutes: 10
+        run: ./gradlew :markdown:test --no-daemon --stacktrace --build-cache --console=plain
+
+      - name: Compile ai unit tests
+        timeout-minutes: 10
+        run: ./gradlew :ai:compileDebugUnitTestKotlin --no-daemon --stacktrace --build-cache --console=plain
+
+      - name: Assemble research
+        timeout-minutes: 20
+        run: ./gradlew assembleResearch --no-daemon --stacktrace --build-cache --console=plain -Dorg.gradle.workers.max=2
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
