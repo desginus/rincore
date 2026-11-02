@@ -377,8 +377,8 @@ class MemoryRepositoryTest {
         val first = repository.addMemory(assistant, "同标题\n第一条")
         val second = repository.addMemory(assistant, "同标题\n第二条")
         assertTrue("两次新建必须都能落库", dao.getFilesOfAssistant(assistant).size == 2)
-        assertTrue("第一条内容保留", repository.getFile(assistant, first.path)?.content == "同标题\n第一条")
-        assertTrue("第二条内容保留", repository.getFile(assistant, second.path)?.content == "同标题\n第二条")
+        assertTrue("第一条内容保留", repository.getFile(assistant, first.path!!)?.content == "同标题\n第一条")
+        assertTrue("第二条内容保留", repository.getFile(assistant, second.path!!)?.content == "同标题\n第二条")
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -537,20 +537,18 @@ class MemoryRepositoryTest {
     }
 
     @Test
-    fun `manual and dream mounts are applied separately`() {
+    fun `manual and dream mounts are applied separately`() = runBlocking {
         seedLayers()
         createIn("/dream-folder.md", folderId = "folderA", source = "dream")
 
-        val visible = runBlocking {
-            repository.memoriesForInjection(
-                memoryId = assistant,
-                folderId = "folderA",
-                conversationId = "convA",
-                siblingConversationIds = setOf("convA", "convB"),
-                manualMount = MemoryRepository.MOUNT_ASSISTANT_ONLY,
-                dreamMount = MemoryRepository.MOUNT_FOLDER,
-            ).map { it.path }.toSet()
-        }
+        val visible = repository.memoriesForInjection(
+            memoryId = assistant,
+            folderId = "folderA",
+            conversationId = "convA",
+            siblingConversationIds = setOf("convA", "convB"),
+            manualMount = MemoryRepository.MOUNT_ASSISTANT_ONLY,
+            dreamMount = MemoryRepository.MOUNT_FOLDER,
+        ).map { it.path }.toSet()
 
         assertTrue("主动记忆按 manualMount 收缩：包层条目不可见", "/folder.md" !in visible)
         assertTrue("做梦记忆按 dreamMount 放开：包层做梦条目可见", "/dream-folder.md" in visible)
