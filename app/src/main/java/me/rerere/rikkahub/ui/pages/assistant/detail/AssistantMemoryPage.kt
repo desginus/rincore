@@ -1115,6 +1115,87 @@ private fun MemoryMemoriesTab(
     }
 }
 
+@Composable
+private fun MemoryItem(
+    memory: AssistantMemory,
+    tag: String? = null,
+    onEditMemory: (AssistantMemory) -> Unit,
+    onDeleteMemory: (AssistantMemory) -> Unit,
+) {
+    Card(
+        onClick = { onEditMemory(memory) },
+        modifier = Modifier.fillMaxWidth(),
+        colors = CustomColors.cardColorsOnSurfaceContainer,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = memory.content,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                // v5.0.89 ★用户定案：每条记忆必须能一眼看出「哪个区间」+「主动还是做梦」
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MemoryChip(
+                        text = when {
+                            memory.conversationId != null -> "单对话"
+                            memory.folderId != null -> "项目包"
+                            else -> "助手级"
+                        },
+                        container = MaterialTheme.colorScheme.primaryContainer,
+                        content = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    MemoryChip(
+                        text = if (memory.source == "dream") "做梦" else "主动",
+                        container = if (memory.source == "dream") {
+                            MaterialTheme.colorScheme.tertiaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        },
+                        content = if (memory.source == "dream") {
+                            MaterialTheme.colorScheme.onTertiaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        },
+                    )
+                    tag?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            ItemActionMenu(
+                actions = listOf(
+                    ItemAction(
+                        text = stringResource(R.string.delete),
+                        icon = HugeIcons.Delete01,
+                        destructive = true,
+                        onClick = { onDeleteMemory(memory) },
+                    ),
+                )
+            )
+        }
+    }
+}
+
 /** v5.0.89：记忆条目的「区间 / 性质」小标签（用户定案：每条记忆必须有明确 tag） */
 @Composable
 private fun MemoryChip(
