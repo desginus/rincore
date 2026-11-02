@@ -1,6 +1,7 @@
 /* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.data.ai.tools.MemoryToolNames
 import me.rerere.rikkahub.data.ai.tools.buildAssistantToolPool
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -49,7 +50,30 @@ fun buildToolList(
     } catch (_: Exception) {
         emptyList()
     }
-    return pool.map { ToolPreview(it.name, it.description) }
+    // ═══ v5.3.25 ★★「工具矩阵里找不到记忆工具」的真因就在这里 ═══
+    //
+    // 本函数是**工具矩阵 / 工具列表 / 输入框 @ 选择器的唯一数据源**，而它复用的
+    // `buildAssistantToolPool` **从不包含记忆六工具** —— 记忆工具是在
+    // `GenerationHandler` 里按 `assistant.enableMemory` 单独 addAll 的
+    // （grep buildMemoryTools 在 ToolsBuilder.kt 的计数是 0）。
+    // 于是模型侧有六个记忆工具，UI 的工具矩阵里一个都没有 → 用户「找不到记忆工具」。
+    //
+    // 这里按**同一个开关**补上六条预览；归类交给 `ZoneRouter`（v5.3.22 起
+    // `name.startsWith("memory_")` → 「对话工具/记忆」区），不需要再单独登记。
+    val memoryPreviews = if (assistant.enableMemory) {
+        listOf(
+            ToolPreview(MemoryToolNames.READ, "Read one or more memory files; returns each file's content and version."),
+            ToolPreview(MemoryToolNames.WRITE, "Create a memory file or overwrite it entirely."),
+            ToolPreview(MemoryToolNames.STR_REPLACE, "Replace one exact occurrence of text in a memory file."),
+            ToolPreview(MemoryToolNames.APPEND, "Append a line to the end of a memory file."),
+            ToolPreview(MemoryToolNames.DELETE, "Delete a memory file (soft delete, recoverable)."),
+            ToolPreview(MemoryToolNames.LIST, "List memory files with size and last update time."),
+        )
+    } else {
+        emptyList()
+    }
+    return (pool.map { ToolPreview(it.name, it.description) } + memoryPreviews)
+        .distinctBy { it.name }
 }
 
 /** ToolPreview → 真实 Tool 壳（仅用于交给 ZoneRouter 归类，不执行） */
