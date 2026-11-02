@@ -91,7 +91,11 @@ object ZoneOps {
             }
             z.copy(name = name.ifBlank { z.id.substringAfterLast('/') }, parentId = pid)
         }
-        val validIds = fixed.mapTo(HashSet()) { it.id }
+        // v5.3.29 ★CI 抓到：这里也必须走 mergeBuiltinZones。
+        // `ids`（父引用校验）已经 merge 了，但 validIds（links/hidden 合法性）没有 →
+        // 指向内置区的手动归属（如 web_search → 搜索）会被当成非法引用清掉，
+        // 而内置区本来就不在 settings.toolZones 里（它由代码常量提供）。
+        val validIds = mergeBuiltinZones(fixed).mapTo(HashSet()) { it.id }
         val cleanLinks = s.toolZoneLinks.filterValues { it in validIds }
         val cleanHidden = s.hiddenZones.filter { it in validIds }.toSet()
         return if (fixed == s.toolZones && cleanLinks == s.toolZoneLinks && cleanHidden == s.hiddenZones) s
