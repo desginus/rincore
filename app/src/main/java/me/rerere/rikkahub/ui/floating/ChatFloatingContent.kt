@@ -48,9 +48,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.dropShadow
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
@@ -153,8 +153,29 @@ fun ChatFloatingBubble(state: FloatingChatUiState, onClick: () -> Unit) {
         Box(
             modifier = Modifier
                 .size(52.dp)
-                // 不能用 elevation 阴影：轮廓是凹多边形，每帧都要重新三角剖分，变形时会把 RenderThread 卡住几十秒
-                .dropShadow(logoShape, Shadow(radius = 6.dp, offset = DpOffset(0.dp, 2.dp), alpha = 0.3f))
+                // ═══ v5.3.30 ★★删除 dropShadow（崩溃根因，用户 5.3.29 OOM 报告）═══
+                //
+                // 堆栈：Bitmap.createBitmap ← ActualImageBitmap ← ImageBitmap
+                //      ← DropShadowRenderer.createOuterShadowBitmap ← DropShadowPainter.onDraw
+                //      ← SimpleDropShadowNode.draw
+                //
+                // Compose 的 dropShadow 是**软件阴影**：它要按绘制区域分配一张位图再模糊。
+                // 悬浮球带每 2 秒一次的形变动画（logoMorphShape），悬浮窗又常驻后台，
+                // 位图反复重建 → 直接 java.lang.OutOfMemoryError（Android 17 / SDK 37 实测）。
+                //
+                // 也不能用 elevation：轮廓是凹多边形，每帧重新三角剖分会把 RenderThread 卡住几十秒。
+                // 改用 radialGradient 光晕 —— 纯 draw 指令、零位图分配，视觉上仍是一圈柔和外扩。
+                .drawBehind {
+                    val halo = size.minDimension / 2f + 4.dp.toPx()
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(Color.Black.copy(alpha = 0.22f), Color.Transparent),
+                            center = center,
+                            radius = halo,
+                        ),
+                        radius = halo,
+                    )
+                }
                 .clip(logoShape)
                 .clickable(onClick = onClick)
                 .drawAppLogo(logoLayers)

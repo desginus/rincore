@@ -132,7 +132,9 @@ private fun createReadFileTool(
         Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
         Use /workspace for the workspace files area.
         v5.0.79 ★语义分流：本工具只返回**文本**（带行号/分页）；**图片一律用 read_image**（返回图本体），
-        用本工具读图片只会得到二进制乱码；弹窗展示给用户用 workspace_show_file。
+        用本工具读图片只会得到乱码；弹窗展示给用户用 workspace_show_file。
+        v5.3.30 ★图片预算：每个请求约 5 MiB，超出的图会被替换成占位文本。批量任务先降分辨率
+        （`pdftoppm -png -r 100` 或 `-scale-to 1200`），或分批读、读完用文字记结论。
         Text files are returned with line numbers; large files are paginated: use offset (1-based start
         line) and limit (line count, default $READ_DEFAULT_LIMIT) to read further sections. The result
         reports totalLines and a continuation hint when truncated.
@@ -572,16 +574,42 @@ private fun createGrepTool(
         // v4.8.82: 多取 1 行 —— 只按 head -n N 判定时 "恰好 N 条" 会被误报成已截断,
         // 模型据此反复换 pattern 重搜纯属浪费。取 N+1 才能区分"正好 N 条"与"不止 N 条"。
         val fetchLimit = maxResults + 1
+        // ═══ v5.3.30 ★P2-1（外部审计）：文件含控制字符时静默检索失效 ═══
+        //
+        // 审计原文：「正常文本文件混入 \x0c 后，grep 返回 binary file matches 而不输出内容，
+        // 工具层不加任何提示，表现为『检索失效』」。旧实现用 `grep -I`（= --binary-files=without-match）
+        // 更糟：连提示都没有，直接 0 条结果 —— 模型会以为文件里真的没有这个 pattern。
+        //
+        // 现改为两段式：先按正常模式搜；**结果为空**时再用 `-a`（把二进制当文本）重试一遍。
+        // 重试有结果 → 说明"确实有匹配、只是被判成二进制"，在输出里显式标注，
+        // 模型据此知道要清理控制字符而不是继续换 pattern 重搜。
         val command = """
+            FETCH=$fetchLimit
+            bin_note=""
             if command -v rg >/dev/null 2>&1; then
-              rg --line-number --no-heading --color never -e $patternArg$globArg -- $pathArg 2>/dev/null | head -n $fetchLimit
+              OUT=${'$'}(rg --line-number --no-heading --color never -e $patternArg$globArg -- $pathArg 2>/dev/null | head -n ${'$'}FETCH)
+              if [ -z "${'$'}OUT" ]; then
+                OUT=${'$'}(rg -a --line-number --no-heading --color never -e $patternArg$globArg -- $pathArg 2>/dev/null | head -n ${'$'}FETCH)
+                [ -n "${'$'}OUT" ] && bin_note="BINARY_FILES"
+              fi
             else
-              grep -rn -I -E -e $patternArg$grepInclude -- $pathArg 2>/dev/null | head -n $fetchLimit
+              OUT=${'$'}(grep -rn -I -E -e $patternArg$grepInclude -- $pathArg 2>/dev/null | head -n ${'$'}FETCH)
+              if [ -z "${'$'}OUT" ]; then
+                OUT=${'$'}(grep -rn -a -E -e $patternArg$grepInclude -- $pathArg 2>/dev/null | head -n ${'$'}FETCH)
+                [ -n "${'$'}OUT" ] && bin_note="BINARY_FILES"
+              fi
             fi
+            if [ -n "${'$'}bin_note" ]; then
+              echo "__RIN_BINARY_MATCH__"
+            fi
+            printf '%s\n' "${'$'}OUT"
             exit 0
         """.trimIndent()
         val result = workspaceRepository.executeCommand(workspaceId, command, defaultCwd.orEmpty())
-        val output = (result.stdout ?: "").trim()
+        // v5.3.30 ★P2-1：命令首行只在"正常模式 0 条、-a 模式有命中"时输出这个标记
+        val rawOut = (result.stdout ?: "").trim()
+        val binaryMatched = rawOut.startsWith("__RIN_BINARY_MATCH__")
+        val output = rawOut.removePrefix("__RIN_BINARY_MATCH__").trim()
         val lines = if (output.isBlank()) emptyList() else output.split('\n')
         val truncated = lines.size > maxResults
         listOf(
@@ -594,6 +622,15 @@ private fun createGrepTool(
                     if (truncated) {
                         put("truncated", true)
                         put("note", "Showing first $maxResults matches; refine pattern/glob for more precision.")
+                    }
+                    // v5.3.30 ★P2-1：显式告知"结果是 -a 模式才搜出来的"
+                    if (binaryMatched) {
+                        put(
+                            "binary_note",
+                            "这些文件含控制字符（如 \\x0c / \\x00），按文本模式搜索会被当成二进制跳过；" +
+                                "上面的结果是用 grep/rg -a（强制按文本）重试出来的。" +
+                                "如需正常检索，先清理控制字符：`tr -d '\\000-\\010\\013\\014\\016-\\037' < f > f.clean`，再搜 f.clean。"
+                        )
                     }
                     put("text", lines.take(maxResults).joinToString("\n"))
                 }.toString()
@@ -890,9 +927,10 @@ private fun createJobTool(
                             put(
                                 "note",
                                 "Durable job — keeps running after this call. Check with workspace_job {action:status, job_id}. " +
-                                    "NOTE: inside a job, /workspace is the WORKSPACE FILES ROOT (all partitions flat); " +
-                                    "the default working directory is the assistant CWD'$cwd' — use paths relative to /workspace, " +
-                                    "i.e. /workspace/<assistantCwd>/<your path>."
+                                    "PATH SEMANTICS (identical in workspace_shell and workspace_job): /workspace is the " +
+                                    "WORKSPACE FILES ROOT — all partitions flat; `cwd` only sets the process working directory " +
+                                    "(current: '$cwd') and does NOT re-scope /workspace. File tools resolve /workspace against " +
+                                    "the CURRENT CWD instead, so address files as <your path> or /workspace/<assistantCwd>/<your path>."
                             )
                         }.toString()
                     )
@@ -943,6 +981,33 @@ private fun createJobTool(
     },
 )
 
+/**
+ * v5.3.30 ★外部审计（P1-1 / P2-2）：把「已知会失败、但有确定解法」的几类输出翻译成结论。
+ *
+ * 为什么放在工具层而不是文档里：模型看不到我们的文档，它只看到 stdout/stderr；
+ * 审计原文明确说「这一行能省掉数小时」—— 前提是它必须出现在**结果 JSON** 里。
+ *
+ * 只做纯字符串嗅探、只增字段（`diagnosis`），不改 exitCode/stdout，零副作用。
+ */
+private fun diagnoseShellOutput(output: String): String? = when {
+    output.contains("GPU process exited unexpectedly") ||
+        output.contains("exit_code=256") ||
+        output.contains("Failed to launch the browser process") ->
+        "这是 Chromium/Playwright **启动参数**问题，不是浏览器损坏、也不是环境不可用。" +
+            "裸 launch() 在 proot 里必挂，请带参数：args=[\"--no-sandbox\", \"--disable-gpu\", " +
+            "\"--use-gl=swiftshader\", \"--disable-dev-shm-usage\"]。" +
+            "若项目里有统一封装（如 tools/env.py 的 launch），一律走封装；" +
+            "带参数后 file:// 加载、整页截图、A4 PDF 均可用。"
+
+    output.contains("soffice", ignoreCase = true) ||
+        output.contains("LibreOffice", ignoreCase = true) ->
+        "LibreOffice/soffice 在本 rootfs **必然不可用**（proot 无标准 /proc，启动即 abort），这是既定限制、不要重试。" +
+            "替代：`officecli view <file> screenshot`（看真实版式）/ `pdf <file.pdf> --png`（PDF 页面）/" +
+            "`office-edit docx read <file>` 或 `doc read <file.doc>`（取文本）。"
+
+    else -> null
+}
+
 private fun createShellTool(
     workspaceId: String,
     needsApproval: (String) -> Boolean,
@@ -967,6 +1032,14 @@ private fun createShellTool(
         append("Playwright/Chromium may crash on some environments — retry once with --no-sandbox, else switch to weasyprint/pdftoppm. ")
         append("stderr noise like 'onnxruntime ... GPU device discovery failed' is harmless and is filtered from the result. ")
         // v5.0.89（用户报工作区凭空多出 RENDER / RIN-GLBS 目录）：约定临时产物位置
+        // ═══ v5.3.30 ★P0-1（外部审计）：shell 与 job 的 /workspace 语义必须写明，且两者用同一句话 ═══
+        // 审计原文：job 说 "all partitions flat"、shell 说 "WORKSPACE ROOT"，
+        // 读者会以为两者不同，直接导致一次误诊（实测两者行为本来就一致）。
+        append("PATH SEMANTICS (identical in workspace_shell and workspace_job): /workspace is the WORKSPACE FILES ROOT — all partitions flat. ")
+        append("The `cwd` parameter only sets the process working directory; it does NOT re-scope /workspace. ")
+        append("File tools (workspace_read_file / write_file / edit_file / glob / grep) are DIFFERENT: they resolve /workspace against the CURRENT CWD, ")
+        append("so a file created here at /workspace/<cwd>/x.txt is addressed by them as x.txt (or /workspace/x.txt). ")
+        append("If a path written here is not found there, pass the CWD-relative form or use absolute /workspace/<cwd>/... here. ")
         append("TEMP FILES: put intermediate/temp output under `.tmp/` inside /workspace; ")
         append("do NOT create top-level directories such as RENDER/, RIN-GLBS/ in the workspace root — they pollute the user's file tree.")
     },
@@ -1070,16 +1143,28 @@ private fun createShellTool(
                         )
                     }
                     if (result.timedOut) {
+                        // ═══ v5.3.30 ★P1-2（外部审计）═══
+                        // 审计原文：「120 秒被杀时，python3 -u 之前打印的内容也一并丢失，退出码 124，
+                        // stderr 为空，无从判断卡在哪一步」。原因是进程被杀时缓冲输出不会回传
+                        //（WorkspaceManager 只在命令结束后返回完整结果，拿不到中途快照）。
+                        // 因此这里不能承诺"残段可用"，必须明确两种可能并给出下次的写法。
                         put(
                             "hint",
-                            "命令超时被强杀, 上面的输出是中途截断的残段, 可能不完整。" +
-                                "分钟级长任务请改用 workspace_job (action=start/status/kill)。"
+                            "命令超时被强杀。若上面的 stdout/stderr 为空或极少，说明**缓冲输出随进程一起丢失了**" +
+                                "（这是机制限制：只有命令正常结束时才能取到完整输出）。" +
+                                "下次要保留中途输出，请在命令里直接重定向到文件：" +
+                                "`your_cmd > /workspace/.tmp/run.log 2>&1`，超时后用 workspace_read_file 读该文件；" +
+                                "分钟级长任务请改用 workspace_job (action=start/status/kill)，它的日志是实时落盘的。"
                         )
                     }
                     if (silentFailure) put(
                         "warning",
                         "exitCode=0 but stderr contains error output — a multi-part script may have partially executed (earlier steps done, later steps skipped). Verify actual effects before proceeding."
                     )
+                    // ═══ v5.3.30 ★P1-1 / P2-2（外部审计）：已知失败模式给出可照抄的结论 ═══
+                    // 审计原文：Playwright 裸启动挂死只报 "GPU process exited unexpectedly: exit_code=256"，
+                    // 不带任何参数建议 —— 这一行能省掉数小时；soffice 的失败信息也不够直接。
+                    diagnoseShellOutput(combinedOutput)?.let { put("diagnosis", it) }
                     if (imagePaths.isNotEmpty()) {
                         // v4.8.142: 单点载荷 — 验存不过不发地址 (宁可没图, 不给死链)
                         val rpShell = buildRenderPayload(workspaceId, imagePaths, cwdRel)

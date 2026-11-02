@@ -161,10 +161,17 @@ internal fun buildRenderPayload(workspaceId: String, paths: List<String>, cwd: S
 
 /** 丢弃提示文案 (模型可见面): 说清"没图"与去向, 不输出任何死链话术。 */
 internal fun renderSkippedNote(n: Int): String =
+    // ═══ v5.3.30 ★P0-2（外部审计）：不能只说"先复制进去"，要给出可照抄的命令 ═══
+    // 审计原文：/tmp 下真实存在的图片在 workspace_read_file(url_only=true) 里静默降级，
+    // 而 read_image 能读 —— 两个工具能力边界不一致，且失败信息只在 note 字段里容易被漏看。
     "$n image path(s) got no render_urls/render_markdown — not under /workspace, " +
         "/upload, /tool_outputs or /skills, or the file does not exist. " +
-        "No address was emitted (dead links are never generated); " +
-        "copy the file into the workspace first if it must be displayed."
+        "No address was emitted (dead links are never generated). " +
+        "FIX (copy into the workspace, then ask for the address again): " +
+        "`workspace_shell(command=\"mkdir -p /workspace/.tmp && cp /tmp/x.png /workspace/.tmp/\")` " +
+        "then `workspace_read_file(path=\"/workspace/.tmp/x.png\", url_only=true)`. " +
+        "If you only need to LOOK at the image, `read_image` accepts any absolute path " +
+        "(/tmp, /upload, /tool_outputs, /skills, /workspace) — it does not need an inline address."
 
 /**
  * 从工具输出 JSON 提取 render_urls (显示侧唯一提取入口; v4.8.115 前为
