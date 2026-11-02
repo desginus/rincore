@@ -91,8 +91,61 @@ object ModelLatencyStats {
         }.sortedBy { it.second }
     }.getOrDefault(emptyList())
 
+    // ════════════════════════════════════════════════════════════════
+    // v5.3.35 ★失败记录：能力不合格的模型必须被降权，而不是"快就选"
+    // ════════════════════════════════════════════════════════════════
+    //
+    // 用户实测的灾难场景：原本用 DeepSeek，中途被路由到智谱 GLM，
+    // 该模型"思考一段之后把本该用来调用工具的工具调用直接当正文发给了用户"。
+    // 根因（代码级）：`ChatCompletionsAPI:1070` 只在 `abilities.contains(TOOL)` 时
+    // 才发 `tools` 参数 —— 池里若有未声明 TOOL 的模型，它根本拿不到工具定义，
+    // 却能看到历史里的工具调用，于是只能**模仿成文字吐出来**。
+    //
+    // 准入过滤在 ModelRouting.kt（能力先于速度）；这里只负责**记住失败**，
+    // 让"同一个模型反复坏"不会每轮都再撞一次。
+
+    private val failures = ConcurrentHashMap<String, Int>()
+
+    /** 记一次「该模型在需要工具时没能产出工具调用」的失败（由调用方判定后调用） */
+    fun recordFailure(modelId: Uuid) {
+        runCatching {
+            val key = modelId.toString()
+            failures[key] = (failures[key] ?: 0) + 1
+            runCatching { Log.w(TAG, "record failure ${key.take(8)} total=${failures[key]}") }
+        }
+    }
+
+    /** 失败次数（用于路由打分降权） */
+    fun failureCount(modelId: Uuid): Int = failures[modelId.toString()] ?: 0
+
+    /** 一次成功后清零，让「修好了」的模型能回到候选（避免永久打入冷宫） */
+    fun clearFailure(modelId: Uuid) {
+        failures.remove(modelId.toString())
+    }
+
+    // ═══ 会话粘性（避免「每轮换一个脑子」）═══
+    // 用户 v5.1.7 要求「每次发送都重新选最快的」，但每轮换模型会让对话失去连续性
+    // （不同模型的思考风格/工具调用习惯完全不同，用户能直接感知「换了个人」）。
+    // 折中：**粘性优先，速度显著更快才切换** —— 见 ModelRouting.pickRoutedModel。
+
+    private val stickyByConversation = ConcurrentHashMap<String, String>()
+
+    fun markSticky(conversationId: String, modelId: Uuid) {
+        runCatching { stickyByConversation[conversationId] = modelId.toString() }
+    }
+
+    fun stickyOf(conversationId: String): Uuid? = runCatching {
+        stickyByConversation[conversationId]?.let { Uuid.parse(it) }
+    }.getOrNull()
+
+    fun clearSticky(conversationId: String) {
+        stickyByConversation.remove(conversationId)
+    }
+
     /** 测试/诊断用：清空全部样本 */
     fun clear() {
         samples.clear()
+        failures.clear()
+        stickyByConversation.clear()
     }
 }

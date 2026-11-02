@@ -851,7 +851,18 @@ class ChatService(
         val assistant = settings.getAssistantById(initialConversation.assistantId)
             ?: settings.getCurrentAssistant()
         // v5.1.4：经「快速/极致」路由解析（未配置时与原行为完全一致）
-        val model = settings.resolveRoutedModel(assistant) ?: return
+        // ═══ v5.3.35 ★能力准入所需的两项输入 ═══
+        //  · conversationId → 会话粘性（避免每轮换一个脑子）
+        //  · estimatedTokens → 排除「上下文窗口装不下当前历史」的模型
+        //    （粗估 3 字符 ≈ 1 token；中文略保守但用于门槛判断足够）
+        val estimatedTokens = runCatching {
+            initialConversation.currentMessages.sumOf { it.toText().length } / 3
+        }.getOrDefault(0)
+        val model = settings.resolveRoutedModel(
+            assistant = assistant,
+            conversationId = conversationId.toString(),
+            estimatedTokens = estimatedTokens,
+        ) ?: return
 
         // v4.8.34: 当前 provider 心跳确保 — 工具执行期间连接禁止空闲冷却
         // (此前仅 opencode/CC host 有心跳; DeepSeek 等直连 provider 在长工具

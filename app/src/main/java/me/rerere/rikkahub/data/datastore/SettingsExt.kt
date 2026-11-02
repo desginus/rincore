@@ -30,7 +30,13 @@ fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
  *   - 连接预热丢进 AppScope 后台，**本轮选择与发送零等待**；
  *   - 整个过程 runCatching：功能彻底坏掉，最坏结果也只是用普通模型。
  */
-suspend fun Settings.resolveRoutedModel(assistant: me.rerere.rikkahub.data.model.Assistant): Model? {
+suspend fun Settings.resolveRoutedModel(
+    assistant: me.rerere.rikkahub.data.model.Assistant,
+    // v5.3.35：会话 ID 用于「粘性」（避免每轮换一个脑子）；不传则每次独立选
+    conversationId: String? = null,
+    // v5.3.35：当前上下文粗略 token 估算（0 = 未知）。用于排除窗口装不下的模型。
+    estimatedTokens: Int = 0,
+): Model? {
     val normal = findModelById(assistant.chatModelId ?: chatModelId)
     val pool = when (assistant.modelRouting) {
         1 -> fastChatModelIds
@@ -38,37 +44,67 @@ suspend fun Settings.resolveRoutedModel(assistant: me.rerere.rikkahub.data.model
         else -> return normal
     }
     if (pool.isEmpty()) return normal
-    // 池内模型可能已被删除 —— 不能拿一个查不到的 id 去当选择结果
-    val valid = pool.filter { findModelById(it) != null }
-    if (valid.isEmpty()) return normal
-    if (valid.size == 1) return findModelById(valid.first()) ?: normal
 
-    // ═══ v5.3.34 ★★「选最快的模型」重做：用真实首字统计，且永不阻塞发送 ═══
+    val models = pool.mapNotNull { findModelById(it) }.distinctBy { it.id }
+    if (models.isEmpty()) return normal
+
+    // ═══ v5.3.35 ★★「能力先于速度」—— 这一条直接对应工具调用被当正文的事故 ═══
     //
-    // 旧实现在这里同步调用 `ModelRacer.pickFastest(timeoutMs = 1500)`：
-    //   · 探针打的是 `GET {baseUrl}/models`（元数据端点）——**测的不是模型速度**；
-    //   · 同一 baseUrl 的多个模型探针打同一个 URL ——「同 provider 内选最快」不成立；
-    //   · 移动网 TLS 664ms~1.9s，1.5s 同步超时 → 实测**常常全部超时** → 回退池首，
-    //     既没选出最优，又在首字前白等最多 1.5s（用户能感知）。
+    // 旧实现（v5.3.34）只问「谁首字最快」，于是池里一个**未声明 TOOL 能力**的模型
+    // 也能因为上次首字快而被选中；而 `ChatCompletionsAPI:1070` 只在 abilities 含 TOOL 时
+    // 才发 `tools` 参数 → 该模型拿不到工具定义，却看到历史里的工具调用痕迹 →
+    // **把工具调用模仿成正文输出**（用户实测：DeepSeek 中途路由到智谱后工具调用变成正文）。
     //
-    // 现在：`ModelLatencyStats` 记录**每次真实请求的首字耗时**（ChatService 写入），
-    // 这里只读统计、零等待；没有样本就用池首，并把连接预热丢到后台。
-    // 这与 LiteLLM 的 latency-based-routing 同一思路（用它自己的历史响应时间），
-    // 只是搬到客户端、且不引入任何服务端依赖。
-    val winner = me.rerere.rikkahub.data.ai.ModelLatencyStats.fastest(valid) ?: valid.first()
+    // 现在：先按「能否胜任本轮」过滤（工具能力 + 上下文窗口），
+    // 只在**合格集合**里按速度排序；一个都不合格就回退用户明确选的普通模型。
+    //
+    // requireTools 保守取「助手的任何工具来源非空」—— `localTools` 默认就含 TimeInfo，
+    // 所以实际上恒为 true。宁可少用快速池，也不要出一个坏的轮次。
+    val requireTools = assistant.localTools.isNotEmpty() ||
+        assistant.enableMemory ||
+        assistant.enableWebSearch
+
+    val eligible = me.rerere.rikkahub.data.ai.ModelRouting.eligibleModels(
+        models = models,
+        requireTools = requireTools,
+        estimatedTokens = estimatedTokens,
+    )
+    if (eligible.isEmpty()) {
+        runCatching {
+            android.util.Log.w(
+                "ModelRouting",
+                "池内 ${models.size} 个模型全部不合格（requireTools=$requireTools, tokens=$estimatedTokens）" +
+                    " → 回退普通模型 ${normal?.displayName}",
+            )
+        }
+        return normal
+    }
+
+    // 只有 1 个合格候选时不必比速度，直接用它
+    if (eligible.size == 1) {
+        val only = eligible.first()
+        conversationId?.let { me.rerere.rikkahub.data.ai.ModelLatencyStats.markSticky(it, only.id) }
+        return findModelById(only.id) ?: normal
+    }
+
+    // 会话粘性优先 + 速度排序（见 ModelRouting.pick 的 1.5 倍容忍度）
+    val winner = me.rerere.rikkahub.data.ai.ModelRouting.pick(eligible, conversationId)
+        ?: eligible.first()
+    conversationId?.let { me.rerere.rikkahub.data.ai.ModelLatencyStats.markSticky(it, winner.id) }
+
     // ═══ v5.3.34 ★后台把连接热起来 —— 必须真·后台 ═══
     // `ModelRacer.prefetch` 是 suspend（内含最长 5s 的并发探针）。这里如果直接调用，
-    // 它就变成**在首字前同步等待探针** —— 正是本轮要消除的那个问题，只是换了名字。
-    // 所以丢进 AppScope + Dispatchers.IO，fire-and-forget。
+    // 它就变成**在首字前同步等待探针** —— 正是要消除的那个问题，只是换了名字。
     runCatching {
         val scope = org.koin.core.context.GlobalContext.getOrNull()
             ?.getOrNull<me.rerere.rikkahub.AppScope>()
         val s = this
+        val ids = eligible.map { it.id }
         scope?.launch(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching { me.rerere.rikkahub.data.ai.ModelRacer.prefetch(s, valid) }
+            runCatching { me.rerere.rikkahub.data.ai.ModelRacer.prefetch(s, ids) }
         }
     }
-    return findModelById(winner) ?: normal
+    return findModelById(winner.id) ?: normal
 }
 
 fun Settings.findModelById(uuid: Uuid?, fallback: Uuid? = null): Model? {

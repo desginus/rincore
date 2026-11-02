@@ -108,6 +108,12 @@ fun SettingModelPoolPage(
                 }
                 items(provider.models, key = { provider.id.toString() + "_" + it.id }) { model ->
                     val checked = model.id in selected
+                    // ═══ v5.3.35 ★能力准入的可视化 ═══
+                    // 「快速/极致」池现在只接受**声明了工具能力（TOOL）**的模型：
+                    // ChatCompletionsAPI 只在 abilities 含 TOOL 时才把 tools 定义放进请求，
+                    // 否则模型拿不到工具定义、却能看到历史里的工具调用痕迹 →
+                    // **把工具调用模仿成正文吐出来**（用户实测：DeepSeek 路由到智谱后工具调用变正文）。
+                    val toolCapable = model.abilities.contains(me.rerere.ai.provider.ModelAbility.TOOL)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -126,10 +132,20 @@ fun SettingModelPoolPage(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            if (!toolCapable) {
+                                Text(
+                                    "⚠ 未声明工具能力（TOOL）· 不会进入候选 —— " +
+                                        "否则它拿不到工具定义，会把工具调用当正文输出",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
                         Spacer(Modifier.width(8.dp))
                         Checkbox(
                             checked = checked,
+                            // 不合格的模型直接不可勾选（already-selected 的仍显示勾，便于用户手动移除）
+                            enabled = toolCapable || checked,
                             onCheckedChange = { on ->
                                 save(if (on) (selected + model.id).distinct() else selected - model.id)
                             },
