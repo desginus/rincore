@@ -951,6 +951,12 @@ class ChatService(
             val session = sessionManager.getOrCreate(conversationId)
             // v3.5.59 落盘节流计时 (流式期间每 2s 一次全量写)
             var lastStreamPersistMs = 0L
+            // ═══ v5.3.34 ★真实首字耗时采样（喂给 ModelLatencyStats）═══
+            // 「快速/极致」池现在按**历史首字**选模型（不再用 /models 探针猜），
+            // 这里就是那份历史的数据来源：从发起请求到收到第一个 chunk 的墙钟时间。
+            // 不与任何选择逻辑耦合 —— 记失败也只是少一条样本。
+            val genStartedAt = System.currentTimeMillis()
+            var ttfbRecorded = false
             generationHandler.generateText(
                 settings = settings,
                 model = model,
@@ -1143,6 +1149,15 @@ class ChatService(
                     )
                 }
             }.collect { chunk ->
+                // v5.3.34：本轮第一个 chunk 即视为「首字到达」，记一条样本
+                if (!ttfbRecorded) {
+                    ttfbRecorded = true
+                    runCatching {
+                        me.rerere.rikkahub.data.ai.ModelLatencyStats.record(
+                            model.id, System.currentTimeMillis() - genStartedAt
+                        )
+                    }
+                }
                 when (chunk) {
                     is GenerationChunk.Messages -> {
                         // v5.0.76 ★结构性重写：流式写入不再"外部读快照→整对象写回"。

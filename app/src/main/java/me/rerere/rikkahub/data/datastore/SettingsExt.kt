@@ -5,6 +5,7 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.asr.ASRProviderSetting
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.tts.provider.TTSProviderSetting
+import kotlinx.coroutines.launch
 import kotlin.uuid.Uuid
 
 /** 所有提供商都还没有添加模型，视为尚未完成配置。 */
@@ -16,10 +17,18 @@ fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
  * @param fallback [uuid] 为空或已找不到对应模型时改用的模型 ID
  */
 /**
- * v5.1.4 ★主对话模型路由（用户要求「快速 / 极致」）：
- *   - 普通模式 或 池未配置 → **完全走原路径**（零行为变化）；
- *   - 快速/极致 → 让 ModelRacer 并发竞速挑最快的，失败/超时一律回退池首，再失败回退普通模型。
- * 整段被 runCatching 包住：**这个功能彻底坏掉，最坏结果也只是用普通模型**。
+ * 主对话模型路由（用户要求「快速 / 极致」）。
+ *
+ * v5.3.34 ★语义已重做：**不再用 `/models` 探针在发送前同步竞速**。
+ * 原因（代码级）：探针测的是元数据端点，不是模型推理速度；同 baseUrl 的多个模型
+ * 探针打同一个 URL，「同 provider 内选最快」不成立；且 1.5s 同步超时在移动网上
+ * 常常全部超时 → 回退池首，既没选出最优，又在首字前白等。
+ *
+ * 现在选模型依据 = `ModelLatencyStats`（**真实请求的历史首字耗时**，由 ChatService 记录）：
+ *   - 普通模式 或 池未配置 → 完全走原路径（零行为变化）；
+ *   - 有历史样本 → 选历史最快；无样本 → 池首；
+ *   - 连接预热丢进 AppScope 后台，**本轮选择与发送零等待**；
+ *   - 整个过程 runCatching：功能彻底坏掉，最坏结果也只是用普通模型。
  */
 suspend fun Settings.resolveRoutedModel(assistant: me.rerere.rikkahub.data.model.Assistant): Model? {
     val normal = findModelById(assistant.chatModelId ?: chatModelId)
@@ -29,10 +38,37 @@ suspend fun Settings.resolveRoutedModel(assistant: me.rerere.rikkahub.data.model
         else -> return normal
     }
     if (pool.isEmpty()) return normal
-    return runCatching {
-        val winner = me.rerere.rikkahub.data.ai.ModelRacer.pickFastest(this, pool, timeoutMs = 1_500L)
-        findModelById(winner ?: pool.first()) ?: normal
-    }.getOrNull() ?: normal
+    // 池内模型可能已被删除 —— 不能拿一个查不到的 id 去当选择结果
+    val valid = pool.filter { findModelById(it) != null }
+    if (valid.isEmpty()) return normal
+    if (valid.size == 1) return findModelById(valid.first()) ?: normal
+
+    // ═══ v5.3.34 ★★「选最快的模型」重做：用真实首字统计，且永不阻塞发送 ═══
+    //
+    // 旧实现在这里同步调用 `ModelRacer.pickFastest(timeoutMs = 1500)`：
+    //   · 探针打的是 `GET {baseUrl}/models`（元数据端点）——**测的不是模型速度**；
+    //   · 同一 baseUrl 的多个模型探针打同一个 URL ——「同 provider 内选最快」不成立；
+    //   · 移动网 TLS 664ms~1.9s，1.5s 同步超时 → 实测**常常全部超时** → 回退池首，
+    //     既没选出最优，又在首字前白等最多 1.5s（用户能感知）。
+    //
+    // 现在：`ModelLatencyStats` 记录**每次真实请求的首字耗时**（ChatService 写入），
+    // 这里只读统计、零等待；没有样本就用池首，并把连接预热丢到后台。
+    // 这与 LiteLLM 的 latency-based-routing 同一思路（用它自己的历史响应时间），
+    // 只是搬到客户端、且不引入任何服务端依赖。
+    val winner = me.rerere.rikkahub.data.ai.ModelLatencyStats.fastest(valid) ?: valid.first()
+    // ═══ v5.3.34 ★后台把连接热起来 —— 必须真·后台 ═══
+    // `ModelRacer.prefetch` 是 suspend（内含最长 5s 的并发探针）。这里如果直接调用，
+    // 它就变成**在首字前同步等待探针** —— 正是本轮要消除的那个问题，只是换了名字。
+    // 所以丢进 AppScope + Dispatchers.IO，fire-and-forget。
+    runCatching {
+        val scope = org.koin.core.context.GlobalContext.getOrNull()
+            ?.getOrNull<me.rerere.rikkahub.AppScope>()
+        val s = this
+        scope?.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { me.rerere.rikkahub.data.ai.ModelRacer.prefetch(s, valid) }
+        }
+    }
+    return findModelById(winner) ?: normal
 }
 
 fun Settings.findModelById(uuid: Uuid?, fallback: Uuid? = null): Model? {

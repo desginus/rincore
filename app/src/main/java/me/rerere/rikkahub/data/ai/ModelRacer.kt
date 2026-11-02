@@ -55,8 +55,11 @@ object ModelRacer {
 
     private data class CacheEntry(val key: String, val modelId: Uuid, val at: Long)
 
-    @Volatile
-    private var cache: CacheEntry? = null
+    /**
+     * v5.3.34 ★缓存按「池 key」存 Map —— 旧实现只有一个 `CacheEntry` 槽位，
+     * 「快速池」与「极致池」交替使用时必然互相覆盖 → 频繁 miss。
+     */
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, CacheEntry>()
 
     /**
      * 从候选池里挑一个**当前响应最快**的模型。
@@ -75,16 +78,18 @@ object ModelRacer {
         val candidates = ids.take(8)
         val key = candidates.joinToString(",")
         val now = System.currentTimeMillis()
-        cache?.let { entry ->
-            if (entry.key == key && now - entry.at < CACHE_TTL_MS) {
+        cache[key]?.let { entry ->
+            if (now - entry.at < CACHE_TTL_MS) {
                 Log.d(TAG, "race cache hit -> ${entry.modelId}")
                 return@runCatching entry.modelId
+            } else {
+                cache.remove(key)
             }
         }
 
         val winnerId = race(settings, candidates, timeoutMs)
         if (winnerId != null) {
-            cache = CacheEntry(key, winnerId, now)
+            cache[key] = CacheEntry(key, winnerId, now)
             Log.d(TAG, "race winner=${winnerId} (candidates=${ids.size})")
         } else {
             Log.w(TAG, "race produced no winner (candidates=${ids.size})")
@@ -133,7 +138,13 @@ object ModelRacer {
             launch(Dispatchers.IO) {
                 runCatching {
                     val model = settings.findModelById(id) ?: return@runCatching
-                    val provider = model.findProvider(settings.providers, checkOverwrite = false)
+                    // ═══ v5.3.34 ★★探针必须打「主请求真正会用的那个 host」 ═══
+                    // 旧实现传 checkOverwrite = false → 忽略 model.providerOverwrite，
+                    // 于是「配了覆盖 provider 的模型」探针打的是原 provider、主请求走覆盖后的
+                    // provider —— **测的和用的不是同一个 host**，选出来的「最快」与真实请求无关。
+                    // 主链路（ChatService / GenerationHandler）全部使用默认 checkOverwrite = true，
+                    // 这里必须一致。
+                    val provider = model.findProvider(settings.providers, checkOverwrite = true)
                         ?: return@runCatching
                     val baseUrl = when (provider) {
                         is ProviderSetting.OpenAI -> provider.baseUrl
