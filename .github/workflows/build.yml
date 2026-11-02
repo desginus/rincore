@@ -54,7 +54,7 @@ jobs:
           version: 10
 
       - name: Install web-ui deps
-        run: cd web-ui && pnpm install --frozen-lockfile 2>/dev/null || pnpm install --no-frozen-lockfile
+        run: cd web-ui && pnpm install --frozen-lockfile || pnpm install --no-frozen-lockfile
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
@@ -140,7 +140,7 @@ jobs:
 
       - name: Assemble research
         timeout-minutes: 20
-        run: ./gradlew assembleResearch --no-daemon --stacktrace --build-cache --console=plain -Dorg.gradle.workers.max=2
+        run: ./gradlew assembleResearch --no-daemon --stacktrace --build-cache --console=plain --info -Dorg.gradle.workers.max=2 -Dorg.gradle.jvmargs=-Xmx4g
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
@@ -208,7 +208,7 @@ jobs:
           version: 10
 
       - name: Install web-ui deps
-        run: cd web-ui && pnpm install --frozen-lockfile 2>/dev/null || pnpm install --no-frozen-lockfile
+        run: cd web-ui && pnpm install --frozen-lockfile || pnpm install --no-frozen-lockfile
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
