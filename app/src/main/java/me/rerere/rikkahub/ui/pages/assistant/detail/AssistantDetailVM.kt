@@ -34,6 +34,7 @@ import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.MemoryWriteResult
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
@@ -51,6 +52,7 @@ class AssistantDetailVM(
     private val skillManager: SkillManager,
     private val workspaceRepository: WorkspaceRepository,
     private val conversationRepository: ConversationRepository,
+    private val folderRepository: FolderRepository,
 ) : ViewModel() {
     private val assistantId = Uuid.parse(id)
 
@@ -157,6 +159,14 @@ class AssistantDetailVM(
         )
 
     /** v4.8.92: 对话标题（来源标签/分组头展示；已删除对话返回 null）。 */
+    /**
+     * v5.3.31 ★「项目包记忆不标是哪个包」修复：记忆条目必须能说出它属于**哪个**项目包。
+     * 返回 null 表示包已删除（UI 显示「已删除的项目包」）。
+     */
+    suspend fun folderName(folderId: String): String? = runCatching {
+        folderRepository.getFolderById(Uuid.parse(folderId))?.name
+    }.getOrNull()
+
     suspend fun conversationTitle(conversationId: String): String? = runCatching {
         conversationRepository.getConversationById(Uuid.parse(conversationId))?.title
     }.getOrNull()

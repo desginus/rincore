@@ -199,6 +199,7 @@ fun MemoryFile.toAssistantMemory(): AssistantMemory = AssistantMemory(
     folderId = folderId,
     source = source,
     path = path,
+    isLegacy = !isStructured,
 )
 
 /** v5.3.7：由正文首行生成一个可读的记忆路径（UI 新建记忆时用）。 */

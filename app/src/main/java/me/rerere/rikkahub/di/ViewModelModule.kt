@@ -65,6 +65,7 @@ val viewModelModule = module {
             skillManager = get(),
             workspaceRepository = get(),
             conversationRepository = get(),
+            folderRepository = get(),
         )
     }
     // ── 5.0.0 并树补齐（B-FIX）：上游媒体创作/记忆文件 VM（此前未注册=页面打开即崩）──

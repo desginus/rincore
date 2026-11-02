@@ -334,11 +334,18 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                 val scopedFiles = memories.filter { m ->
                     val sourceOk = if (memoryCategory == MemoryCategory.DREAM) m.isDream else !m.isDream
                     val layerOk = when (memoryScope) {
-                        // ★v5.3.19 修复「模型看得到、页面看不到」（v5.0.87 已修过一次，v5.3.7 重写时又退回）：
-                        // 旧实现「整个助手」档只显示 `layer == ASSISTANT` 的条目 —— 于是包层/对话层记忆
-                        // 在这一档**完全不可见**，而注入链照样把它们喂给模型。
-                        // 现在：这一档 = 该记忆库**全部**归属（助手级 + 项目包级 + 单对话级分组）。
-                        MemoryScope.ASSISTANT -> true
+                        // ═══ v5.3.31 ★★三档必须互斥（用户实测：「做梦整理名下的助手记忆里
+                        // 显示了大量记忆，而且看起来貌似还是单对话的」）═══
+                        //
+                        // v5.3.19 把这里写成 `ASSISTANT -> true`（= 全量视图），本意是修「模型看得到、
+                        // 页面看不到」。但那句话的真正含义是**同一档内不该再套 mountLevel 过滤**，
+                        // 而不是「助手档要把别的档的东西也盛进来」。
+                        //
+                        // 用户 v5.3.7 的定案原话：「每个小类里面还有三个不同的 tag，分别是助手级的、
+                        // 项目包级的和单对话级的」—— 三个 tag 是**互斥的记忆属性**，
+                        // 所以三个档必须各显示各的，否则「助手记忆」里混着单对话记忆，用户根本无法判断
+                        // 某条记忆到底对谁可见。
+                        MemoryScope.ASSISTANT -> m.layer == me.rerere.rikkahub.data.model.MemoryLayer.ASSISTANT
                         MemoryScope.FOLDER -> m.layer == me.rerere.rikkahub.data.model.MemoryLayer.FOLDER
                         MemoryScope.CONVERSATION -> m.layer == me.rerere.rikkahub.data.model.MemoryLayer.CONVERSATION
                     }
@@ -348,15 +355,16 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                 // v5.3.19 ★按**层级**拆分（不再按「当前档」拆分）：
                 // 助手级/项目包级 → 平铺；单对话级 → 按对话分组。
                 // 旧实现只有「单对话」档才出现分组 —— 于是「整个助手」档里对话级记忆彻底消失。
-                val scopedMemories = scopedFiles
-                    .filter { it.layer != me.rerere.rikkahub.data.model.MemoryLayer.CONVERSATION }
-                    // ★去重键用 path（唯一真键）；用 id（= path.hashCode）会在 hash 冲突时**丢条目**
-                    .map { it.toAssistantMemory() }
-                    .distinctBy { it.path }
+                // ★去重键用 path（唯一真键）；用 id（= path.hashCode）会在 hash 冲突时**丢条目**
+                val scopedAssistantMemories = scopedFiles
+                    .filter { it.layer == me.rerere.rikkahub.data.model.MemoryLayer.ASSISTANT }
+                    .map { it.toAssistantMemory() }.distinctBy { it.path }
+                val scopedFolderMemories = scopedFiles
+                    .filter { it.layer == me.rerere.rikkahub.data.model.MemoryLayer.FOLDER }
+                    .map { it.toAssistantMemory() }.distinctBy { it.path }
                 val scopedConversationMemories = scopedFiles
                     .filter { it.layer == me.rerere.rikkahub.data.model.MemoryLayer.CONVERSATION }
-                    .map { it.toAssistantMemory() }
-                    .distinctBy { it.path }
+                    .map { it.toAssistantMemory() }.distinctBy { it.path }
                 // v5.0.81 ★做梦状态卡（用户："点击做梦之后会在上面有提示、抽屉页也会出现提示，
                 // 你这个和其他的没对上"）—— 复用与设置 tab「立即整理」**同一个组件**，
                 // 状态/转圈/最近一次结果完全一致；onOrganize 分流：带对话 id = 主动做梦
@@ -375,9 +383,11 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                 }
                 run {
                     MemoryMemoriesTab(
-                        memories = scopedMemories,
+                        assistantMemories = scopedAssistantMemories,
+                        folderMemories = scopedFolderMemories,
                         conversationMemories = scopedConversationMemories,
                         loadTitle = { vm.conversationTitle(it) },
+                        loadFolderTitle = { vm.folderName(it) },
                         loadRecentConversations = { vm.recentConversations() },
                         onAddMemory = { vm.addMemory(it) },
                         onUpdateMemory = { vm.updateMemory(it) },
@@ -700,9 +710,11 @@ private fun relativeTimeOf(time: Long): String = DateUtils.getRelativeTimeSpanSt
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 private fun MemoryMemoriesTab(
-    memories: List<AssistantMemory>,
+    assistantMemories: List<AssistantMemory>,
+    folderMemories: List<AssistantMemory>,
     conversationMemories: List<AssistantMemory>,
     loadTitle: suspend (String) -> String?,
+    loadFolderTitle: suspend (String) -> String?,
     loadRecentConversations: suspend () -> List<Conversation>,
     onAddMemory: (AssistantMemory) -> Unit,
     onUpdateMemory: (AssistantMemory) -> Unit,
@@ -721,14 +733,25 @@ private fun MemoryMemoriesTab(
     var showConversationScopePicker by remember { mutableStateOf(false) }
     // 对话标题缓存（来源标签 / 分组头；已删除对话 → 显示"已删除的对话"）
     val memoryTitles by produceState<Map<String, String>>(
-        initialValue = emptyMap(), memories, conversationMemories,
+        initialValue = emptyMap(), assistantMemories, folderMemories, conversationMemories,
     ) {
         val ids = (
-            memories.mapNotNull { it.sourceConversationId } +
+            assistantMemories.mapNotNull { it.sourceConversationId } +
+                folderMemories.mapNotNull { it.sourceConversationId } +
                 conversationMemories.mapNotNull { it.conversationId }
             ).toSet()
         val map = HashMap<String, String>()
         ids.forEach { cid -> loadTitle(cid)?.let { t -> map[cid] = t } }
+        value = map
+    }
+    // v5.3.31 ★「项目包记忆不标是哪个包，你是让我去猜吗」—— 分组头必须写出包名
+    val folderTitles by produceState<Map<String, String>>(
+        initialValue = emptyMap(), folderMemories,
+    ) {
+        val map = HashMap<String, String>()
+        folderMemories.mapNotNull { it.folderId }.toSet().forEach { fid ->
+            loadFolderTitle(fid)?.let { map[fid] = it }
+        }
         value = map
     }
 
@@ -788,9 +811,23 @@ private fun MemoryMemoriesTab(
                             label = { Text("单对话") },
                         )
                     }
-                    if (memory.conversationId != null) {
+                    // ═══ v5.3.31 ★归属必须写出**具体名字** ═══
+                    // 用户原话：「项目包记忆。你不标是哪个项目包，你是要让我干什么去猜吗？」
+                    // 旧实现只在单对话时显示「仅该对话可见」，既不说哪个对话，项目包更是完全不提。
+                    run {
+                        val label = when {
+                            memory.conversationId != null ->
+                                "当前归属：仅「" +
+                                    (memory.conversationId?.let { memoryTitles[it] } ?: "已删除的对话") +
+                                    "」可见（点「助手级」可取消）"
+                            memory.folderId != null ->
+                                "当前归属：「" +
+                                    (memory.folderId?.let { folderTitles[it] } ?: "已删除的项目包") +
+                                    "」包内全部对话可见（点「助手级」可取消）"
+                            else -> "当前归属：本助手全部对话可见"
+                        }
                         Text(
-                            text = "当前归属：仅该对话可见（点「助手级」可取消）",
+                            text = label,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -995,51 +1032,85 @@ private fun MemoryMemoriesTab(
         // 它们现在本应该被合并到上面去"）。现在直接按顶部选中的范围决定视图：
         //   conversationMemories 非空 = 当前范围是「单对话记忆」→ 按归属对话分组
         //   否则 = 助手/项目包范围 → 平铺
-        if (conversationMemories.isEmpty()) {
-            memories.fastForEach { memory ->
-                key(memory.id) {
+        // ═══ v5.3.31 ★三段渲染：每一段都写清「对谁可见」═══
+        // 旧实现只有一个 if/else —— 于是「助手档」里混着包层与对话层条目，
+        // 用户看到的是一堆记忆却说不出任何一条「到底谁能看见」。
+        val dreamMark = { m: AssistantMemory -> if (m.source == "dream") "｜做梦产物" else "" }
+        // v5.3.31：旧格式条目必须显式标注 —— 否则用户会以为「模型正在用这些记忆」
+        val legacyMark = { m: AssistantMemory -> if (m.isLegacy) "｜旧格式·不注入模型" else "" }
+        val totalCount = assistantMemories.size + folderMemories.size + conversationMemories.size
+
+        // ── 1) 助手级：平铺（档位本身已经表达了归属，不再需要组头）──
+        assistantMemories.fastForEach { memory ->
+            key(memory.path ?: memory.id) {
+                MemoryItem(
+                    memory = memory,
+                    tag = buildString {
+                        append("本助手全部对话可见")
+                        append(dreamMark(memory))
+                        append(legacyMark(memory))
+                        // 助手级记忆的「来源对话」是弱信息（不参与可见性），保留但靠后
+                        memory.sourceConversationId?.let { sid ->
+                            memoryTitles[sid]?.let { append("｜来自「$it」") }
+                                ?: append("｜来自已删除的对话")
+                        }
+                    },
+                    onEditMemory = { memoryDialogState.open(it) },
+                    onDeleteMemory = { pendingDeleteMemory = it },
+                )
+            }
+        }
+
+        // ── 2) 项目包级：按项目包分组，组头 = 包名（N 条）──
+        folderMemories.groupBy { it.folderId }.forEach { (fid, list) ->
+            val name = fid?.let { folderTitles[it] } ?: "已删除的项目包"
+            Text(
+                text = "「$name」· ${list.size} 条",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+            list.fastForEach { memory ->
+                key(memory.path ?: memory.id) {
                     MemoryItem(
                         memory = memory,
-                        tag = listOfNotNull(
-                            memoryScopeHint(memory),
-                            memory.sourceConversationId?.let { sid ->
-                                memoryTitles[sid]?.let { "来自「$it」" } ?: "来自已删除的对话"
-                            },
-                        ).joinToString("｜"),
+                        tag = "仅「$name」包内对话可见" + dreamMark(memory) + legacyMark(memory),
                         onEditMemory = { memoryDialogState.open(it) },
                         onDeleteMemory = { pendingDeleteMemory = it },
                     )
                 }
             }
-        } else {
-            // 单对话记忆：按归属对话分组（组头 = 对话标题；已删除 → 明示）
-            conversationMemories.groupBy { it.conversationId }.forEach { (cid, list) ->
-                val title = cid?.let { memoryTitles[it] } ?: "已删除的对话"
-                Text(
-                    text = "$title（${list.size}）",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                )
-                list.fastForEach { memory ->
-                    key(memory.id) {
-                        MemoryItem(
-                            memory = memory,
-                            tag = "仅「$title」可见" + if (memory.source == "dream") "｜做梦产物" else "",
-                            onEditMemory = { memoryDialogState.open(it) },
-                            onDeleteMemory = { pendingDeleteMemory = it },
-                        )
-                    }
+        }
+
+        // ── 3) 单对话级：按对话分组，组头 = 对话标题（N 条）──
+        conversationMemories.groupBy { it.conversationId }.forEach { (cid, list) ->
+            val title = cid?.let { memoryTitles[it] } ?: "已删除的对话"
+            Text(
+                text = "「$title」· ${list.size} 条",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+            list.fastForEach { memory ->
+                key(memory.path ?: memory.id) {
+                    MemoryItem(
+                        memory = memory,
+                        tag = "仅「$title」可见" + dreamMark(memory) + legacyMark(memory),
+                        onEditMemory = { memoryDialogState.open(it) },
+                        onDeleteMemory = { pendingDeleteMemory = it },
+                    )
                 }
             }
-            if (conversationMemories.isEmpty()) {
-                Text(
-                    text = "还没有单对话记忆。点右上角 + 选择归属对话后创建。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                )
-            }
+        }
+
+        // ── 4) 全空态（三档都空才提示，永远不会有"看不见但存在"）──
+        if (totalCount == 0) {
+            Text(
+                text = "这个范围下还没有记忆。点右上角 + 新建，或让模型在对话中写入后再回来查看。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
         }
     }
 }
@@ -1065,91 +1136,3 @@ private fun MemoryChip(
     }
 }
 
-/** v5.0.87：条目可见范围提示（页面与模型可见性一致的直白标注） */
-private fun memoryScopeHint(m: me.rerere.rikkahub.data.model.AssistantMemory): String =
-    when {
-        m.conversationId != null -> "仅本对话可见"
-        m.folderId != null -> "项目包内可见（包内全部对话）"
-        else -> "本助手全部对话可见"
-    } + if (m.source == "dream") "｜做梦产物" else ""
-
-@Composable
-private fun MemoryItem(
-    memory: AssistantMemory,
-    tag: String? = null,
-    onEditMemory: (AssistantMemory) -> Unit,
-    onDeleteMemory: (AssistantMemory) -> Unit,
-) {
-    Card(
-        onClick = { onEditMemory(memory) },
-        modifier = Modifier.fillMaxWidth(),
-        colors = CustomColors.cardColorsOnSurfaceContainer,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = memory.content,
-                    maxLines = 5,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                // v5.0.89 ★用户定案：每条记忆必须能一眼看出「哪个区间」+「主动还是做梦」
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    MemoryChip(
-                        text = when {
-                            memory.conversationId != null -> "单对话"
-                            memory.folderId != null -> "项目包"
-                            else -> "助手级"
-                        },
-                        container = MaterialTheme.colorScheme.primaryContainer,
-                        content = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                    MemoryChip(
-                        text = if (memory.source == "dream") "做梦" else "主动",
-                        container = if (memory.source == "dream") {
-                            MaterialTheme.colorScheme.tertiaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        },
-                        content = if (memory.source == "dream") {
-                            MaterialTheme.colorScheme.onTertiaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        },
-                    )
-                    tag?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-            ItemActionMenu(
-                actions = listOf(
-                    ItemAction(
-                        text = stringResource(R.string.delete),
-                        icon = HugeIcons.Delete01,
-                        destructive = true,
-                        onClick = { onDeleteMemory(memory) },
-                    ),
-                )
-            )
-        }
-    }
-}
