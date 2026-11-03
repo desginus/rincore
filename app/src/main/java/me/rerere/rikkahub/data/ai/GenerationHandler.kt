@@ -1760,8 +1760,17 @@ class GenerationHandler(
             when {
                 prev3 == null -> CallTracer.event("CACHE", "fp3_init", "fp3=$fp3 | $desc3")
                 prev3 == fp3 -> CallTracer.event("CACHE", "fp3_stable", "fp3=$fp3 unchanged | $desc3")
-                else -> CallTracer.event("CACHE", "fp3_drift",
-                    "PRE-TAIL CONTENT CHANGED prev=$prev3 now=$fp3 | $desc3")
+                // ═══ v5.3.38 ★fp3 不再是「drift 警报」，改为如实标注 ═══
+                //
+                // 真实 trace（20261103-222246-162）：step_2~step_6 的 preTail **长度完全相同**
+                // （69 条消息 / 542793 字符）却每轮哈希都变，而同期上游缓存命中 99%
+                // —— 说明变化来自 preTail 里**每轮都会重新注入的易变字段**（系统提示中的
+                // 时间/会话上下文等），而不是对话内容真的漂移。
+                // 旧文案「PRE-TAIL CONTENT CHANGED」会让排查者以为客户端在破坏前缀（我此前就被它误导），
+                // 因此降级为 note，并明确写出「是否真的影响缓存要看 fp」。
+                else -> CallTracer.event("CACHE", "fp3_note",
+                    "pre-tail hash changed prev=$prev3 now=$fp3 — 常见于每轮重新注入的易变字段" +
+                        "(时间/会话上下文等), 长度未变时通常不影响上游前缀缓存; 判断缓存是否真失效请看 fp | $desc3")
             }
         }
 

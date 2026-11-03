@@ -214,7 +214,18 @@ object ProducedFiles {
             for (f in seq) {
                 if (out.size >= 200) break
                 if (f.isFile && f.lastModified() >= sinceMs) {
-                    val rel = f.relativeTo(base).path.replace(File.separatorChar, '/')
+                    // ═══ v5.3.38 ★产出路径必须与「模型在 proot 里看到的路径」一致 ═══
+                    //
+                    // 真实 trace 证据（20261103-222246-162）：命令是
+                    //   `cd "/workspace/KEEP-AI工作区/项目/15-霍尔效应" && python3 ...`（exit=0）
+                    // 而助手 CWD = `/workspace/KEEP-学习分区/KEEP-物理实验`；产出扫描记下的路径却是
+                    //   `/workspace/KEEP-学习分区/KEEP-物理实验/KEEP-AI工作区/项目/15-霍尔效应/...`
+                    // —— 多出一层。原因：`cd` 能成功说明 **proot 的 `/workspace` 就是 scopeRoot**
+                    // （`cwd` 参数界定了根，不是「全分区平铺」），而 `relativeTo(base)` 是相对
+                    // filesDir 根算的，于是把 scope 前缀又拼了回去。
+                    // 现在按 scopeRoot 计算相对路径 → `/workspace/KEEP-AI工作区/...`，
+                    // 与模型在 shell 里看到的完全一致（hostPath 一直是绝对路径，不受影响）。
+                    val rel = f.relativeTo(scopeRoot).path.replace(File.separatorChar, '/')
                     if (rel.isNotBlank()) {
                         // v5.0.62: 宿主绝对路径一并带出 —— 登记时直接落盘，
                         // 点开时 File(hostPath) 一次 stat 就行，不再做路径形态推断。

@@ -1286,7 +1286,48 @@ class ChatCompletionsAPI(
         return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId)
     }
 
-    private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
+    /**
+ * v5.3.38：历史图片保鲜期。
+ *
+ * 保留**最近 [KEEP_RECENT_IMAGE_MESSAGES] 条带图消息**的图片为真实多模态内容；
+ * 更早的降级为一行文本占位。历史图片总数 ≤ [MAX_HISTORY_IMAGE_MESSAGES] 时完全不处理。
+ *
+ * 为什么必须「从末尾往前数」而不是「按轮次」：消息数只会增长，所以这个窗口是**单调推进**的 ——
+ * 某张图被降级后不会再变回图片，prompt 前缀因此保持稳定（否则每轮换一批图反而更糟）。
+ */
+private const val KEEP_RECENT_IMAGE_MESSAGES = 3
+private const val MAX_HISTORY_IMAGE_MESSAGES = 6
+
+private fun pruneStaleImages(messages: List<UIMessage>): List<UIMessage> {
+    val hasImage = BooleanArray(messages.size)
+    var total = 0
+    for (i in messages.indices) {
+        val n = messages[i].parts.count { it is UIMessagePart.Image }
+        if (n > 0) { hasImage[i] = true; total += n }
+    }
+    if (total <= MAX_HISTORY_IMAGE_MESSAGES) return messages
+
+    val keep = BooleanArray(messages.size)
+    var kept = 0
+    for (i in messages.indices.reversed()) {
+        if (!hasImage[i]) continue
+        if (kept < KEEP_RECENT_IMAGE_MESSAGES) { keep[i] = true; kept++ }
+    }
+
+    return messages.mapIndexed { i, m ->
+        if (keep[i] || !hasImage[i]) m
+        else m.copy(
+            parts = m.parts.map { part ->
+                if (part is UIMessagePart.Image) {
+                    val name = part.url.substringAfterLast('/').substringBefore('?').ifBlank { "image" }
+                    UIMessagePart.Text("[图片 $name — 已在前文读取，内容仍然适用]")
+                } else part
+            }
+        )
+    }
+}
+
+private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
         add(buildJsonObject {
             put("role", JsonPrimitive(message.role.name.lowercase()))
             if (message.parts.isOnlyTextPart()) {
@@ -1332,7 +1373,20 @@ class ChatCompletionsAPI(
         includeHistoryReasoning: Boolean = true,
 
     ) = buildJsonArray {
-        val filteredMessages = messages.filter { it.isValidToUpload() }
+        // ═══ v5.3.38 ★★历史图片保鲜期（用户实测：中期缓存命中率 7%）═══
+        //
+        // 真实 trace 数据（20261103-222246-162，7 轮、246 秒）显示出极其清晰的规律：
+        //   前一轮只有 shell          → 缓存命中 99%（cached 286208 / 289664 / 292096 / 293120）
+        //   前一轮有 read_image ×2    → 缓存命中  **7%**（cached 固定 22528，两次完全相同）
+        // 22528 tokens 正是「图片之前」的 system + tools + 首条消息；同一张图**在下一轮**却能 99% 命中。
+        // 结论：新出现的图片首次 token 化与上游缓存中的表示不一致 → 该位置之后整段 miss
+        //       （与客户端自己打的 `CACHE/gateway_miss — 客户端前缀无漂移` 判断一致）。
+        //
+        // 这一条不是网关 bug，而是「每次请求都把**全部历史图片**重新编码进 prompt」的必然代价：
+        // 历史图片越多，miss 掉的那一段就越长（本次 prompt 已到 289776，光两张图就约 60K tokens）。
+        // 所以在客户端侧做一次**稳定单向**的降级：只保留最近若干张图片为真实多模态内容，
+        // 更早的替换为一行文本占位。降级一旦发生就不会回退，前缀仍然单调稳定。
+        val filteredMessages = pruneStaleImages(messages.filter { it.isValidToUpload() })
 
         filteredMessages.forEach { message ->
             if (message.role == MessageRole.ASSISTANT) {

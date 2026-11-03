@@ -928,8 +928,13 @@ private fun createJobTool(
                                 "note",
                                 "Durable job — keeps running after this call. Check with workspace_job {action:status, job_id}. " +
                                     "PATH SEMANTICS (identical in workspace_shell and workspace_job): /workspace is the " +
-                                    "WORKSPACE FILES ROOT — all partitions flat; `cwd` only sets the process working directory " +
-                                    "(current: '$cwd') and does NOT re-scope /workspace. File tools resolve /workspace against " +
+                                    // v5.3.38：删掉「does NOT re-scope」这条绝对断言 —— 真实 trace 里模型
+                                    // `cd \"/workspace/<子目录>\"` 能成功，说明该 shell 的 /workspace 根
+                                    // 与助手 CWD 有关，而旧文案坚称「全分区平铺」。两种说法至少一个错，
+                                    // 因此改为「以 pwd 为准 + 给出自检命令」，不再让模型基于错误前提推理。
+                                    "the workspace root **as this shell defines it** (current cwd: '$cwd'). " +
+                                    "Do not assume where /workspace points — run `pwd; ls /workspace` once if unsure. " +
+                                    "File tools resolve /workspace against " +
                                     "the CURRENT CWD instead, so address files as <your path> or /workspace/<assistantCwd>/<your path>."
                             )
                         }.toString()
@@ -1046,8 +1051,9 @@ private fun createShellTool(
         // ═══ v5.3.30 ★P0-1（外部审计）：shell 与 job 的 /workspace 语义必须写明，且两者用同一句话 ═══
         // 审计原文：job 说 "all partitions flat"、shell 说 "WORKSPACE ROOT"，
         // 读者会以为两者不同，直接导致一次误诊（实测两者行为本来就一致）。
-        append("PATH SEMANTICS (identical in workspace_shell and workspace_job): /workspace is the WORKSPACE FILES ROOT — all partitions flat. ")
-        append("The `cwd` parameter only sets the process working directory; it does NOT re-scope /workspace. ")
+        append("PATH SEMANTICS (identical in workspace_shell and workspace_job): /workspace is the workspace root **as the shell defines it**. ")
+        append("Do NOT assume its depth — run `pwd; ls /workspace` once before building absolute paths, ")
+        append("because the starting `cwd` and the shell root may differ from what you expect. ")
         append("File tools (workspace_read_file / write_file / edit_file / glob / grep) are DIFFERENT: they resolve /workspace against the CURRENT CWD, ")
         append("so a file created here at /workspace/<cwd>/x.txt is addressed by them as x.txt (or /workspace/x.txt). ")
         append("If a path written here is not found there, pass the CWD-relative form or use absolute /workspace/<cwd>/... here. ")
@@ -1067,7 +1073,7 @@ private fun createShellTool(
                         "description",
                         if (!defaultCwd.isNullOrBlank()) {
                             "Working directory relative to the workspace files root (/workspace). Defaults to '$defaultCwd' (= /workspace/$defaultCwd). " +
-                                "IMPORTANT: in this shell, /workspace is the WORKSPACE ROOT; file tools (read_file/write_file/glob) resolve /workspace against the CURRENT CWD instead — if a file you create here is not found by those tools, pass the CWD-relative path or copy it under /workspace/$defaultCwd/."
+                                "IMPORTANT: file tools (read_file/write_file/glob/grep) resolve /workspace against the CURRENT CWD, while this shell may resolve it elsewhere — if a file you create here is not found by those tools, pass the CWD-relative path, or run `pwd` first and copy it under /workspace/ explicitly."
                         } else {
                             "Working directory relative to the workspace files root. Defaults to root."
                         }
