@@ -1028,6 +1028,17 @@ private fun createShellTool(
         append("If a command is killed by timeout, RE-RUN IT AS A workspace_job — do not retry in shell. ")
         append("SPEED: pass the SAME `session` name to a sequence of commands to reuse one live sandbox — ")
         append("each new call otherwise pays the full proot/rootfs startup again, which dominates short commands and is why render/convert steps feel very slow. ")
+        // ═══ v5.3.37 ★★「文件操作特别久」的真因：用错了工具 ═══
+        // 宿主侧专用工具（read_file / write_file / edit_file / glob / grep）**完全不进 proot**，
+        // 直接读宿主文件系统 → 毫秒级；而 shell 里的 cat/ls/find/cp/mv 每次都要付
+        // 1~3 秒的 proot/rootfs 启动。模型若用 shell 做文件操作，就会觉得「文件操作特别久」。
+        append("FILES: for reading / writing / editing / searching files, ALWAYS prefer the dedicated tools ")
+        append("(workspace_read_file, workspace_write_file, workspace_edit_file, workspace_glob, workspace_grep) — ")
+        append("they run on the host filesystem and return in milliseconds, while the SAME operation via shell ")
+        append("(cat/ls/find/cp/mv/grep) pays 1-3s of proot startup EVERY call. ")
+        append("Use shell only when you must run a program/script/compiler. ")
+        append("If you truly need many shell file operations, either pass one `session` name to reuse the sandbox, ")
+        append("or do it with a single command (e.g. `cp a b && mv b c`) instead of several calls. ")
         append("NOT AVAILABLE in this rootfs (do not try): LibreOffice/soffice (proot lacks standard /proc, aborts) — use `officecli view <file> screenshot` for document preview; ")
         append("Playwright/Chromium may crash on some environments — retry once with --no-sandbox, else switch to weasyprint/pdftoppm. ")
         append("stderr noise like 'onnxruntime ... GPU device discovery failed' is harmless and is filtered from the result. ")

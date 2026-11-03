@@ -1106,7 +1106,19 @@ private fun TopBar(
                             modifier = Modifier.weight(1f, fill = false),
                         )
                         // v4.8.147 (用户定版): 对话归属项目包时, 标题后加小便签胶囊 (大圆角)
-                        ConversationFolderPill(folderId = conversation.folderId)
+                        //
+                        // ═══ v5.3.37 ★修「进入项目包后标题栏没有标签」═══
+                        // 旧实现只看 `conversation.folderId` —— 而新对话（还没产生任何消息、
+                        // 甚至还没落库）的 folderId **本来就是 null**，于是：
+                        //   从抽屉进入某个项目包 → 标题栏空空 → 用户以为没进对包；
+                        //   发出第一条消息后对话才落库并带上 folderId → 标签才出现。
+                        // 现在：**新对话**回落到「当前进入的项目包」（ProjectPackSelection，
+                        // 由 ChatDrawerVM.selectFolder 同步写入，进「聊天」时会被置 null），
+                        // 已有对话永远按自身归属显示（不受残留选区影响）。
+                        val activePackId by ProjectPackSelection.selectedFolderId.collectAsStateWithLifecycle()
+                        val pillFolderId = conversation.folderId
+                            ?: activePackId.takeIf { conversation.messageNodes.isEmpty() }
+                        ConversationFolderPill(folderId = pillFolderId)
                     }
                     if (model != null && provider != null) {
                         Text(

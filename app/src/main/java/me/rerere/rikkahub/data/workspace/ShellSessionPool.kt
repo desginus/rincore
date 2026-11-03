@@ -165,6 +165,17 @@ class ShellSessionPool(private val manager: WorkspaceManager) {
         var timedOut = false
 
         try {
+            // ═══ v5.3.37 ★常驻会话必须每条命令重置工作目录 ═══
+            // 旧实现只在 ensureSession 建会话时用了一次 cwd，之后直接写命令 ——
+            // 于是模型一旦在某条命令里 `cd /tmp`（或 `cd 某目录`），
+            // **后面所有命令都在那个目录执行**，而调用方传的 cwd 被完全忽略：
+            // 表现就是「文件操作跑到了别的地方」「明明指定了目录却找不到文件」，
+            // 而这种错位不会报错，只会让模型反复重试 → 用户感知为「文件操作特别久」。
+            // 现在每条命令前显式 cd 到目标目录（失败回退 /workspace，不中断命令）。
+            val scope = cwd.trim().trim('/').removePrefix("workspace/").removePrefix("workspace")
+            val cdTarget = if (scope.isEmpty()) "/workspace" else "/workspace/$scope"
+            session.stdin.write("cd \"$cdTarget\" 2>/dev/null || cd /workspace")
+            session.stdin.newLine()
             session.stdin.write(command)
             session.stdin.newLine()
             // 单独一行输出「标记 + 上一条命令的退出码」
