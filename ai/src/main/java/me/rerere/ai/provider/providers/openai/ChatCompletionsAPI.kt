@@ -1295,8 +1295,10 @@ class ChatCompletionsAPI(
  * 为什么必须「从末尾往前数」而不是「按轮次」：消息数只会增长，所以这个窗口是**单调推进**的 ——
  * 某张图被降级后不会再变回图片，prompt 前缀因此保持稳定（否则每轮换一批图反而更糟）。
  */
-private const val KEEP_RECENT_IMAGE_MESSAGES = 3
-private const val MAX_HISTORY_IMAGE_MESSAGES = 6
+// 注意：这两个常量与 pruneStaleImages 一起位于 ChatCompletionsAPI 类体内
+// （const val 只允许顶层/object/companion，类内成员必须用 val）。
+private val KEEP_RECENT_IMAGE_MESSAGES = 3
+private val MAX_HISTORY_IMAGE_MESSAGES = 6
 
 private fun pruneStaleImages(messages: List<UIMessage>): List<UIMessage> {
     val hasImage = BooleanArray(messages.size)
