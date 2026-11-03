@@ -143,12 +143,26 @@ class MemoryConsolidator(
         if (assistants.isEmpty()) return null
         val assistantIds = assistants.map { it.id }.toSet()
 
-        val batches = conversationIds
+        // ═══ v5.3.36 ★手动整理时若没给对话集，自动取最近一个有消息的对话 ═══
+        // 旧行为：`organize()` 传 `conversationIds = pending 的 keys`，pending 为空就是空集 →
+        // `batches` 空 → 记忆库也空时直接 return null，用户点按钮毫无反应。
+        // 现在：手动（fullReview）且没指定对话时，取该助手最近活跃的 1 个对话作为素材。
+        val effectiveConversationIds = if (conversationIds.isEmpty() && fullReview) {
+            runCatching {
+                val firstAssistant = assistants.first()
+                conversationRepo.getRecentConversations(firstAssistant.id, limit = 1)
+                    .map { it.id }
+                    .toSet()
+            }.getOrDefault(emptySet())
+        } else conversationIds
+
+        val batches = effectiveConversationIds
             .mapNotNull { conversationRepo.getConversationById(it) }
             .filter { it.assistantId in assistantIds }
             .sortedByDescending { it.updateAt }
             .mapNotNull { conversation ->
-                val pending = loadPendingTurns(conversation)
+                // 手动全量 → 强制重整理最近 N 轮（不看增量游标）
+                val pending = loadPendingTurns(conversation, forceRecent = fullReview)
                 if (pending.turns.isEmpty()) null else Batch(conversation, pending)
             }
             .withinTranscriptBudget()
@@ -278,11 +292,30 @@ class MemoryConsolidator(
         )
     }
 
-    private suspend fun loadPendingTurns(conversation: Conversation): PendingMemoryTurns {
+    private suspend fun loadPendingTurns(
+        conversation: Conversation,
+        // ═══ v5.3.36 ★★用户要的妥协：手动「立即做梦」必须真的整理 ═══
+        //
+        // 旧行为：`consolidatedAt` 是增量游标，一旦推进到最新，`pendingMemoryTurns`
+        // 就返回空 → `batches` 空 → 手动点「立即做梦」**什么都不做**（用户觉得"无法触发"）。
+        // 而 `initialMemoryProgress` 又只取最近 MAX_TURNS_PER_CONVERSATION 轮 ——
+        // 所以"从头整理"既没必要也吃 token。
+        //
+        // 现在：`forceRecent = true`（= 手动全量整理）时**跳过游标**，
+        // 直接以「最近 N 轮的起点」为素材，等于**重新整理最近这一段**：
+        //   · 没有新内容的对话也能被手动整理；
+        //   · 素材量有上限（与自动整理同口径），不会把整段历史塞进模型；
+        //   · 产物按主题覆盖（memory_write 幂等），重复整理不会产生重复条目。
+        forceRecent: Boolean = false,
+    ): PendingMemoryTurns {
         val messages = conversation.dialogueMessages()
-        val consolidatedAt = consolidationDao.getConsolidatedAt(conversation.id.toString())
+        val stored = consolidationDao.getConsolidatedAt(conversation.id.toString())
+        val consolidatedAt = when {
+            forceRecent -> initialMemoryProgress(messages)
+            stored != null -> stored
             // 第一次见到这个对话：定下从哪里开始整理并记下来，这之后的轮次一轮都不会被跳过
-            ?: initialMemoryProgress(messages).also { advance(conversation.id, it) }
+            else -> initialMemoryProgress(messages).also { advance(conversation.id, it) }
+        }
         val pending = pendingMemoryTurns(
             messages = messages,
             updatedAt = conversation.updateAt.toEpochMilli(),

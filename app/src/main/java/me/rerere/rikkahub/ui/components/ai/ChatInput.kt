@@ -5,6 +5,7 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.window.Popup
 import me.rerere.hugeicons.stroke.Package
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -328,7 +329,9 @@ fun ChatInput(
                                 .horizontalScroll(rememberScrollState()),
                             // v5.0.24 用户实证：加号偏上 = 本行默认顶部对齐 + 30dp vs 36dp 高度差
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            // v5.3.36：2dp → 0dp。两个 36dp 圆形按钮之间的 2dp 会让第二个圆
+                            // （加号）整体右移 2dp，与左缘的视觉对齐关系被破坏。
+                            horizontalArrangement = Arrangement.spacedBy(0.dp)
                         ) {
                             // Model Picker
                             ModelSelectorButton(
@@ -343,9 +346,14 @@ fun ChatInput(
                             ActionIconButton(
                                 onClick = { showPlusMenu = true }
                             ) {
+                                // v5.3.36 ★加号视觉偏右的根因：`Add01` 用默认尺寸（24dp）落在
+                                // 36dp 圆形 Surface 里时，字形本身的左右留白不对称，右侧看起来更空、
+                                // 视觉重心偏左 —— 用户感知是「加号没对齐」。显式 20dp 让它落在圆心，
+                                // 与左侧 ModelSelectorButton（同为 36dp 圆形、图标 20dp）视觉一致。
                                 Icon(
                                     imageVector = HugeIcons.Add01,
-                                    contentDescription = "AI 交互"
+                                    contentDescription = "AI 交互",
+                                    modifier = Modifier.size(20.dp),
                                 )
                             }
                             if (showPlusMenu) {
@@ -356,12 +364,29 @@ fun ChatInput(
                                     onDismissRequest = { showPlusMenu = false },
                                     properties = PopupProperties(focusable = true),
                                 ) {
-                                    PlusActionMenu(
-                                        onTakePic = onTakePic,
-                                        onPickImage = onPickImage,
-                                        onPickFile = onPickFile,
-                                        onDismiss = { showPlusMenu = false },
-                                    )
+                                    // v5.3.36 ★呼出动画：旧实现是「瞬间出现」，没有任何过渡，
+                                    // 观感生硬。这里做成 140~180ms 的淡入 + 从 0.90 放大，
+                                    // transformOrigin 锚在**左下角**（加号所在的角落），
+                                    // 视觉上就是从加号里「长出来」，而不是从天而降。
+                                    // 只用入场动画：退场靠 if 直接移除（Popup 常驻会抢焦点，不可取）。
+                                    var menuAppeared by remember { mutableStateOf(false) }
+                                    LaunchedEffect(Unit) { menuAppeared = true }
+                                    AnimatedVisibility(
+                                        visible = menuAppeared,
+                                        enter = fadeIn(animationSpec = tween(140)) +
+                                            scaleIn(
+                                                animationSpec = tween(180),
+                                                initialScale = 0.90f,
+                                                transformOrigin = TransformOrigin(0f, 1f),
+                                            ),
+                                    ) {
+                                        PlusActionMenu(
+                                            onTakePic = onTakePic,
+                                            onPickImage = onPickImage,
+                                            onPickFile = onPickFile,
+                                            onDismiss = { showPlusMenu = false },
+                                        )
+                                    }
                                 }
                             }
 

@@ -10,6 +10,8 @@ import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Settings03
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -198,24 +200,73 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                     // v5.0.80 主动做梦（用户指令："新增一个主动做梦记忆，记忆范围=当该功能被
                     // 触发的时候，开始记忆当前对话的内容"）：从工具箱进入时带当前对话 id，
                     // 点按钮立即对该对话做一次全量做梦整理（产物落为做梦记忆）。
-                    if (memorySection == MemorySection.MEMORY && conversationId != null) {
+                    // ═══ v5.3.36 ★★「立即做梦」重做（用户：无法触发主动整理）═══
+                    //
+                    // 旧实现的三个问题（代码级）：
+                    //  ① 条件里带 `conversationId != null` —— 从「设置 → 助手 → 记忆」进来时
+                    //     它是 null → **按钮根本不显示**（用户以为功能不存在）；
+                    //  ② 即便显示了，也只能整理**当前对话**，无法整理别的对话；
+                    //  ③ 点了之后 `loadPendingTurns` 是增量游标 —— 该对话整理过一次后
+                    //     `pending` 永为空 → worker 直接 return null → **界面毫无反应**。
+                    //
+                    // 现在：始终显示；点击弹范围选择；三个范围都走「手动全量」语义
+                    // （`MemoryConsolidator.loadPendingTurns(forceRecent = fullReview)`），
+                    // 强制重整理最近 N 轮，不受增量游标限制。
+                    if (memorySection == MemorySection.MEMORY) {
                         val dreaming = vm.memoryConsolidation.collectAsStateWithLifecycle().value.running
-                        // v5.0.81 点击即刻 toast（stringResource 须在组合态先取出，onClick 里不可调）
                         val toastStart = stringResource(R.string.memory_dreaming)
                         val toastDisabled = stringResource(R.string.memory_dream_require_enabled)
+                        val showDreamScope = remember { mutableStateOf(false) }
                         IconButton(
-                            onClick = {
-                                if (vm.triggerDreamConsolidation(conversationId)) {
-                                    toaster.show(toastStart, type = com.dokar.sonner.ToastType.Info)
-                                } else {
-                                    toaster.show(toastDisabled, type = com.dokar.sonner.ToastType.Error)
-                                }
-                            },
+                            onClick = { showDreamScope.value = true },
                             enabled = !dreaming,
                         ) {
                             Icon(
                                 imageVector = HugeIcons.AiMagic,
                                 contentDescription = stringResource(R.string.assistant_page_memory_dream_now),
+                            )
+                        }
+                        if (showDreamScope.value) {
+                            val infoType = com.dokar.sonner.ToastType.Info
+                            val errorType = com.dokar.sonner.ToastType.Error
+                            AlertDialog(
+                                onDismissRequest = { showDreamScope.value = false },
+                                title = { Text(stringResource(R.string.assistant_page_memory_dream_now)) },
+                                text = {
+                                    Column {
+                                        Text(
+                                            "选择整理范围。手动整理会强制重整理最近的内容，" +
+                                                "不受「已经整理过」限制。",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+                                        if (conversationId != null) {
+                                            TextButton(onClick = {
+                                                showDreamScope.value = false
+                                                if (vm.organizeNow(2, conversationId)) {
+                                                    toaster.show(toastStart, type = infoType)
+                                                } else toaster.show(toastDisabled, type = errorType)
+                                            }) { Text("当前对话") }
+                                        }
+                                        TextButton(onClick = {
+                                            showDreamScope.value = false
+                                            if (vm.organizeNow(1)) {
+                                                toaster.show(toastStart, type = infoType)
+                                            } else toaster.show(toastDisabled, type = errorType)
+                                        }) { Text("最近的对话") }
+                                        TextButton(onClick = {
+                                            showDreamScope.value = false
+                                            if (vm.organizeNow(0)) {
+                                                toaster.show(toastStart, type = infoType)
+                                            } else toaster.show(toastDisabled, type = errorType)
+                                        }) { Text("全部对话") }
+                                    }
+                                },
+                                confirmButton = {},
+                                dismissButton = {
+                                    TextButton(onClick = { showDreamScope.value = false }) { Text("取消") }
+                                },
                             )
                         }
                     }

@@ -29,5 +29,10 @@ object AppDispatchers {
      *  v5.0.79：8 → 12 —— 工具层并行度 MAX_PARALLEL_TOOL_EXECUTIONS=6，每条 shell 最长
      *  阻塞 660s，8 个槽位极易被长命令占满导致 PTY/MCP stdio 排队；12 给短驻留
      *  连接留余量（limitedParallelism 只是 IO 池的调度视图，无线程新增成本）。 */
-    val Sandbox: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(12)
+    // v5.3.36 ★12 → 20：多对话同时进行时「偶尔卡住」的一个结构性成因 ——
+    // 每个对话的工具批次各自持 `Semaphore(MAX_PARALLEL_TOOL_EXECUTIONS = 6)`，
+    // 而 shell 最长阻塞 660s。两个对话并发就是 12 条长命令，**正好占满 12 个槽位** →
+    // 第三个对话（或同一对话的 MCP/PTY/job 查询）只能排队 → 用户看到「卡住」。
+    // limitedParallelism 只是 IO 池的调度视图（不新增线程），加余量零成本。
+    val Sandbox: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(20)
 }

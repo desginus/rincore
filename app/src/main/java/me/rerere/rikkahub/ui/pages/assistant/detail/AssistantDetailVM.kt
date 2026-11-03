@@ -381,6 +381,52 @@ class AssistantDetailVM(
         memoryConsolidationScheduler.organize(memoryId)
     }
 
+    /**
+     * v5.3.36 ★手动「立即做梦」—— 带范围，且**不受增量游标限制**。
+     *
+     * 用户实测的痛点：「无法触发它主动去整理信息」。代码级原因是三重叠加：
+     *  ① 记忆页顶栏的做梦按钮**只在从工具箱进入（conversationId != null）时显示**，
+     *     从「设置 → 助手 → 记忆」进来根本没有入口；
+     *  ② 那个按钮只整理**当前对话**，没有"整理别的对话"的可能；
+     *  ③ 即使点到了，`loadPendingTurns` 是增量游标 —— 对话整理过一次之后
+     *     `pending` 永远是空集 → `batches` 空 → worker 直接 return null → **毫无反应**。
+     *
+     * 本方法解决 ①②，③ 由 `MemoryConsolidator.loadPendingTurns(forceRecent = fullReview)` 解决
+     * （手动触发时强制重整理最近 N 轮）。
+     *
+     * @param scope 0=全部对话（记忆库级）/ 1=最近有内容的对话 / 2=指定对话
+     * @return false 表示助手未开启记忆（调用方 toast 提示）
+     */
+    fun organizeNow(scope: Int, conversationId: String? = null): Boolean {
+        val current = assistant.value
+        if (!current.enableMemory) {
+            Logging.log(TAG, "organizeNow: 助手未开启记忆")
+            return false
+        }
+        val mid = current.memoryId
+        when (scope) {
+            2 -> {
+                val cid = conversationId ?: return false
+                memoryConsolidationScheduler.organizeConversation(mid, Uuid.parse(cid))
+            }
+            1 -> {
+                // 最近对话：取该助手最近活跃的一条，交给「指定对话」路径（含强制重整理）
+                viewModelScope.launch {
+                    runCatching {
+                        val recent = conversationRepository
+                            .getRecentConversations(current.id, limit = 1)
+                            .firstOrNull()
+                        if (recent != null) {
+                            memoryConsolidationScheduler.organizeConversation(mid, recent.id)
+                        }
+                    }.onFailure { Logging.log(TAG, "organizeNow recent: $it") }
+                }
+            }
+            else -> memoryConsolidationScheduler.organize(mid)
+        }
+        return true
+    }
+
     // v5.3.19 ★删除 `deleteMemory(memory: MemoryFile)` 重载（全库 0 调用点）。
     // 它走的是**物理删除**（DELETE FROM），与 UI 另一条 `deleteMemory(AssistantMemory)`
     // 的**软删**（invalidated_at）形成第二套删除语义 —— 正是「两套方案」在 UI 层的残留。
