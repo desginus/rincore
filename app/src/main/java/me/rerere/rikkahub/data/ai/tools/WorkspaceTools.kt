@@ -34,6 +34,10 @@ import org.koin.java.KoinJavaComponent.getKoin
 import java.io.ByteArrayOutputStream
 
 private const val SHELL_TIMEOUT_MAX_SECONDS = 600L
+// ═══ v5.3.42 沙箱一体化 ★★ 不传 session 时默认复用的常驻会话名 ═══
+// 每个工作区各自一个（key = "$workspaceId:$sessionKey"，见 WorkspaceRepository），
+// 不同工作区绝不共用进程。
+private const val DEFAULT_SHELL_SESSION = "main"
 private const val MAX_READ_FILE_BYTES = 8L * 1024 * 1024
 
 // v4.6.1 编程能力增强: read 分页 / search 上限 (对齐业界编程 Agent 设计)
@@ -1027,12 +1031,17 @@ private fun createShellTool(
             append("Defaults to '$defaultCwd' — i.e. the absolute sandbox path /workspace/$defaultCwd. ")
         }
         append("Requires Rootfs to be installed and ready. ")
-        append("Each call runs in a fresh isolated proot instance — processes started here die when the call ends; for long tasks (minutes) use workspace_job (durable background jobs) instead. ")
+        // ═══ v5.3.42 ★★默认行为改变：从「每条命令一个新 proot」改为「默认复用同一个常驻会话」═══
+        // 旧行为每条命令付 1~3s 的 proot/rootfs 启动开销，是「沙箱慢得惊人」的第一大来源，
+        // 也是模型宁愿用 shell 做文件操作（再付一次启动）的诱因。
+        append("Calls share ONE live sandbox by default — the same proot+bash is reused, so a follow-up command costs only its own runtime instead of paying 1-3s of startup again. ")
+        append("Processes you start still die when their command returns; for long tasks (minutes) use workspace_job (durable background jobs). ")
+        append("Pass `session`=\"none\" when you need a pristine one-shot environment (isolation over speed). ")
         // v5.0.85（用户 C1/C5）：超时口径与固有不可用清单内置到工具说明，避免每次重新试错。
         append("TIMEOUT: default 120s, hard cap 660s (pass `timeout` in ms to raise; the tool layer kills it at the cap). ")
         append("If a command is killed by timeout, RE-RUN IT AS A workspace_job — do not retry in shell. ")
-        append("SPEED: pass the SAME `session` name to a sequence of commands to reuse one live sandbox — ")
-        append("each new call otherwise pays the full proot/rootfs startup again, which dominates short commands and is why render/convert steps feel very slow. ")
+        append("SPEED: the sandbox is already reused across calls. Pick a DIFFERENT `session` name only to keep two independent shells alive at once ")
+        append("(e.g. one parked in a build directory while another runs something else). Commands in the SAME session run one at a time, in order. ")
         // ═══ v5.3.37 ★★「文件操作特别久」的真因：用错了工具 ═══
         // 宿主侧专用工具（read_file / write_file / edit_file / glob / grep）**完全不进 proot**，
         // 直接读宿主文件系统 → 毫秒级；而 shell 里的 cat/ls/find/cp/mv 每次都要付
@@ -1047,6 +1056,12 @@ private fun createShellTool(
         append("NOT AVAILABLE in this rootfs (do not try): LibreOffice/soffice (proot lacks standard /proc, aborts) — use `officecli view <file> screenshot` for document preview; ")
         append("Playwright/Chromium may crash on some environments — retry once with --no-sandbox, else switch to weasyprint/pdftoppm. ")
         append("stderr noise like 'onnxruntime ... GPU device discovery failed' is harmless and is filtered from the result. ")
+        // ═══ v5.3.42 ★沙箱能力自检：一条命令看清这个 Linux 环境里到底有什么 ═══
+        // 为什么内置：模型反复试探「有没有装 X」既慢又容易得出错误结论；
+        // 用户排查「为什么某命令跑不了」时也需要同一份事实。
+        append("ENVIRONMENT: it is a real Linux userspace (Ubuntu 24.04, apt + gcc + make + python3 + node available). ")
+        append("Run this once instead of probing tool-by-tool: ")
+        append("`python3 -V; node -v; gcc --version|head -1; git --version; fc-list :lang=zh|wc -l; apt-get --version|head -1`. ")
         // v5.0.89（用户报工作区凭空多出 RENDER / RIN-GLBS 目录）：约定临时产物位置
         // ═══ v5.3.30 ★P0-1（外部审计）：shell 与 job 的 /workspace 语义必须写明，且两者用同一句话 ═══
         // 审计原文：job 说 "all partitions flat"、shell 说 "WORKSPACE ROOT"，
@@ -1086,16 +1101,16 @@ private fun createShellTool(
                         "Command timeout in seconds. Defaults to 120, max 600. Long tasks: use workspace_job instead."
                     )
                 })
-                // v5.3.27 ★会话复用：连续多条命令共享同一个常驻沙箱，省掉每条命令的 proot 启动开销
+                // ═══ v5.3.42 ★会话复用改为默认 ═══
                 put("session", buildJsonObject {
                     put("type", "string")
                     put(
                         "description",
-                        "Optional session name. Calls sharing the same name reuse ONE live sandbox " +
-                            "(a single proot + bash) instead of starting a new one per call — much faster " +
-                            "when running several commands in a row (render/convert pipelines, build steps). " +
-                            "The session is closed after 5 minutes of idleness. Omit it to keep the original " +
-                            "one-shot behaviour (fresh isolated proot per call)."
+                        "Optional session name. Defaults to \"$DEFAULT_SHELL_SESSION\" — consecutive calls reuse " +
+                            "ONE live sandbox (single proot + bash), so only the first pays startup cost. " +
+                            "Use another name to keep a separate shell alive in parallel; " +
+                            "pass \"none\" for a pristine one-shot proot (isolation over speed). " +
+                            "A session closes after 5 minutes of idleness and is recreated automatically if it dies."
                     )
                 })
             },
@@ -1113,8 +1128,19 @@ private fun createShellTool(
             ?.coerceIn(1L, SHELL_TIMEOUT_MAX_SECONDS)
             ?.times(1_000L)
             ?: WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS
-        // v5.3.27: 传了 session 就走常驻会话（复用 proot，省启动开销）；不传=原行为
-        val sessionKey = params.string("session")?.trim()?.takeIf { it.isNotEmpty() }
+        // ═══ v5.3.42 ★★沙箱一体化：默认复用常驻会话（v5.3.27 引入但当时是 opt-in）═══
+        // 复用的安全性已逐条补齐，不是无脑共享：
+        //   · key = "$workspaceId:$sessionKey"（WorkspaceRepository:675）→ 不同工作区绝不串
+        //   · 每条命令前重设 cd（v5.3.37）→ cd 不会跨命令污染
+        //   · ensureSession 检测 process.isAlive / readerAlive，死了自动重建（不是永久坏）
+        //   · 闲置 5 分钟自动关闭；会话起不来自动回退一次性（ShellSessionPool.run 内建）
+        // 逃生口：显式 "none" 或空串 → 保持旧的一次性隔离行为。
+        val rawSession = params.string("session")?.trim()
+        val sessionKey = when {
+            rawSession == null -> DEFAULT_SHELL_SESSION
+            rawSession.isEmpty() || rawSession.equals("none", ignoreCase = true) -> null
+            else -> rawSession
+        }
         val rawResult = if (sessionKey != null) {
             workspaceRepository.executeCommandInSession(
                 id = workspaceId,
