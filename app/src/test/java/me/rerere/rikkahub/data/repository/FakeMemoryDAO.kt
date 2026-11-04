@@ -187,16 +187,4 @@ internal class FakeMemoryDAO : MemoryFileDAO {
         return hit
     }
 
-        var hit = 0
-        files.value = files.value.map {
-            if (it.assistantId == assistantId && it.path in paths) {
-                hit++
-                it.copy(content = content, updatedAt = at)
-            } else {
-                it
-            }
-        }
-        return hit
-    }
-
 }
