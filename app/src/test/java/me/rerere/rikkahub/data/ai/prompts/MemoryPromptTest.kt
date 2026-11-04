@@ -26,17 +26,55 @@ class MemoryPromptTest {
     private fun String.block(tag: String) = substringAfter("<$tag").substringAfter(">").substringBefore("</$tag>").trim()
 
     @Test
-@Ignore("v5.3.26 硬门禁首次真正执行时发现的存量测试债：本测试自 v5.3.10 接通测试以来从未执行（test sourceSet 长期编译失败被 continue-on-error 掩盖），断言停留在旧实现。待按当前实现逐条重写后移除本注解 —— 严禁直接用删除断言的方式让它变绿。")
-    fun `profile is injected in full with its version and other files only appear in the listing`() {
+    fun `small store is injected in full so no read round-trip is needed`() {
         val prompt = buildMemoryPrompt(listOf(profile, food))
 
         assertTrue(prompt.contains("<profile version=\"${profile.version}\">"))
         assertEquals("- [stated] Name is Lin", prompt.block("profile"))
 
-        val listing = prompt.block("memory_listing")
-        assertTrue(listing.startsWith("/topics/food.md | What the user eats and avoids | aliases: diet, 饮食 | updated: "))
-        assertFalse(listing.contains(MemoryFile.PROFILE_PATH))
-        assertFalse(prompt.contains("Allergic to peanuts"))
+        // ═══ v5.3.43 Auto 注入：装得下就把正文全给，不再只给一行 description ═══
+        // 旧断言（已删除）是「其他文件只出现在 listing」—— 那会让模型必须再调一次
+        // memory_read 才知道内容，多一轮往返，且每轮注入的只是摘要。
+        assertTrue("装得下应走 memory_files", prompt.contains("<memory_files count="))
+        assertTrue("正文应被注入", prompt.contains("Allergic to peanuts"))
+        assertFalse("不应再输出 listing 段", prompt.contains("<memory_listing>\n"))
+        // profile/preferences 有自己的段，不重复出现在 memory_files 里
+        assertFalse(prompt.contains("<file path=\"${MemoryFile.PROFILE_PATH}\""))
+    }
+
+    @Test
+    fun `large store falls back to a listing and never inlines bodies`() {
+        val many = (1..8).map {
+            MemoryFile(
+                path = "/topics/t$it.md",
+                content = "---\ndescription: d$it\n---\n\n" + "Z".repeat(3000),
+                updatedAt = it.toLong(),
+            )
+        }
+        val prompt = buildMemoryPrompt(listOf(profile) + many)
+
+        // 8 × 3000 字符 > MEMORY_INLINE_MAX_CHARS(12000) → 必须退回 listing
+        assertTrue(prompt.contains("<memory_listing>"))
+        assertTrue(prompt.contains("<breakdown structured=\"8\""))
+        assertFalse(prompt.contains("<memory_files count="))
+        assertFalse("大库绝不内联正文", prompt.contains("ZZZZZZZZZZ"))
+    }
+
+    @Test
+    fun `inline order follows path so the prefix stays stable across updates`() {
+        val a = MemoryFile("/topics/a.md", "---\ndescription: a\n---\n\nA", updatedAt = 1)
+        val b = MemoryFile("/topics/b.md", "---\ndescription: b\n---\n\nB", updatedAt = 2)
+        val first = buildMemoryPrompt(listOf(a, b))
+        // 只改更新时间：顺序必须不变。按 updatedAt 排序会让任何一次记忆更新都把
+        // 整段前缀挪位 → 缓存全 miss → 正好抵消掉全量注入的唯一优势。
+        val second = buildMemoryPrompt(listOf(a.copy(updatedAt = 99), b))
+
+        fun order(s: String) = listOf("/topics/a.md", "/topics/b.md")
+            .map { s.indexOf("<file path=\"$it\"") }
+        val o1 = order(first)
+        val o2 = order(second)
+        assertTrue("首次 a 应在 b 前", o1[0] in 1 until o1[1])
+        assertTrue("改时间后 a 仍应在 b 前", o2[0] in 1 until o2[1])
     }
 
     @Test
