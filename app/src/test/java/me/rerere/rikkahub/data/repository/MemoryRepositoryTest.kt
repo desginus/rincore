@@ -602,19 +602,24 @@ class MemoryRepositoryTest {
     }
 
     @Test
-    fun `a deleted memory comes back when it is written again`() = runBlocking {
-        // ═══ v5.3.45 ★用户实测过的现象：模型说"记住了"、记忆页却看不到 ═══
-        // 旧实现把 invalidatedAt 原样保留 → 内容写进去了但永久不可见。
+    fun `writing to a deleted path is refused explicitly instead of silently hidden`() = runBlocking {
+        // ═══ v5.3.45 ★用户报过的现象：「模型说记住了、记忆页却看不到」═══
+        // 语义以 v5.3.12 为准：用户删掉的不自动复活。但**必须明确报错** ——
+        // 旧实现返回 Success 却把内容写在一条永久不可见的行里，两边都以为成功。
         val repo = MemoryRepository(FakeMemoryDAO())
         repo.writeFile(assistant, "/topics/x.md", fm("第一条"), source = "active")
         repo.deleteFile(assistant, "/topics/x.md")
         assertNull("删除后应读不到", repo.getFile(assistant, "/topics/x.md"))
 
-        repo.writeFile(assistant, "/topics/x.md", fm("重写的新内容"), source = "active")
-        val back = repo.getFile(assistant, "/topics/x.md")
-        assertTrue("整体写入必须复活", back != null)
-        assertTrue("复活后内容必须是新写的", back!!.content.contains("重写的新内容"))
-        assertEquals("复活后应重新出现在列表", 1, repo.getFiles(assistant).size)
+        val again = repo.writeFile(assistant, "/topics/x.md", fm("重写的新内容"), source = "active")
+        assertTrue("对已删除路径写入必须被拒（不能静默成功）", again is MemoryWriteResult.Rejected)
+        assertTrue("拒绝原因要说明可以换路径", (again as MemoryWriteResult.Rejected).reason.contains("different path"))
+        assertTrue("已删除的内容不得自动复活", repo.getFiles(assistant).isEmpty())
+
+        // 换一个 path 则应当正常写入
+        val other = repo.writeFile(assistant, "/topics/x2.md", fm("换路径"), source = "active")
+        assertTrue("换路径应成功", other is MemoryWriteResult.Success)
+        assertEquals("换路径后应可见", 1, repo.getFiles(assistant).size)
     }
 
     @Test

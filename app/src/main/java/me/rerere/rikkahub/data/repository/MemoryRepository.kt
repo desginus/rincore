@@ -473,21 +473,23 @@ class MemoryRepository(
         }
         if (!versionMatches) return MemoryWriteResult.Conflict(current)
 
-        // ═══ v5.3.45 ★★已删除的条目：整体写入复活，局部编辑拒绝 ═══
+        // ═══ v5.3.45 ★★已删除的条目：**不复活，但必须明确报错** ═══
         //
-        // 旧实现（v5.3.7 起）无条件 `invalidatedAt = existing?.invalidatedAt`：
-        // 用户删掉 `/topics/food.md` 后，模型再 write 同一主题 → 内容确实写进去了，
-        // 但**软删标记被原样保留 → 永久不可见**。用户视角是「模型说记住了，记忆页却看不到」
-        // （v5.3.4/v5.3.5 报的现象之一，当时归因到 UI 死代码，其实还有这一层）。
+        // 语义以 v5.3.12 为准（既有测试 `deleting a dream memory ... later writes do not
+        // resurrect it` 锁死）：**用户明确删掉的内容，模型/做梦整理不得擅自写回来** ——
+        // 那条 ifVersion 断言守的是用户意图，不是实现细节。
         //
-        // 正确语义按动作区分：
-        //  · `memory_write`（allowCreate=true）= 明确创建/整体覆盖 → **复活**（写进来就该可见）
-        //  · `memory_str_replace` / `memory_append`（allowCreate=false）= 局部编辑 → **拒绝**
-        //    （对一条已删除的记忆做局部编辑没有意义，让模型改用 memory_write 明确恢复）
+        // 但旧实现是**静默**保留 `invalidatedAt`：内容写进去了、`writeFile` 返回 Success、
+        // 记忆页却看不到 —— 用户视角「模型说记住了，我却找不到」，模型视角「写成功了」。
+        // 两边都以为成功，实际什么都没发生（v5.3.4/v5.3.5 报的现象之一）。
+        //
+        // 现在：命中已删除条目 → **明确拒绝**，让模型知道该换 path 还是请用户确认恢复。
+        // 恢复仍走显式入口（`invalidateFile(..., invalidated = false)`）。
         val wasInvalidated = currentEntity?.invalidatedAt?.let { it != 0L } == true
-        if (wasInvalidated && !allowCreate) {
+        if (wasInvalidated) {
             return MemoryWriteResult.Rejected(
-                "$normalized was deleted. Use memory_write to create it again if it should come back."
+                "$normalized was deleted by the user; it will not come back automatically. " +
+                    "Write it under a different path, or ask the user to restore it."
             )
         }
         val content = when (val result = edit(current?.content.orEmpty())) {
