@@ -606,25 +606,25 @@ class MemoryRepositoryTest {
         // ═══ v5.3.45 ★用户实测过的现象：模型说"记住了"、记忆页却看不到 ═══
         // 旧实现把 invalidatedAt 原样保留 → 内容写进去了但永久不可见。
         val repo = MemoryRepository(FakeMemoryDAO())
-        repo.writeFile(AID, "/topics/x.md", fm("第一条"), source = "active")
-        repo.deleteFile(AID, "/topics/x.md")
-        assertNull("删除后应读不到", repo.getFile(AID, "/topics/x.md"))
+        repo.writeFile(assistant, "/topics/x.md", fm("第一条"), source = "active")
+        repo.deleteFile(assistant, "/topics/x.md")
+        assertNull("删除后应读不到", repo.getFile(assistant, "/topics/x.md"))
 
-        repo.writeFile(AID, "/topics/x.md", fm("重写的新内容"), source = "active")
-        val back = repo.getFile(AID, "/topics/x.md")
+        repo.writeFile(assistant, "/topics/x.md", fm("重写的新内容"), source = "active")
+        val back = repo.getFile(assistant, "/topics/x.md")
         assertTrue("整体写入必须复活", back != null)
         assertTrue("复活后内容必须是新写的", back!!.content.contains("重写的新内容"))
-        assertEquals("复活后应重新出现在列表", 1, repo.getFiles(AID).size)
+        assertEquals("复活后应重新出现在列表", 1, repo.getFiles(assistant).size)
     }
 
     @Test
     fun `a deleted memory rejects partial edits instead of silently staying hidden`() = runBlocking {
         val repo = MemoryRepository(FakeMemoryDAO())
-        repo.writeFile(AID, "/topics/y.md", fm("原文"), source = "active")
-        repo.deleteFile(AID, "/topics/y.md")
+        repo.writeFile(assistant, "/topics/y.md", fm("原文"), source = "active")
+        repo.deleteFile(assistant, "/topics/y.md")
 
-        assertTrue("append 必须被拒", repo.appendToFile(AID, "/topics/y.md", "追加", null) is MemoryWriteResult.Rejected)
-        assertTrue("replace 必须被拒", repo.replaceInFile(AID, "/topics/y.md", "原文", "改", null) is MemoryWriteResult.Rejected)
+        assertTrue("append 必须被拒", repo.appendToFile(assistant, "/topics/y.md", "追加", null) is MemoryWriteResult.Rejected)
+        assertTrue("replace 必须被拒", repo.replaceInFile(assistant, "/topics/y.md", "原文", "改", null) is MemoryWriteResult.Rejected)
     }
 
     @Test
@@ -633,13 +633,13 @@ class MemoryRepositoryTest {
         val dao = FakeMemoryDAO()
         dao.upsertFile(
             MemoryFileEntity(
-                assistantId = AID, path = "旧标题.md", content = fm("老记忆"),
+                assistantId = assistant, path = "旧标题.md", content = fm("老记忆"),
                 updatedAt = 1, source = "active", folderId = null, conversationId = null, invalidatedAt = null,
             )
         )
         val repo = MemoryRepository(dao)
-        assertTrue("带斜杠的 path 必须命中无斜杠的老记忆", repo.invalidateFile(AID, "/旧标题.md"))
-        assertTrue("删除后列表应为空", repo.getFiles(AID).isEmpty())
+        assertTrue("带斜杠的 path 必须命中无斜杠的老记忆", repo.invalidateFile(assistant, "/旧标题.md"))
+        assertTrue("删除后列表应为空", repo.getFiles(assistant).isEmpty())
     }
 
 }
