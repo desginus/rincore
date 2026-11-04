@@ -70,7 +70,8 @@ object EditFileToolUI : ToolUIRenderer {
 
     @Composable
     override fun title(context: ToolUIContext): String {
-        val path = context.arguments.getStringContent("path")
+        // v5.3.46：只给文件名，完整路径降级到展开详情
+        val path = context.arguments.getStringContent("path")?.displayFileName()
         return if (path != null) stringResource(R.string.tool_ui_edit_file, path) else stringResource(R.string.tool_ui_edit_file_default)
     }
 
@@ -138,7 +139,8 @@ object EditFileToolUI : ToolUIRenderer {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    text = context.arguments.getStringContent("path") ?: toolName,
+                    // v5.3.46：详情面板标题也只给文件名
+                    text = context.arguments.getStringContent("path")?.displayFileName() ?: toolName,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -259,10 +261,11 @@ object ShowFileToolUI : ToolUIRenderer {
     @Composable
     override fun title(context: ToolUIContext): String {
         // v4.8.61: 多文件 (paths 数组) — 单文件沿用原样; 多文件显示首名 + 数量
-        val path = context.arguments.getStringContent("path")
+        // v5.3.46：只给文件名（多文件时"首个 + N"），完整路径降级到详情
+        val path = context.arguments.getStringContent("path")?.displayFileName()
         if (path != null) return stringResource(R.string.tool_ui_show_file, path)
         val paths = (context.arguments as? JsonObject)?.get("paths") as? JsonArray
-        val first = paths?.firstOrNull()?.jsonPrimitive?.contentOrNull
+        val first = paths?.firstOrNull()?.jsonPrimitive?.contentOrNull?.displayFileName()
         return when {
             first == null -> stringResource(R.string.tool_ui_show_file_default)
             paths.size > 1 -> stringResource(R.string.tool_ui_show_file, "$first (+${paths.size - 1})")
@@ -307,13 +310,26 @@ private fun FileContentPreview(path: String?, code: String) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
-            text = path ?: stringResource(R.string.tool_ui_file),
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        // v5.3.46：主标题 = 文件名；完整路径降为次要小字（用户主动点开详情时才需要精确定位）
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = path?.displayFileName() ?: stringResource(R.string.tool_ui_file),
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (path != null && path.contains('/')) {
+                Text(
+                    text = path,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
         HighlightCodeBlock(
             code = code,
             language = languageOf(path),
@@ -518,6 +534,17 @@ private fun JsonElement?.int(key: String): Int? =
 /** 从工具输出 JSON 读取长整型字段 */
 private fun JsonElement?.long(key: String): Long? =
     this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.longOrNull
+
+/**
+ * v5.3.46 ★★**UI 只显示文件名，不显示完整路径**（用户原话：「显示路径，我不希望看到这个，
+ * 在我看来就是一串无意义的乱码，用户并无法识别」）。
+ *
+ * 完整路径对用户没有信息量（所有人共享同一段 `/workspace/...` 前缀），却会把标题占满、
+ * 把真正有用的信息（哪个文件、改了什么）挤出去。标题给文件名，内容由 Summary 展示；
+ * 完整路径只在用户主动点开的详情里以次要小字出现。
+ */
+private fun String.displayFileName(): String =
+    substringAfterLast('/').ifBlank { this }
 
 private const val FILE_SUMMARY_MAX_LINES = 10
 

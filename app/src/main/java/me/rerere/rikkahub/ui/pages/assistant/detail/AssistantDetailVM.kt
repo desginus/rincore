@@ -341,6 +341,26 @@ class AssistantDetailVM(
         }
     }
 
+    /**
+     * v5.3.46 ★★「清理旧格式记忆」（用户实测：库里 13 条旧格式根文件与结构化记忆重复）。
+     *
+     * 旧格式 = v5.3.7 迁移时**只搬正文、不生成 frontmatter** 的那批版本流水账（`memory_v5_0_xx.md`）。
+     * 它们自 v5.3.23 起**一条都不注入模型**，但一直占着记忆页、并与新写的工作手册内容重复。
+     *
+     * 底层 `purgeLegacyFiles` 判据是 `substr(ltrim(content),1,3) <> '---'` —— 新架构写入必带
+     * frontmatter，所以这条判据**不会误删任何新记忆**。UI 侧带二次确认。
+     */
+    fun purgeLegacyFiles() {
+        viewModelScope.launch {
+            runCatching {
+                val n = memoryRepository.purgeLegacyFiles(memoryIdOf(assistant.value))
+                Log.i("AssistantDetailVM", "purged $n legacy memory files")
+            }.onFailure {
+                Log.w("AssistantDetailVM", "purge legacy memories failed: ${it.message}")
+            }
+        }
+    }
+
     fun deleteMemory(memory: AssistantMemory) {
         viewModelScope.launch {
             // v5.3.7 ★统一记忆：软删（失效标记，留痕可审计）

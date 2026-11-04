@@ -4,9 +4,13 @@
 # Does NOT publish releases and does NOT touch main.
 name: Dev Build (adopt-3.0.0 oracle)
 
+# ═══ v5.3.46 ★★只允许手动触发 ═══
+# 此前这里还留着 `push: branches: [ "adopt-3.0.0" ]` —— 而文件头的注释从 2026-10-20
+# 就写着「仅供实验分支用手动触发」。结果：每次发布后补推 adopt-3.0.0（rc release 只推 main），
+# 都会再触发一次完整构建 → 用户看到「发布完立刻又推了一个一模一样的，唯一区别是 adopt-3.0.0」。
+# 正式发版的编译验证已由 build.yml（监听 main）覆盖，这条自动触发纯属重复。
+# 需要临时验证 adopt 分支时用 workflow_dispatch 手动跑。
 on:
-  push:
-    branches: [ "adopt-3.0.0" ]
   workflow_dispatch:
 
 permissions:

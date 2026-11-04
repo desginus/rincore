@@ -5,6 +5,7 @@ import androidx.annotation.StringRes
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.AiMagic
+import me.rerere.hugeicons.stroke.Delete02
 import me.rerere.hugeicons.stroke.Brain02
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Settings03
@@ -212,6 +213,40 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                     // 现在：始终显示；点击弹范围选择；三个范围都走「手动全量」语义
                     // （`MemoryConsolidator.loadPendingTurns(forceRecent = fullReview)`），
                     // 强制重整理最近 N 轮，不受增量游标限制。
+                    // ═══ v5.3.46 ★清理旧格式记忆（仅当库里真有旧格式条目时出现）═══
+                    // 用户实测：13 条旧格式根文件与结构化记忆内容重复，但此前没有任何 UI 能清理。
+                    // 判据 = AssistantMemory.isLegacy（= !isStructured，v5.3.31 起标注在条目上）。
+                    if (memorySection == MemorySection.MEMORY) {
+                        val legacyCount = vm.memories.collectAsStateWithLifecycle().value.count { !it.isStructured }
+                        if (legacyCount > 0) {
+                            var showPurge by remember { mutableStateOf(false) }
+                            IconButton(onClick = { showPurge = true }) {
+                                Icon(HugeIcons.Delete02, contentDescription = "清理旧格式记忆")
+                            }
+                            if (showPurge) {
+                                AlertDialog(
+                                    onDismissRequest = { showPurge = false },
+                                    title = { Text("清理旧格式记忆") },
+                                    text = {
+                                        Text(
+                                            "库里有 $legacyCount 条旧格式记忆（旧版迁移留下的版本记录，没有 frontmatter）。" +
+                                                "它们当前不进入模型上下文，只占记忆页并与新写的内容重复。" +
+                                                "\n\n清理只删除这些旧条目，不会动任何新记忆。此操作不可撤销。"
+                                        )
+                                    },
+                                    confirmButton = {
+                                        TextButton(onClick = {
+                                            vm.purgeLegacyFiles()
+                                            showPurge = false
+                                        }) { Text("清理 $legacyCount 条") }
+                                    },
+                                    dismissButton = {
+                                        TextButton(onClick = { showPurge = false }) { Text("取消") }
+                                    },
+                                )
+                            }
+                        }
+                    }
                     if (memorySection == MemorySection.MEMORY) {
                         val dreaming = vm.memoryConsolidation.collectAsStateWithLifecycle().value.running
                         val toastStart = stringResource(R.string.memory_dreaming)

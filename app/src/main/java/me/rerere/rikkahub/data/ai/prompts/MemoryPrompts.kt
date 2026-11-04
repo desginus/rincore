@@ -60,7 +60,10 @@ private val MEMORY_FORMAT_PROMPT = """
     - /topics/<domain>.md        (kind: fact)      Concrete environment or domain facts.
     - /preferences.md            (kind: preference) Answer format, length, tone. Under 300 words.
 
-    There is NO profile file. Do not build a description of the user's personality, tastes, hobbies or private life — it makes no task faster, and the user has explicitly asked not to be profiled. What a task needs about them (a path, a name, an account layout) belongs in the file for that task.
+    **Legacy layouts are still read.** Files under `/areas/` count as `kind: project`; files under `/people/` count as `kind: fact`.
+    Do not create new files there — put new knowledge in the three current directories, and move a legacy file's useful lines there if you edit it.
+
+    Do **not create** a profile file, and do not build a description of the user's personality, tastes, hobbies or private life — it makes no task faster, and the user has explicitly asked not to be profiled. What a task needs about them (a path, a name, an account layout) belongs in the file for that task. ★If an old `/profile.md` still exists from before this rule: treat it as an ordinary fact entry (it is NOT a special layer and is not pinned), and when you happen to edit it, move its still-useful lines into `/projects/` or `/topics/` instead of growing it.
 
     ## The reuse test — the only criterion
 
