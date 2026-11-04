@@ -92,6 +92,34 @@ data class MemoryFile(
 
     val aliases: List<String> get() = frontmatter.getList("aliases")
 
+    /**
+     * ═══ v5.3.44 ★★记忆的「用途类型」—— 决定注入权重与淘汰顺序 ═══
+     *
+     * 这是本轮语义转向的核心：**记忆不是用来分析用户的，是用来让下一次任务更省事的**。
+     *
+     * 旧的 `/profile.md`（你是谁、住哪、做什么工作）在用户明确否决后**不再是特殊层**：
+     * 它要么不存在，要么降级成一条普通 [FACT]。
+     *
+     * 权重从高到低：**WORK > PROJECT > FACT > PREFERENCE**
+     * - [WORK]：这类任务怎么做 —— 命令、路径、步骤、坑。**唯一能直接降低下次沟通成本的东西。**
+     * - [PROJECT]：某个项目的结构与操作方式 —— 构建、发布、文件在哪。
+     * - [FACT]：具体事实（环境版本、某个配置值）。**会过时**，所以低于前两者。
+     * - [PREFERENCE]：回答格式/语气。**最少用、最先淘汰**，不单独占层。
+     *
+     * 写在 frontmatter 的 `kind:` 里 → **不需要数据库迁移**（content 本来就是文本）。
+     * 缺省 = [FACT]：历史记忆绝大多数是"某版本发布了什么"这类事实，归 FACT 是准确的。
+     */
+    val kind: MemoryKind
+        get() = when (frontmatter["kind"]?.trim()?.lowercase()) {
+            "work", "procedure", "playbook" -> MemoryKind.WORK
+            "project" -> MemoryKind.PROJECT
+            "preference", "pref" -> MemoryKind.PREFERENCE
+            else -> MemoryKind.FACT
+        }
+
+    /** 注入权重：数值越大越优先出现、越晚被淘汰。 */
+    val weight: Int get() = kind.weight
+
     /** 去掉 frontmatter 后的正文 */
     val body: String get() = SkillFrontmatterParser.extractBody(content)
 
@@ -143,6 +171,24 @@ data class MemoryFile(
             return path
         }
     }
+}
+
+/**
+ * 记忆用途类型。顺序即优先级（见 [MemoryFile.weight]）。
+ *
+ * ★为什么是这四个而不是 MIKA 的三个：MIKA 是「操作手机」的 agent，用户画像对它有价值
+ * （称呼、口味、日程）；我们是「办公/工作区」工具，**用户的个人画像对完成任务没有帮助**，
+ * 真正有价值的是「这类活怎么干」。故新增 [PROJECT]（项目结构），降级 [FACT]/[PREFERENCE]。
+ */
+enum class MemoryKind(val weight: Int) {
+    /** 做法：以后遇到同类任务照着做。权重最高。 */
+    WORK(4),
+    /** 项目：这个项目怎么构建/发布/找文件。 */
+    PROJECT(3),
+    /** 事实：环境版本、配置值、某个具体状态。会过时。 */
+    FACT(2),
+    /** 偏好：回答格式与语气。最少用、最先淘汰。 */
+    PREFERENCE(1),
 }
 
 // 编辑页有对应输入框的键，加上跟着路径走的 name

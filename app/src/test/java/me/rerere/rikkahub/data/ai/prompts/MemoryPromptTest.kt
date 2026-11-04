@@ -8,7 +8,13 @@ import org.junit.Ignore
 import org.junit.Test
 
 class MemoryPromptTest {
-    private val profile = MemoryFile(MemoryFile.PROFILE_PATH, "- [stated] Name is Lin\n", updatedAt = 0)
+    // ★v5.3.44：profile 不再是特殊层。这里是带 frontmatter 的普通 fact 条目，
+    // 用于验证「profile 若存在也只作为普通记忆参与注入」。
+    private val profile = MemoryFile(
+        MemoryFile.PROFILE_PATH,
+        "---\ntitle: 档案\ndescription: 环境与项目基本情况\nkind: fact\n---\n\n- [stated] Name is Lin\n",
+        updatedAt = 0,
+    )
     private val food = MemoryFile(
         path = "/topics/food.md",
         content = """
@@ -26,11 +32,12 @@ class MemoryPromptTest {
     private fun String.block(tag: String) = substringAfter("<$tag").substringAfter(">").substringBefore("</$tag>").trim()
 
     @Test
-    fun `small store is injected in full so no read round-trip is needed`() {
+    fun `small store is injected in full with kind ranking and no profile section`() {
         val prompt = buildMemoryPrompt(listOf(profile, food))
 
-        assertTrue(prompt.contains("<profile version=\"${profile.version}\">"))
-        assertEquals("- [stated] Name is Lin", prompt.block("profile"))
+        // profile 不再单独置顶；它作为 kind=fact 的普通文件参与注入
+        assertFalse("profile 不应再有专属段", prompt.contains("<profile version="))
+        assertTrue("profile 内容应作为普通记忆被注入", prompt.contains("- [stated] Name is Lin"))
 
         // ═══ v5.3.43 Auto 注入：装得下就把正文全给，不再只给一行 description ═══
         // 旧断言（已删除）是「其他文件只出现在 listing」—— 那会让模型必须再调一次
