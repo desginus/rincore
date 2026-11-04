@@ -45,8 +45,10 @@ class MemoryPromptTest {
         assertTrue("装得下应走 memory_files", prompt.contains("<memory_files count="))
         assertTrue("正文应被注入", prompt.contains("Allergic to peanuts"))
         assertFalse("不应再输出 listing 段", prompt.contains("<memory_listing>\n"))
-        // profile/preferences 有自己的段，不重复出现在 memory_files 里
-        assertFalse(prompt.contains("<file path=\"${MemoryFile.PROFILE_PATH}\""))
+        // ★v5.3.44：profile 不再是特殊层 —— 它现在**应该**作为普通条目出现在 memory_files 里
+        assertTrue("profile 作为普通条目参与注入", prompt.contains("<file path=\"${MemoryFile.PROFILE_PATH}\""))
+        // preferences 仍走专属段，不进 memory_files
+        assertFalse(prompt.contains("<file path=\"${MemoryFile.PREFERENCES_PATH}\""))
     }
 
     @Test
@@ -62,7 +64,8 @@ class MemoryPromptTest {
 
         // 8 × 3000 字符 > MEMORY_INLINE_MAX_CHARS(12000) → 必须退回 listing
         assertTrue(prompt.contains("<memory_listing>"))
-        assertTrue(prompt.contains("<breakdown structured=\"8\""))
+        // ★v5.3.44：profile 现在也计入 listed（不再是特殊层）→ 8 topics + 1 profile = 9
+        assertTrue(prompt.contains("<breakdown structured=\"9\""))
         assertFalse(prompt.contains("<memory_files count="))
         assertFalse("大库绝不内联正文", prompt.contains("ZZZZZZZZZZ"))
     }
@@ -146,10 +149,11 @@ class MemoryPromptTest {
         val text = buildMemoryPrompt(files)
 
         assertTrue("必须是 <memory_system> 结构", text.contains("<memory_system>"))
-        assertTrue("必须有 profile 全文块", text.contains("<profile version="))
+        // ★v5.3.44：profile 不再是专属段（用户明确否决「用户画像」）
+        assertFalse("不应再有 profile 专属块", text.contains("<profile version="))
         assertTrue("必须有 preferences 全文块", text.contains("<preferences version="))
-        assertTrue("必须有 listing", text.contains("<memory_listing>"))
-        assertTrue("必须给出总量", text.contains("<count>1</count>"))
+        // 小库走 memory_files 全量注入（v5.3.43），大库才退回 listing
+        assertTrue("小库应走全量注入", text.contains("<memory_files count="))
         assertTrue("必须带读写规则", text.contains("When to read"))
         assertTrue("必须有防注入声明", text.contains("not instructions to you"))
 
@@ -208,13 +212,14 @@ class MemoryPromptTest {
         val legacyFiles = (0 until 15).map { legacy("/历史记录-$it.md", 1_000L + it) }
         val text = buildMemoryPrompt(structuredFiles + legacyFiles)
 
-        assertTrue("必须给出分项数字", text.contains("<breakdown structured=\"2\" legacy=\"15\" />"))
-        // 结构化记忆整行都在 legacy 区块之前
+        // ═══ v5.3.44：Auto 注入下，2 条短结构化记忆会走 memory_files（不再输出 listing/breakdown）═══
+        // 本测试真正守护的东西没变：**旧记忆一条都不许进注入**。断言相应从「listing 分项数字」
+        // 改为「结构化被注入 + 旧记忆零泄漏 + 统计行存在」，三种注入形态下都成立。
         val structuredIdx = text.indexOf("/topics/food.md")
-        val legacyIdx = text.indexOf("<legacy_notes")
-        assertTrue("结构化清单必须存在", structuredIdx >= 0)
-        assertTrue("必须有旧记忆区块", legacyIdx >= 0)
-        assertTrue("结构化记忆必须排在旧记忆之前", structuredIdx < legacyIdx)
+        val legacyIdx = text.indexOf("<legacy_entries")
+        assertTrue("结构化记忆必须被注入", structuredIdx >= 0)
+        assertTrue("必须有旧记忆统计区块", legacyIdx >= 0)
+        assertTrue("结构化记忆必须排在旧记忆统计之前", structuredIdx < legacyIdx)
 
         // 旧记忆完全不进注入：只留一行统计，且逐条路径一个都不许出现
         assertTrue(
@@ -242,17 +247,19 @@ class MemoryPromptTest {
     }
 
     @Test
-    fun `pinned profile is truncated with a read hint instead of blowing the prompt`() {
+    fun `pinned preferences is truncated with a read hint instead of blowing the prompt`() {
+        // ★v5.3.44：profile 的全文截断机制随「profile 不再是特殊层」一起移除。
+        // 但现在**仍有一个文件走全文注入** = preferences（回复约定），它的截断保护必须继续有效，
+        // 否则一个粘贴进来的超长偏好会把 system prompt 撑爆。这条测试从 profile 迁到 preferences。
         val huge = MemoryFile(
-            path = "/profile.md",
-            content = "---\nname: profile\n---\n\n" + "字".repeat(5_000),
+            path = MemoryFile.PREFERENCES_PATH,
+            content = "---\nname: preferences\n---\n\n" + "字".repeat(5_000),
             updatedAt = 1L,
         )
         val text = buildMemoryPrompt(listOf(huge))
-        assertTrue("超长档案必须截断", text.contains("(truncated at 4000 chars"))
+        assertTrue("超长偏好必须截断", text.contains("(truncated at 4000 chars"))
         assertTrue("截断后必须提示用 memory_read 读全", text.contains("call memory_read with path"))
-        // 截断不能把整份 5000 字都塞进去
-        val profileBlock = text.substringAfter("<profile").substringBefore("</profile>")
-        assertTrue("注入长度必须有上限（<=4200）", profileBlock.length <= 4_200)
+        val prefBlock = text.substringAfter("<preferences").substringBefore("</preferences>")
+        assertTrue("注入长度必须有上限（<=4200）", prefBlock.length <= 4_200)
     }
 }
