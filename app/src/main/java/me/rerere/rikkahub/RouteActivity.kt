@@ -240,7 +240,18 @@ class RouteActivity : ComponentActivity() {
             // ═══ v5.3.47 双模式外壳 ═══
             // 同一 APK 里两个完全独立的应用，只共用一个外壳与一套 Linux 沙箱。
             // 状态从壳层 SharedPreferences 同步读（首帧就要正确，DataStore 异步来不及）。
-            var appMode by remember { mutableStateOf(AppModeStore.read(this)) }
+            // ★v5.3.48 启动自愈：上次停在 CHAT 但没能正常渲染（崩溃/被杀）→ 强制回工作模式。
+            // 绝不允许「某一侧起不来 = 整个应用打不开」。
+            var appMode by remember {
+                val stored = AppModeStore.read(this)
+                val safe = if (stored == AppMode.CHAT && AppModeStore.isChatPending(this)) {
+                    AppModeStore.write(this, AppMode.WORK)   // 自愈并落盘
+                    AppMode.WORK
+                } else {
+                    stored
+                }
+                mutableStateOf(safe)
+            }
             RikkahubTheme {
                 // v5.3.4 ★用户崩溃报告（5.0.12 / RouteActivity.kt:228）：
                 //   IllegalStateException: The singleton image loader has already been
@@ -256,12 +267,22 @@ class RouteActivity : ComponentActivity() {
                         AppRoutes()
                     }
 
-                    AppMode.CHAT -> ChatModeEntry(
-                        onSwitchBackToWork = {
-                            AppModeStore.write(this@RouteActivity, AppMode.WORK)
-                            appMode = AppMode.WORK
-                        },
-                    )
+                    AppMode.CHAT -> {
+                        // CHAT 能走到这里并组合完，就算「起来了」→ 清哨兵
+                        androidx.compose.runtime.LaunchedEffect(Unit) {
+                            AppModeStore.markChatHealthy(this@RouteActivity)
+                        }
+                        ChatModeEntry(
+                            onSwitchBackToWork = {
+                                // ★v5.3.48 与抽屉按钮**完全同一路径**：写盘 + 重建 Activity。
+                                // 只改 `appMode` 状态会丢掉工作模式的导航栈（那是另一个模式的组合树，
+                                // 重新进入时 rememberSaveable 不会恢复，用户会「切回来回到首页」）；
+                                // recreate() 会带着 savedInstanceState 重建，导航栈得以复原。
+                                AppModeStore.write(this@RouteActivity, AppMode.WORK)
+                                recreate()
+                            },
+                        )
+                    }
                 }
             }
         }

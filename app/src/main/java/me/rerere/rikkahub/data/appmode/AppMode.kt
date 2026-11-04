@@ -42,18 +42,56 @@ object AppModeStore {
     private const val PREFS = "rincore_shell"
     private const val KEY_MODE = "app_mode"
 
+    /**
+     * ★★「上次在聊天模式没起来」的哨兵。
+     *
+     * 场景：用户切到聊天模式 → 应用关闭/被杀/崩溃 → 下次启动仍读回 CHAT →
+     * 如果 CHAT 这一侧起不来（Mika 初始化失败、渲染崩溃……），用户就**再也进不去应用**。
+     * 这种「一个模式挂了导致整个软件打不开」是绝不可接受的。
+     *
+     * 机制：进入 CHAT 时置位 → CHAT 成功组合后清除 →
+     * 下次启动若发现它**还在**，说明上一次 CHAT 没能跑起来 → **自动回退工作模式**。
+     *
+     * 宁可回工作模式（至少能用），也不要把用户关在一个起不来的界面里。
+     */
+    private const val KEY_CHAT_PENDING = "chat_mode_pending"
+
     fun read(context: Context): AppMode {
         val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         return AppMode.parse(prefs.getString(KEY_MODE, null))
     }
 
+    /**
+     * v5.3.48 ★改用 `commit()` 而不是 `apply()`。
+     *
+     * `apply()` 是异步落盘：用户刚切完模式就被系统杀进程（后台清理很常见），
+     * 写入可能没落盘 → 下次打开还是旧模式 —— 正是用户说的
+     * 「上次在一个模式关闭的，开了应用又到另一个模式」。
+     * 这里一次切换只写一个字符串，同步写代价可忽略（毫秒级），换来确定性。
+     */
     fun write(context: Context, mode: AppMode) {
         context.applicationContext
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_MODE, mode.name)
+            .putBoolean(KEY_CHAT_PENDING, mode == AppMode.CHAT)
+            .commit()
+    }
+
+    /** CHAT 首次成功渲染后调用 —— 清除「没起来」哨兵。 */
+    fun markChatHealthy(context: Context) {
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CHAT_PENDING, false)
             .apply()
     }
+
+    /** 上次进入 CHAT 后是否没能正常渲染（= 应该自动回退工作模式）。 */
+    fun isChatPending(context: Context): Boolean =
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CHAT_PENDING, false)
 
     /** 切换并返回新模式。 */
     fun toggle(context: Context): AppMode {
