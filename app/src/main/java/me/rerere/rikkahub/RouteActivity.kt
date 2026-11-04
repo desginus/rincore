@@ -168,6 +168,9 @@ import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.data.appmode.AppMode
+import me.rerere.rikkahub.data.appmode.AppModeStore
+import me.rerere.rikkahub.ui.pages.chatmode.ChatModeEntry
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import me.rerere.rikkahub.utils.CrashHandler
 import me.rerere.rikkahub.utils.openUsageAccessSettings
@@ -234,6 +237,10 @@ class RouteActivity : ComponentActivity() {
         // v4.8.91 TTFT: 进入前台即预热连接（观察者幂等注册）
         lifecycle.addObserver(warmupLifecycleObserver)
         setContent {
+            // ═══ v5.3.47 双模式外壳 ═══
+            // 同一 APK 里两个完全独立的应用，只共用一个外壳与一套 Linux 沙箱。
+            // 状态从壳层 SharedPreferences 同步读（首帧就要正确，DataStore 异步来不及）。
+            var appMode by remember { mutableStateOf(AppModeStore.read(this)) }
             RikkahubTheme {
                 // v5.3.4 ★用户崩溃报告（5.0.12 / RouteActivity.kt:228）：
                 //   IllegalStateException: The singleton image loader has already been
@@ -243,8 +250,19 @@ class RouteActivity : ComponentActivity() {
                 // **每次重建**（旋转/深色切换/多实例/返回栈恢复）都会重跑一次，而 Coil 3
                 // 的 SingletonImageLoader.setSafe 在已初始化后再调就抛异常 → 启动崩溃。
                 // 已整体移到 RikkaHubApp.onCreate（进程级、必然只执行一次，Coil 官方推荐位置）。
-                me.rerere.rikkahub.ui.components.render.RenderRequestHost()
-                AppRoutes()
+                when (appMode) {
+                    AppMode.WORK -> {
+                        me.rerere.rikkahub.ui.components.render.RenderRequestHost()
+                        AppRoutes()
+                    }
+
+                    AppMode.CHAT -> ChatModeEntry(
+                        onSwitchBackToWork = {
+                            AppModeStore.write(this@RouteActivity, AppMode.WORK)
+                            appMode = AppMode.WORK
+                        },
+                    )
+                }
             }
         }
     }
