@@ -69,13 +69,20 @@ object AppModeStore {
      * 「上次在一个模式关闭的，开了应用又到另一个模式」。
      * 这里一次切换只写一个字符串，同步写代价可忽略（毫秒级），换来确定性。
      */
-    fun write(context: Context, mode: AppMode) {
-        context.applicationContext
+    fun write(context: Context, mode: AppMode): Boolean {
+        val ok = context.applicationContext
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_MODE, mode.name)
             .putBoolean(KEY_CHAT_PENDING, mode == AppMode.CHAT)
             .commit()
+        // v5.3.49：`commit()` 返回 false 表示落盘失败（磁盘满/权限）。旧实现忽略返回值 ——
+        // 用户切了模式、界面上像是切了，重启却回到旧模式，且没有任何线索。
+        // 失败不会破坏已有数据（SharedPreferences 写入是原子的），所以只记录、不中断。
+        if (!ok) {
+            android.util.Log.w("AppModeStore", "写入模式失败（$mode）—— 本次切换可能在重启后失效")
+        }
+        return ok
     }
 
     /** CHAT 首次成功渲染后调用 —— 清除「没起来」哨兵。 */

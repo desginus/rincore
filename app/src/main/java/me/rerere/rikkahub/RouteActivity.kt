@@ -236,22 +236,17 @@ class RouteActivity : ComponentActivity() {
         }
         // v4.8.91 TTFT: 进入前台即预热连接（观察者幂等注册）
         lifecycle.addObserver(warmupLifecycleObserver)
+        // ═══ v5.3.49 ★模式判定与自愈在**组合之前**完成（纯 Kotlin）═══
+        //
+        // 之前写在 `setContent { remember { ... } }` 里 —— remember 的 block 是**组合期间**
+        // 执行的，而里面既有 SharedPreferences 读、又可能触发**同步 commit() 磁盘写**。
+        // 在组合期间做磁盘 IO 是 Compose 明确的反模式：会拖慢首帧，且 remember 的 block
+        // 在组合被取消/重试时语义不保证（虽然常规路径只跑一次）。
+        // 移到 onCreate 里做，组合侧只拿一个纯值。
+        val initialMode = resolveInitialMode()
         setContent {
-            // ═══ v5.3.47 双模式外壳 ═══
             // 同一 APK 里两个完全独立的应用，只共用一个外壳与一套 Linux 沙箱。
-            // 状态从壳层 SharedPreferences 同步读（首帧就要正确，DataStore 异步来不及）。
-            // ★v5.3.48 启动自愈：上次停在 CHAT 但没能正常渲染（崩溃/被杀）→ 强制回工作模式。
-            // 绝不允许「某一侧起不来 = 整个应用打不开」。
-            var appMode by remember {
-                val stored = AppModeStore.read(this)
-                val safe = if (stored == AppMode.CHAT && AppModeStore.isChatPending(this)) {
-                    AppModeStore.write(this, AppMode.WORK)   // 自愈并落盘
-                    AppMode.WORK
-                } else {
-                    stored
-                }
-                mutableStateOf(safe)
-            }
+            var appMode by remember { mutableStateOf(initialMode) }
             RikkahubTheme {
                 // v5.3.4 ★用户崩溃报告（5.0.12 / RouteActivity.kt:228）：
                 //   IllegalStateException: The singleton image loader has already been
@@ -286,6 +281,27 @@ class RouteActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * 读当前模式，并在「上次进入聊天模式但没能正常渲染」时**自动回退工作模式**。
+     *
+     * 必须在 `setContent` 之前调用一次；组合期间不得再碰磁盘。
+     *
+     * 为什么必须有这一层：用户切到聊天模式 → 关掉应用 → 如果聊天这一侧起不来
+     * （Mika 初始化失败、渲染崩溃……），下次启动就会直接崩，用户**再也进不去**，
+     * 连工作模式都用不了。宁可回工作模式（至少能用），也不把人关在起不来的界面里。
+     *
+     * 判据来源见 [AppModeStore.isChatPending]：进入 CHAT 时置位、成功渲染后清除；
+     * 下次启动发现它还在 = 上一次没跑起来。
+     */
+    private fun resolveInitialMode(): AppMode {
+        val stored = AppModeStore.read(this)
+        if (stored != AppMode.CHAT) return stored
+        if (!AppModeStore.isChatPending(this)) return stored
+        // 自愈：落盘 + 返回工作模式
+        AppModeStore.write(this, AppMode.WORK)
+        return AppMode.WORK
     }
 
     private fun disableNavigationBarContrast() {
