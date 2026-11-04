@@ -24,6 +24,13 @@ class ModelInfo(
  * 同一个模型会出现在多个提供商下，id 写法也各不相同（如 `claude-sonnet-4-5`、`anthropic/claude-sonnet-4.5`），
  * 这里把每条记录按完整 id、去掉前缀后的名称、canonical id 建索引，同一个 key 下的多条记录按多数投票合并。
  */
+/**
+ * v5.3.40：`decode()` 目前**零调用方** —— 配套的 `assets/models_dev.json`（1.48MB）
+ * 已删除，因为 v5.3.1 只移植了目录类与数据文件，依赖 ModelRegistry 重构的
+ * `ModelsDevUpdater`（在线更新）从未移植。保留该类是为了将来移植时不必重写解析层：
+ * **若要启用，必须同时把 models_dev.json 放回 assets 并接上更新入口**，
+ * 否则调用 decode() 会因文件缺失失败。
+ */
 class ModelsDevCatalog private constructor(
     private val providers: Map<String, ModelsDevProvider>
 ) {
