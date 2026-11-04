@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.repository
 
 import kotlinx.coroutines.runBlocking
+import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
 import me.rerere.rikkahub.data.model.MemoryFile
 import me.rerere.rikkahub.data.model.groupByDirectory
 import org.junit.Assert.assertEquals
@@ -20,6 +21,9 @@ class MemoryRepositoryTest {
         val result = repository.writeFile(assistant, path, content, MemoryRepository.NEW_FILE_VERSION)
         return (result as MemoryWriteResult.Success).file!!
     }
+
+    /** 带 frontmatter 的结构化记忆（新架构写入必带 frontmatter）。 */
+    private fun fm(body: String) = "---\ntitle: t\ndescription: d\n---\n\n$body"
 
     @Test
     fun `creating a file that already exists returns the current content`() = runBlocking {
@@ -596,4 +600,46 @@ class MemoryRepositoryTest {
         assertEquals("list 必须与注入同一口径", injected, listed)
         assertTrue("包层记忆在仅助手级挂载下不可读", readFolderLevel.isEmpty())
     }
+
+    @Test
+    fun `a deleted memory comes back when it is written again`() = runBlocking {
+        // ═══ v5.3.45 ★用户实测过的现象：模型说"记住了"、记忆页却看不到 ═══
+        // 旧实现把 invalidatedAt 原样保留 → 内容写进去了但永久不可见。
+        val repo = MemoryRepository(FakeMemoryDAO())
+        repo.writeFile(AID, "/topics/x.md", fm("第一条"), source = "active")
+        repo.deleteFile(AID, "/topics/x.md")
+        assertNull("删除后应读不到", repo.getFile(AID, "/topics/x.md"))
+
+        repo.writeFile(AID, "/topics/x.md", fm("重写的新内容"), source = "active")
+        val back = repo.getFile(AID, "/topics/x.md")
+        assertTrue("整体写入必须复活", back != null)
+        assertTrue("复活后内容必须是新写的", back!!.content.contains("重写的新内容"))
+        assertEquals("复活后应重新出现在列表", 1, repo.getFiles(AID).size)
+    }
+
+    @Test
+    fun `a deleted memory rejects partial edits instead of silently staying hidden`() = runBlocking {
+        val repo = MemoryRepository(FakeMemoryDAO())
+        repo.writeFile(AID, "/topics/y.md", fm("原文"), source = "active")
+        repo.deleteFile(AID, "/topics/y.md")
+
+        assertTrue("append 必须被拒", repo.appendToFile(AID, "/topics/y.md", "追加", null) is MemoryWriteResult.Rejected)
+        assertTrue("replace 必须被拒", repo.replaceInFile(AID, "/topics/y.md", "原文", "改", null) is MemoryWriteResult.Rejected)
+    }
+
+    @Test
+    fun `a legacy path without a leading slash can be deleted through the visible API`() = runBlocking {
+        // 迁移来的 path 形态是 `旧标题.md`（无前导斜杠），而调用方一律写 `/旧标题.md`
+        val dao = FakeMemoryDAO()
+        dao.upsertFile(
+            MemoryFileEntity(
+                assistantId = AID, path = "旧标题.md", content = fm("老记忆"),
+                updatedAt = 1, source = "active", folderId = null, conversationId = null, invalidatedAt = null,
+            )
+        )
+        val repo = MemoryRepository(dao)
+        assertTrue("带斜杠的 path 必须命中无斜杠的老记忆", repo.invalidateFile(AID, "/旧标题.md"))
+        assertTrue("删除后列表应为空", repo.getFiles(AID).isEmpty())
+    }
+
 }

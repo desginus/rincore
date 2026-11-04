@@ -84,7 +84,21 @@ class MemoryRepository(
      * v5.3.7 迁移生成的**无前导斜杠** path。后果是「这条记忆明明在列表里，但按 path 查不到」，
      * 进而让 `update()` 把它当成新文件写入 → 同一主题变成两条（记忆重复的真实来源之一）。
      */
-    suspend fun getFile(assistantId: String, path: String): MemoryFile? {
+    suspend fun getFile(assistantId: String, path: String): MemoryFile? =
+        getFileAny(assistantId, path)?.takeIf { it.invalidatedAt == null || it.invalidatedAt == 0L }
+
+    /**
+     * v5.3.45 ★★**判存专用**（不过滤软删）。
+     *
+     * `getFile` 是公开 API，语义必须等于「读一条**可见**记忆」—— 旧实现直接返回未过滤的结果，
+     * 任何调用方都会在用户删除后读到一条"不存在于任何列表"的记忆（本轮用真实源码实跑时
+     * 就是靠这条断言发现的：`删除后不可读` 失败）。
+     *
+     * 只有「写入前判断这个 path 是否已存在」需要看见已失效条目 —— 因为要把
+     * `invalidatedAt` 读出来判断是否复活，以及把老形态 path 归一化迁移。
+     * 这个需求收敛到本方法，公开面不再暴露它。
+     */
+    private suspend fun getFileAny(assistantId: String, path: String): MemoryFile? {
         val candidates = pathCandidates(path)
         if (candidates.isEmpty()) return null
         return memoryFileDAO.getFilesAny(assistantId, candidates).firstOrNull()?.toMemoryFile()
@@ -161,7 +175,8 @@ class MemoryRepository(
         path: String,
         ifVersion: String? = null,
     ): MemoryWriteResult = writeLock.withLock {
-        val current = getFile(assistantId, path) ?: return MemoryWriteResult.Conflict(null)
+        // 判存用 any 版：已删除的条目也要看见，才能让「重复删除」给出确定结果而不是误报不存在
+        val current = getFileAny(assistantId, path) ?: return MemoryWriteResult.Conflict(null)
         if (ifVersion != null && ifVersion != current.version) {
             return MemoryWriteResult.Conflict(current)
         }
@@ -458,6 +473,23 @@ class MemoryRepository(
         }
         if (!versionMatches) return MemoryWriteResult.Conflict(current)
 
+        // ═══ v5.3.45 ★★已删除的条目：整体写入复活，局部编辑拒绝 ═══
+        //
+        // 旧实现（v5.3.7 起）无条件 `invalidatedAt = existing?.invalidatedAt`：
+        // 用户删掉 `/topics/food.md` 后，模型再 write 同一主题 → 内容确实写进去了，
+        // 但**软删标记被原样保留 → 永久不可见**。用户视角是「模型说记住了，记忆页却看不到」
+        // （v5.3.4/v5.3.5 报的现象之一，当时归因到 UI 死代码，其实还有这一层）。
+        //
+        // 正确语义按动作区分：
+        //  · `memory_write`（allowCreate=true）= 明确创建/整体覆盖 → **复活**（写进来就该可见）
+        //  · `memory_str_replace` / `memory_append`（allowCreate=false）= 局部编辑 → **拒绝**
+        //    （对一条已删除的记忆做局部编辑没有意义，让模型改用 memory_write 明确恢复）
+        val wasInvalidated = currentEntity?.invalidatedAt?.let { it != 0L } == true
+        if (wasInvalidated && !allowCreate) {
+            return MemoryWriteResult.Rejected(
+                "$normalized was deleted. Use memory_write to create it again if it should come back."
+            )
+        }
         val content = when (val result = edit(current?.content.orEmpty())) {
             is Edit.Reject -> return MemoryWriteResult.Rejected(result.reason)
             is Edit.Content -> result.content
@@ -517,7 +549,8 @@ class MemoryRepository(
             source = finalSource,
             folderId = finalFolderId,
             conversationId = finalConversationId,
-            invalidatedAt = existing?.invalidatedAt,
+            // allowCreate=true（整体写入）→ 复活；其余情况保留原标记（已被上面的守卫拦住）
+            invalidatedAt = if (allowCreate) null else existing?.invalidatedAt,
         )
         // v5.3.19 ★老 path 归一化迁移：DB 里那条如果是不带前导斜杠的旧形态，
         // 直接 upsert 会**新增一行**（主键含 path）→ 同一主题两条。这里先把旧形态行删掉。
@@ -766,8 +799,11 @@ class MemoryRepository(
         currentConversationId: String?,
     ) {
         // v5.0.85：模型侧「删除」= 软删（失效留痕，不再注入后续会话）
+        // v5.3.45 ★改走 `invalidateFile`（多形态）—— 旧实现直调 DAO 的 `invalidate`（单形态），
+        // 对 v5.3.7 迁移来的**无前导斜杠老 path** 恒 0 行命中 → 模型说"已删除"但条目还在。
+        // 函数体因此改成 suspend 返回 Boolean（调用方原本就是 suspend 上下文）。
         val path = resolvePathById(allowedAssistantId, id) ?: error("记忆 #$id 不存在")
-        memoryFileDAO.invalidate(allowedAssistantId, path, System.currentTimeMillis())
+        if (!invalidateFile(allowedAssistantId, path)) error("记忆 #$id 删除失败（路径未命中）")
     }
 
     // v5.3.13：`guardMemoryAccess(entity: MemoryEntity, ...)` 已删除 ——
