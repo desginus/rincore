@@ -70,12 +70,25 @@ object AppModeStore {
      * 这里一次切换只写一个字符串，同步写代价可忽略（毫秒级），换来确定性。
      */
     fun write(context: Context, mode: AppMode): Boolean {
-        val ok = context.applicationContext
+        val editor = context.applicationContext
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_MODE, mode.name)
-            .putBoolean(KEY_CHAT_PENDING, mode == AppMode.CHAT)
-            .commit()
+        // ═══ v5.3.50 ★★★这里必须区分「写 CHAT」和「回 WORK」—— 之前一视同仁导致切不进去 ═══
+        //
+        // 旧实现：`putBoolean(KEY_CHAT_PENDING, mode == AppMode.CHAT)` —— 只要写 CHAT 就把哨兵置位。
+        // 而 `recreate()` 之后 `resolveInitialMode()` 的判据是「CHAT + 哨兵为真 = 上次没起来」，
+        // 于是**每次点击「聊天」都被自己判成「上次没起来」→ 自愈回 WORK**，
+        // 用户看到的就是「抽动一下又回到工作模式，反复点都没用」。
+        //
+        // 正确语义：**哨兵只表示「本次进入 CHAT 后还没确认渲染成功」**，所以
+        //   · 写 CHAT：**不碰哨兵** —— 由 `resolveInitialMode()` 在真正决定进入 CHAT 时置位；
+        //   · 写 WORK：**清掉哨兵** —— 回工作模式后不存在「CHAT 没起来」这回事，
+        //     否则残留的 true 会让下一次进入 CHAT 被误判、又被打回 WORK。
+        if (mode == AppMode.WORK) {
+            editor.putBoolean(KEY_CHAT_PENDING, false)
+        }
+        val ok = editor.commit()
         // v5.3.49：`commit()` 返回 false 表示落盘失败（磁盘满/权限）。旧实现忽略返回值 ——
         // 用户切了模式、界面上像是切了，重启却回到旧模式，且没有任何线索。
         // 失败不会破坏已有数据（SharedPreferences 写入是原子的），所以只记录、不中断。
@@ -83,6 +96,15 @@ object AppModeStore {
             android.util.Log.w("AppModeStore", "写入模式失败（$mode）—— 本次切换可能在重启后失效")
         }
         return ok
+    }
+
+    /** 决定进入 CHAT 时调用 —— 置「本次尚未确认渲染成功」哨兵。 */
+    fun markChatPending(context: Context) {
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CHAT_PENDING, true)
+            .apply()
     }
 
     /** CHAT 首次成功渲染后调用 —— 清除「没起来」哨兵。 */

@@ -298,8 +298,16 @@ class RouteActivity : ComponentActivity() {
     private fun resolveInitialMode(): AppMode {
         val stored = AppModeStore.read(this)
         if (stored != AppMode.CHAT) return stored
-        if (!AppModeStore.isChatPending(this)) return stored
-        // 自愈：落盘 + 返回工作模式
+
+        if (!AppModeStore.isChatPending(this)) {
+            // ★v5.3.50 首次进入 CHAT：哨兵在这里置位（不是在该死的 write() 里）。
+            // 置位后如果渲染成功 → markChatHealthy() 清除；如果崩溃 → 残留 → 下次自愈回 WORK。
+            // 这样「用户刚切过来」与「上次没起来」才真正可区分 —— 旧实现两者都是 true，必然误判。
+            AppModeStore.markChatPending(this)
+            return AppMode.CHAT
+        }
+
+        // 哨兵仍在 = 上一次进入 CHAT 后没能渲染成功 → 自愈回工作模式并落盘
         AppModeStore.write(this, AppMode.WORK)
         return AppMode.WORK
     }
