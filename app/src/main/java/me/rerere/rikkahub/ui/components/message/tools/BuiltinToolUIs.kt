@@ -94,7 +94,21 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * 记忆库工具: 标题按读/写/删区分, 摘要显示操作的文件路径, 点路径跳到该文件的详情页
+ * 记忆库工具: 标题按读/写/删区分, 摘要显示**记忆正文内容**。
+ *
+ * ═══ v5.3.47 ★★不再显示路径（用户原话）═══
+ * 「显示读取的记忆，然后下面是内容。但这个内容它为什么现在是路径？我不希望看到路径，
+ * 因为我看不懂，也不重要。有真实内容的话，就是从参数上去读取，不要再去读取 path 作为
+ * 工具摘要的展示，可以去读取 content。要是都没有的话，直接写什么了一条记忆就行。」
+ *
+ * 正文来源优先级（都是模型这次真正动过的文字，不是内部标识）：
+ *  1. **参数**：`content`（write/append）、`new_str` / `old_str`（str_replace）
+ *  2. **输出**：`memory_read` 的 `files[].content` —— 那才是「读取到的记忆」
+ *  3. 都没有（delete / list）→ 不显示摘要（标题已写明「删除记忆」/「列出记忆」）
+ *
+ * 路径仍在内部用于点击跳转（点正文打开该记忆的详情页），但**不再出现在界面上**。
+ * 正文会先剥掉 frontmatter（`---` 开头那段 yaml）—— 用户要读的是记忆内容，
+ * 不是 `title:` / `kind:` 这些给模型看的元数据。
  */
 class MemoryFileToolUI(override val toolName: String) : ToolUIRenderer {
     override fun icon(context: ToolUIContext): ImageVector = when (toolName) {
@@ -108,57 +122,63 @@ class MemoryFileToolUI(override val toolName: String) : ToolUIRenderer {
         memoryToolTitle(toolName, context.arguments)
             ?: stringResource(R.string.chat_message_tool_call_generic, toolName)
 
-    // memory_read 的 path 是数组, 其余工具是单个路径
+    // memory_read 的 path 是数组, 其余工具是单个路径（仅用于跳转, 不显示）
     private fun paths(context: ToolUIContext): List<String> =
         when (val path = context.arguments.jsonObjectOrNull?.get("path")) {
             is JsonArray -> path.mapNotNull { it.jsonPrimitiveOrNull?.contentOrNull }
             else -> listOfNotNull(path?.jsonPrimitiveOrNull?.contentOrNull)
         }
 
-    override fun hasSummary(context: ToolUIContext): Boolean = paths(context).isNotEmpty()
+    /** 摘要要显示的正文; 返回 null 表示「这条工具没有可展示的内容」 */
+    private fun previewOf(context: ToolUIContext): String? {
+        // ① 参数里的正文（模型这次写进去/替换成的文字）
+        context.arguments.getStringContent("content")?.takeIf { it.isNotBlank() }?.let { return it }
+        context.arguments.getStringContent("new_str")?.takeIf { it.isNotBlank() }?.let { return it }
+        context.arguments.getStringContent("old_str")?.takeIf { it.isNotBlank() }?.let { return it }
+        // ② 读取类工具的输出正文（files[0].content）
+        val files = context.content?.jsonObjectOrNull?.get("files")?.jsonArray ?: return null
+        return files.firstOrNull()?.jsonObjectOrNull?.get("content")?.jsonPrimitiveOrNull?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    /** 读取到几个文件（用于「+N 条」提示） */
+    private fun readCount(context: ToolUIContext): Int =
+        context.content?.jsonObjectOrNull?.get("files")?.jsonArray?.size ?: 0
+
+    override fun hasSummary(context: ToolUIContext): Boolean = previewOf(context) != null
 
     @Composable
     override fun Summary(context: ToolUIContext) {
         val navController = LocalNavController.current
-        val paths = paths(context)
-        // 参数还在生成时路径可能不完整; 删掉的文件没有详情可看
+        val raw = previewOf(context) ?: return
+        val body = remember(raw) { stripFrontmatter(raw) }
+        // 正文可点击 -> 打开该记忆的详情页（路径只在内部使用）
+        val firstPath = paths(context).firstOrNull()
         val memoryId = context.assistant?.memoryId
             ?.takeIf { !context.loading && toolName != MemoryToolNames.DELETE }
-        Column {
-            paths.take(MAX_SUMMARY_PATHS).fastForEach { path ->
-                Row(
-                    modifier = Modifier
-                        .clip(MaterialTheme.shapes.small)
-                        .clickable(enabled = memoryId != null) {
-                            memoryId?.let { navController.navigate(Screen.MemoryFile(it, path)) }
-                        }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Text(
-                        text = path,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .shimmer(isLoading = context.loading),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (memoryId != null) {
-                        Icon(
-                            imageVector = HugeIcons.ArrowRight01,
-                            contentDescription = null,
-                            modifier = Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                        )
-                    }
+        val clickable = memoryId != null && firstPath != null
+        val extra = (readCount(context) - 1).coerceAtLeast(0)
+
+        Column(
+            modifier = Modifier
+                .clip(MaterialTheme.shapes.small)
+                .clickable(enabled = clickable) {
+                    if (clickable) navController.navigate(Screen.MemoryFile(memoryId!!, firstPath!!))
                 }
-            }
-            if (paths.size > MAX_SUMMARY_PATHS) {
+                .padding(vertical = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = body,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.shimmer(isLoading = context.loading),
+                maxLines = MAX_SUMMARY_LINES,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (extra > 0) {
                 Text(
-                    text = "+${paths.size - MAX_SUMMARY_PATHS}",
+                    text = "+$extra",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                 )
@@ -167,7 +187,7 @@ class MemoryFileToolUI(override val toolName: String) : ToolUIRenderer {
     }
 
     companion object {
-        private const val MAX_SUMMARY_PATHS = 5
+        private const val MAX_SUMMARY_LINES = 6
 
         val all = listOf(
             MemoryToolNames.READ,
@@ -178,6 +198,21 @@ class MemoryFileToolUI(override val toolName: String) : ToolUIRenderer {
             MemoryToolNames.LIST,
         ).map(::MemoryFileToolUI)
     }
+}
+
+/**
+ * 剥掉 frontmatter（`---` 开头的那段 yaml）。
+ *
+ * 记忆文件的正文形如 `---\ntitle: 发版流程\nkind: work\n---\n\n- 先跑 selfcheck…`，
+ * 前面那段是给模型看的元数据；用户在聊天流里要读的是「这条记忆到底说了什么」。
+ * 没有 frontmatter 的文件原样返回。
+ */
+internal fun stripFrontmatter(content: String): String {
+    val trimmed = content.trimStart()
+    if (!trimmed.startsWith("---")) return content.trim()
+    val end = trimmed.indexOf("\n---", startIndex = 3)
+    if (end < 0) return content.trim()
+    return trimmed.substring(end + 4).trimStart('\n', '\r', ' ')
 }
 
 /** 记忆库工具的标题, 聊天消息与导出图片共用; 不是记忆库工具时返回 null */
