@@ -13,3 +13,4 @@ local.properties
 .kotlin
 # 编辑器/助手自动生成的覆盖前快照目录（无源码意义）
 **/.versions/
+docs/.origin-cache.json
