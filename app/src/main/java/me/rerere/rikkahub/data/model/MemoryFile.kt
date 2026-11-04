@@ -189,7 +189,8 @@ enum class MemoryLayer { ASSISTANT, FOLDER, CONVERSATION }
  * v5.3.7：把**统一记忆**（[MemoryFile]，唯一存储表 memory_file）适配成注入 prompt
  * 使用的旧模型 [me.rerere.rikkahub.data.model.AssistantMemory]。
  *
- * 存储与判据都已统一，这里只是让生成链的既有 `buildMemoryPrompt(List<AssistantMemory>)`
+ * 存储与判据都已统一（v5.3.22 起 `buildMemoryPrompt(List<AssistantMemory>)` 重载已物理删除，
+ * 唯一入口是 `prompts.buildMemoryPrompt(List<MemoryFile>)`），这里只是让旧 UI 调用点
  * 无需连锁改动 —— 数据来自同一张表，不存在第二份真相。
  */
 fun MemoryFile.toAssistantMemory(): AssistantMemory = AssistantMemory(

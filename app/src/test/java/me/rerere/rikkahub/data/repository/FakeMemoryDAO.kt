@@ -187,12 +187,6 @@ internal class FakeMemoryDAO : MemoryFileDAO {
         return hit
     }
 
-    override suspend fun updateContentAny(
-        assistantId: String,
-        paths: List<String>,
-        content: String,
-        at: Long,
-    ): Int {
         var hit = 0
         files.value = files.value.map {
             if (it.assistantId == assistantId && it.path in paths) {

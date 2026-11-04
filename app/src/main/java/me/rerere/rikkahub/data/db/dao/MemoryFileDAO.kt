@@ -81,9 +81,6 @@ interface MemoryFileDAO {
     @Query("UPDATE memory_file SET folder_id = :folderId, conversation_id = :conversationId, updated_at = :at WHERE assistant_id = :assistantId AND path IN (:paths)")
     suspend fun updateScopeAny(assistantId: String, paths: List<String>, folderId: String?, conversationId: String?, at: Long): Int
 
-    @Query("UPDATE memory_file SET content = :content, updated_at = :at WHERE assistant_id = :assistantId AND path IN (:paths)")
-    suspend fun updateContentAny(assistantId: String, paths: List<String>, content: String, at: Long): Int
-
     @Query("UPDATE memory_file SET source = :source, updated_at = :at WHERE assistant_id = :assistantId AND path IN (:paths)")
     suspend fun updateSourceAny(assistantId: String, paths: List<String>, source: String, at: Long): Int
 

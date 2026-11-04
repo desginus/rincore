@@ -146,6 +146,16 @@ class RikkaHubApp : Application() {
                 if (added > 0) Log.i(TAG, "workspace healer: 补登记 $added 个工作区（目录在但 DB 无条目）")
             }.onFailure { Log.w(TAG, "workspace healer failed", it) }
         }
+        // ═══ v5.3.39 ★把 SubAgentRegistry 的构造+磁盘恢复挪出主线程 ═══
+        // `AppModule.kt:153` 是 `.also { it.restoreFromDisk() }` —— Koin 单例**首次注入时**执行，
+        // 而它内部是 `runBlocking { dao.getAll() }`（全表读）+ 逐条 upsert。
+        // 首次注入点通常是 UI 侧（LocalTools 需要它），于是**冷启动后第一次打开对话可能卡在 DB 读上**。
+        // 这里在启动的 IO 阶段主动取一次单例：构造与恢复都在 IO 线程完成，
+        // 之后 UI 再取时直接命中已初始化的实例（语义零变化，只是把它提前到后台）。
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching { get<me.rerere.rikkahub.subagent.SubAgentRegistry>() }
+                .onFailure { Log.w(TAG, "subagent registry warm failed", it) }
+        }
         // v4.5.29 岔路口计划·阶段2: 刷新已启用 Operit 脚本工具缓存
         get<me.rerere.rikkahub.data.operit.runtime.OperitToolProvider>().let { provider ->
             get<AppScope>().launch(Dispatchers.IO) {
