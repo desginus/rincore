@@ -270,6 +270,11 @@ internal fun ModelSelectorButton(
             onClick = {
                 state.open()
             },
+            // ★v5.3.53 几何对齐：`IconButton` 默认占位 **48dp**（Material 触摸目标），
+            // 而输入栏相邻的加号/发送键是 30dp —— 48dp 里画 36dp 图标，右侧会多出 6dp 隐形空隙，
+            // 加号紧贴其后时就显得「被推到右边」。这里把占位收到 36dp，与相邻圆键同一节奏。
+            // （`minimumInteractiveComponentSize` 由 IconButton 内部追加，外层 size 优先，不影响实测尺寸）
+            modifier = Modifier.size(36.dp),
         ) {
             // v5.1.8 ★用户实测"快速还是没对应图标"的真因：
             // 输入栏用的是 onlyIcon=true 分支，v5.1.7 我只改了 !onlyIcon 分支 → 完全没生效，

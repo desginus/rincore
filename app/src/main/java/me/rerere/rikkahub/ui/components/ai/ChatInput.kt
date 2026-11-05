@@ -329,9 +329,10 @@ fun ChatInput(
                                 .horizontalScroll(rememberScrollState()),
                             // v5.0.24 用户实证：加号偏上 = 本行默认顶部对齐 + 30dp vs 36dp 高度差
                             verticalAlignment = Alignment.CenterVertically,
-                            // v5.3.36：2dp → 0dp。两个 36dp 圆形按钮之间的 2dp 会让第二个圆
-                            // （加号）整体右移 2dp，与左缘的视觉对齐关系被破坏。
-                            horizontalArrangement = Arrangement.spacedBy(0.dp)
+                            // ★v5.3.53 间距：v5.3.36 把 2dp 归零是错的 —— 归零让三个圆键**相切**，
+                            // 用户实测「加号和发送键贴在一起，贴得很紧」。6dp 让相邻圆心距
+                            // = 直径 30 + 间距 6 = 36dp，与模型按钮占位 36dp 同一节奏，视觉等距。
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             // Model Picker
                             ModelSelectorButton(
@@ -346,14 +347,13 @@ fun ChatInput(
                             ActionIconButton(
                                 onClick = { showPlusMenu = true }
                             ) {
-                                // v5.3.36 ★加号视觉偏右的根因：`Add01` 用默认尺寸（24dp）落在
-                                // 36dp 圆形 Surface 里时，字形本身的左右留白不对称，右侧看起来更空、
-                                // 视觉重心偏左 —— 用户感知是「加号没对齐」。显式 20dp 让它落在圆心，
-                                // 与左侧 ModelSelectorButton（同为 36dp 圆形、图标 20dp）视觉一致。
+                                // ★v5.3.53 图标回到默认 24dp：v5.3.36 缩到 20dp 是无效尝试 ——
+                                // `Icon` 内部是「Box(size) { Image(fillMaxSize) }」，缩尺寸只是等比缩小
+                                // 整个 viewport，字形相对偏移的比例**一点没变**（用户实测「没有任何收益」是准确的）。
+                                // 30dp 圆里放 24dp 图标 = Material 标准的 0.8 比例，与原版 4.8.190 一致。
                                 Icon(
                                     imageVector = HugeIcons.Add01,
                                     contentDescription = "AI 交互",
-                                    modifier = Modifier.size(20.dp),
                                 )
                             }
                             if (showPlusMenu) {
@@ -616,8 +616,10 @@ private fun ActionIconButton(
 ) {
     Surface(
         onClick = onClick,
-        // v5.0.24 用户实证：与 ModelSelectorButton 的 36dp 对齐（原 30dp 视觉偏上/偏小）
-        modifier = Modifier.size(36.dp),
+        // ★v5.3.53 回到 30dp（与发送键同尺寸）：v5.0.24 改成 36dp 是「对齐」错判 ——
+        // 真正的不对称来自 ModelSelectorButton 的 48dp 占位（已修）。加号比发送键大 6dp，
+        // 加上间距归零，才是「加号偏右、和发送键挤在一起」的观感来源。
+        modifier = Modifier.size(30.dp),
         shape = CircleShape,
         tonalElevation = 0.dp,
         color = Color.Transparent,
