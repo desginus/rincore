@@ -425,9 +425,15 @@ fun ModelListSheet(
                 }
                 HorizontalDivider()
             }
+            // ★v5.3.52 性能：`state.filteredProviders` 是 **getter**，每次调用都 `fastFilter` 出新 List。
+            // 直接传它 ⇒ `ModelList` 内部所有 `remember(providers, ...)` 的 key 每次重组都变 ⇒
+            // 每帧重新分组所有提供商的模型（O(提供商数 × 模型数)）。这里先稳定实例。
+            val stableProviders = remember(state.providers, state.type) {
+                state.filteredProviders
+            }
             ModelList(
                 currentModel = state.modelId,
-                providers = state.filteredProviders,
+                providers = stableProviders,
                 modelType = state.type,
                 onSelect = {
                     onSelect(it)
@@ -454,11 +460,20 @@ private fun ColumnScope.ModelList(
     val settings = settingsStore.settingsFlow
         .collectAsStateWithLifecycle()
 
-    val favoriteModels = settings.value.favoriteModels.mapNotNull { modelId ->
-        val model = settings.value.providers.findModelById(modelId) ?: return@mapNotNull null
-        if (model.type != modelType) return@mapNotNull null
-        val provider = model.findProvider(providers = settings.value.providers, checkOverwrite = false) ?: return@mapNotNull null
-        model to provider
+    // ★v5.3.52 性能：这段是 O(收藏数 × 提供商数) 的查找（每个收藏都要遍历所有提供商找归属）。
+    // 原来**每次重组都重算** —— 滚动时 LazyColumn 每帧都可能有可见项变化触发重组，
+    // 收藏多、提供商多时这份重复计算会直接累加成滚动卡顿。加 remember 后只在收藏/提供商/类型变化时算一次。
+    val favoriteModels = remember(
+        settings.value.favoriteModels,
+        settings.value.providers,
+        modelType,
+    ) {
+        settings.value.favoriteModels.mapNotNull { modelId ->
+            val model = settings.value.providers.findModelById(modelId) ?: return@mapNotNull null
+            if (model.type != modelType) return@mapNotNull null
+            val provider = model.findProvider(providers = settings.value.providers, checkOverwrite = false) ?: return@mapNotNull null
+            model to provider
+        }
     }
 
     var searchKeywords by remember { mutableStateOf("") }
@@ -640,8 +655,11 @@ private fun ColumnScope.ModelList(
                     ModelItem(
                         model = model,
                         onSelect = onSelect,
-                        // v5.1.7：animateItem 在长列表里每项维持动画状态 → 滑动卡顿，去掉
-                        modifier = Modifier.scale(if (isDragging) 0.95f else 1f),
+                        // v5.3.52 ★恢复与原版一致：原版 4.8.190 有 animateItem() 且用户实测不卡；
+                        // v5.1.7 我删掉它是基于猜测，并未解决卡顿，反而与上游偏离。
+                        modifier = Modifier
+                            .scale(if (isDragging) 0.95f else 1f)
+                            .animateItem(),
                         providerSetting = provider,
                         select = model.id == currentModel,
                         onDismiss = {
@@ -730,8 +748,8 @@ private fun ColumnScope.ModelList(
                 ModelItem(
                     model = model,
                     onSelect = onSelect,
-                    // v5.1.7：animateItem 在长列表里每项维持动画状态 → 滑动卡顿，去掉
-                    modifier = Modifier,
+                    // v5.3.52 ★恢复与原版一致（同上：原版有它不卡，删除是无效尝试）
+                    modifier = Modifier.animateItem(),
                     providerSetting = providerSetting,
                     select = currentModel == model.id,
                     onDismiss = {
