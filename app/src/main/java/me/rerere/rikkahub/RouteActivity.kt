@@ -168,9 +168,6 @@ import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.rikkahub.data.appmode.AppMode
-import me.rerere.rikkahub.data.appmode.AppModeStore
-import me.rerere.rikkahub.ui.pages.chatmode.ChatModeEntry
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import me.rerere.rikkahub.utils.CrashHandler
 import me.rerere.rikkahub.utils.openUsageAccessSettings
@@ -236,17 +233,7 @@ class RouteActivity : ComponentActivity() {
         }
         // v4.8.91 TTFT: 进入前台即预热连接（观察者幂等注册）
         lifecycle.addObserver(warmupLifecycleObserver)
-        // ═══ v5.3.49 ★模式判定与自愈在**组合之前**完成（纯 Kotlin）═══
-        //
-        // 之前写在 `setContent { remember { ... } }` 里 —— remember 的 block 是**组合期间**
-        // 执行的，而里面既有 SharedPreferences 读、又可能触发**同步 commit() 磁盘写**。
-        // 在组合期间做磁盘 IO 是 Compose 明确的反模式：会拖慢首帧，且 remember 的 block
-        // 在组合被取消/重试时语义不保证（虽然常规路径只跑一次）。
-        // 移到 onCreate 里做，组合侧只拿一个纯值。
-        val initialMode = resolveInitialMode()
         setContent {
-            // 同一 APK 里两个完全独立的应用，只共用一个外壳与一套 Linux 沙箱。
-            var appMode by remember { mutableStateOf(initialMode) }
             RikkahubTheme {
                 // v5.3.4 ★用户崩溃报告（5.0.12 / RouteActivity.kt:228）：
                 //   IllegalStateException: The singleton image loader has already been
@@ -256,60 +243,10 @@ class RouteActivity : ComponentActivity() {
                 // **每次重建**（旋转/深色切换/多实例/返回栈恢复）都会重跑一次，而 Coil 3
                 // 的 SingletonImageLoader.setSafe 在已初始化后再调就抛异常 → 启动崩溃。
                 // 已整体移到 RikkaHubApp.onCreate（进程级、必然只执行一次，Coil 官方推荐位置）。
-                when (appMode) {
-                    AppMode.WORK -> {
-                        me.rerere.rikkahub.ui.components.render.RenderRequestHost()
-                        AppRoutes()
-                    }
-
-                    AppMode.CHAT -> {
-                        // CHAT 能走到这里并组合完，就算「起来了」→ 清哨兵
-                        androidx.compose.runtime.LaunchedEffect(Unit) {
-                            AppModeStore.markChatHealthy(this@RouteActivity)
-                        }
-                        ChatModeEntry(
-                            onSwitchBackToWork = {
-                                // ★v5.3.48 与抽屉按钮**完全同一路径**：写盘 + 重建 Activity。
-                                // 只改 `appMode` 状态会丢掉工作模式的导航栈（那是另一个模式的组合树，
-                                // 重新进入时 rememberSaveable 不会恢复，用户会「切回来回到首页」）；
-                                // recreate() 会带着 savedInstanceState 重建，导航栈得以复原。
-                                AppModeStore.write(this@RouteActivity, AppMode.WORK)
-                                recreate()
-                            },
-                        )
-                    }
-                }
+                me.rerere.rikkahub.ui.components.render.RenderRequestHost()
+                AppRoutes()
             }
         }
-    }
-
-    /**
-     * 读当前模式，并在「上次进入聊天模式但没能正常渲染」时**自动回退工作模式**。
-     *
-     * 必须在 `setContent` 之前调用一次；组合期间不得再碰磁盘。
-     *
-     * 为什么必须有这一层：用户切到聊天模式 → 关掉应用 → 如果聊天这一侧起不来
-     * （Mika 初始化失败、渲染崩溃……），下次启动就会直接崩，用户**再也进不去**，
-     * 连工作模式都用不了。宁可回工作模式（至少能用），也不把人关在起不来的界面里。
-     *
-     * 判据来源见 [AppModeStore.isChatPending]：进入 CHAT 时置位、成功渲染后清除；
-     * 下次启动发现它还在 = 上一次没跑起来。
-     */
-    private fun resolveInitialMode(): AppMode {
-        val stored = AppModeStore.read(this)
-        if (stored != AppMode.CHAT) return stored
-
-        if (!AppModeStore.isChatPending(this)) {
-            // ★v5.3.50 首次进入 CHAT：哨兵在这里置位（不是在该死的 write() 里）。
-            // 置位后如果渲染成功 → markChatHealthy() 清除；如果崩溃 → 残留 → 下次自愈回 WORK。
-            // 这样「用户刚切过来」与「上次没起来」才真正可区分 —— 旧实现两者都是 true，必然误判。
-            AppModeStore.markChatPending(this)
-            return AppMode.CHAT
-        }
-
-        // 哨兵仍在 = 上一次进入 CHAT 后没能渲染成功 → 自愈回工作模式并落盘
-        AppModeStore.write(this, AppMode.WORK)
-        return AppMode.WORK
     }
 
     private fun disableNavigationBarContrast() {

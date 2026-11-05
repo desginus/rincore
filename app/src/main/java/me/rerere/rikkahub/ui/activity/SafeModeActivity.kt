@@ -76,13 +76,6 @@ class SafeModeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val stackTrace = CrashHandler.getStackTrace(this)
         CrashHandler.clearCrashed(this)
-        // ═══ v5.3.48 ★进安全模式 = 刚刚崩过 → 强制回到工作模式 ═══
-        // 否则会出现这条死循环：聊天模式崩溃 → 安全模式 → 退出 → 又进聊天模式 → 再崩。
-        // 工作模式是主力，任何时候回它都安全；用户在抽屉里随时能再切回聊天。
-        me.rerere.rikkahub.data.appmode.AppModeStore.write(
-            this,
-            me.rerere.rikkahub.data.appmode.AppMode.WORK,
-        )
         enableEdgeToEdge()
         setContent {
             RikkahubTheme {

@@ -13,7 +13,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.IconButton
-import me.rerere.hugeicons.stroke.BubbleChat
 import me.rerere.hugeicons.stroke.Settings01
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
@@ -90,8 +89,6 @@ import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.hugeicons.stroke.TransactionHistory
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.appmode.AppMode
-import me.rerere.rikkahub.data.appmode.AppModeStore
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.model.Assistant
@@ -457,22 +454,6 @@ fun ChatDrawerContent(
                 )
 
                 Spacer(Modifier.weight(1f))
-
-                // ═══ v5.3.47 ★切换到聊天模式（Mika）═══
-                // 两个模式是同一个 APK 里**完全独立**的两个应用：各自的对话/技能/MCP/偏好，
-                // 只共用外壳与 Linux 沙箱。切换方式 = 写壳层偏好 + 重建 Activity，
-                // 让 RouteActivity.onCreate 读到新模式后整棵 UI 树换掉 ——
-                // 这样两边不可能因为"共享状态"而互相影响（这正是用户要的隔离）。
-                DrawerAction(
-                    icon = {
-                        Icon(HugeIcons.BubbleChat, "切换到聊天模式")
-                    },
-                    label = { Text("聊天") },
-                    onClick = {
-                        AppModeStore.write(context, AppMode.CHAT)
-                        (context as? ComponentActivity)?.recreate()
-                    },
-                )
 
                 DrawerAction(
                     icon = {

@@ -1,3 +1,0 @@
-[
-  {"file": "scripts/extract_pdf.py", "runnable": true, "needs": ["apk:py3-pypdf"]}
-]
