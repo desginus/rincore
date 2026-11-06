@@ -735,8 +735,10 @@ class ChatVM(
 
     fun updateTitle(title: String) {
         viewModelScope.launch {
-            val updatedConversation = conversation.value.copy(title = title)
-            chatService.saveConversation(_conversationId, updatedConversation)
+            // ★v5.3.56 只改 title，不用整对象：`conversation.value.copy(...)` 虽然来自
+            // 实时状态，但 `.value` 读到 `saveConversation` 落库之间是挂起点，
+            // 期间流式到达的新节点会被这份快照覆盖（同类问题统一收口到 updateConversationMeta）。
+            chatService.updateConversationMeta(_conversationId) { it.copy(title = title) }
         }
     }
 

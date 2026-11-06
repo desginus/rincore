@@ -304,6 +304,10 @@ class ChatService(
     // 用 per-conversation Mutex 串行化同一对话的保存；不同对话互不阻塞（不引入全局锁）。
     private val saveLocks = java.util.concurrent.ConcurrentHashMap<Uuid, kotlinx.coroutines.sync.Mutex>()
 
+    /** ★v5.3.56：正在压缩的对话（原子集合，防重复点击导致重复扣费 + 结果互相覆盖）。 */
+    private val compressingConversations: MutableSet<Uuid> =
+        java.util.concurrent.ConcurrentHashMap.newKeySet()
+
     /** v5.0.85：用量流水去重（同一条 assistant 消息只记一次） */
     private val usageRecordedMessages = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     /** v5.0.83：UI 读取队列流时的静态空回退（避免为读取而创建空壳 session） */
@@ -1435,12 +1439,15 @@ class ChatService(
                 params = backgroundTextGenerationParams(model, settings.fastModelReasoningLevel, sessionId = conversationId.toString()),
             )
 
-            // 生成完，conversation可能不是最新了，因此需要重新获取
-            conversationRepo.getConversationById(conversation.id)?.let {
-                saveConversation(
-                    conversationId,
-                    it.copy(title = result.message.toText().trim().ifEmpty { "" })
-                )
+            // ★v5.3.56 改为「只改标题」的原子写回。
+            // 旧实现：`getConversationById`（读 DB 全量）→ `copy(title)` → `saveConversation`（整对象写回）。
+            // 而 `saveConversation` 自 v5.2.0 起「入参即权威」—— 入参里的 messageNodes 会被
+            // 一并写进内存与 DB；DB 相对内存**总是滞后的**（流式落库约 1s 节流），而标题生成
+            // 要跑好几秒，这期间用户或消息队列发出的下一条消息就会被这份旧快照覆盖掉（并持久化）。
+            // 现在只动 title 一个字段，节点永远取自内存。
+            val newTitle = result.message.toText().trim()
+            if (newTitle.isNotEmpty()) {
+                updateConversationMeta(conversationId) { it.copy(title = newTitle) }
             }
         }.onFailure {
             it.printStackTrace()
@@ -1486,17 +1493,12 @@ class ChatService(
                 result.message.toText().split("\n").map { it.trim() }
                     .filter { it.isNotBlank() }
 
-            val latestConversation = conversationRepo.getConversationById(conversationId)
-                ?: sessionManager.get(conversationId)?.state?.value
-                ?: conversation
-            saveConversation(
-                conversationId,
-                latestConversation.copy(
-                    chatSuggestions = suggestions.take(
-                        10
-                    )
-                )
-            )
+            // ★v5.3.56 同上：只改 chatSuggestions，且**优先用内存态**。
+            // 旧实现把 DB 放在第一优先（`getConversationById ?: session.state ?: conversation`），
+            // 方向正好相反 —— DB 比内存旧，整对象写回会用旧节点覆盖最新消息。
+            updateConversationMeta(conversationId) {
+                it.copy(chatSuggestions = suggestions.take(10))
+            }
         }.onFailure {
             it.printStackTrace()
         }
@@ -1516,12 +1518,23 @@ class ChatService(
         targetTokens: Int,
         keepRecentMessages: Int = 10
     ): Result<Unit> {
+        // ★v5.3.56 并发防护（原子）：
+        // 重复点击「压缩」或从两个入口同时触发，会**各跑一遍模型（重复扣费）**，
+        // 且后一次会用它那份基于旧快照的摘要覆盖前一次的结果。
+        // 用 ConcurrentHashMap.newKeySet().add() 做 CAS —— 比读 `isCompressing` 布尔量可靠
+        // （两个协程同时读到 false 的情况不会发生）。
+        if (!compressingConversations.add(conversationId)) {
+            return Result.failure(
+                IllegalStateException("这个对话正在压缩中，请等它完成再试（重复压缩会重复消耗 token）")
+            )
+        }
         val compressSession = sessionManager.get(conversationId)
         compressSession?.isCompressing = true
         return try {
             compressConversation(conversationId, conversation, additionalPrompt, targetTokens, keepRecentMessages)
         } finally {
             compressSession?.isCompressing = false
+            compressingConversations.remove(conversationId)
             dispatchNextQueuedMessage(conversationId)
         }
     }
@@ -1730,10 +1743,15 @@ class ChatService(
         // 现在两处都读，任一命中期望即算成功。
         val fromSession = sessionManager.get(conversationId)?.state?.value?.messageNodes?.size
         val fromDb = conversationRepo.getConversationById(conversationId)?.messageNodes?.size
-        if (fromSession != expectedNodes && fromDb != expectedNodes) {
+        // ★v5.3.56：判据改为「**数据库必须命中**」。
+        // 旧判据是「内存或数据库任一命中即算成功」—— 而压缩只在内存生效、DB 被仓库层
+        // 「消息骤减拒绝」拦下时，内存命中就"通过"了：用户当下看到摘要，**重启后原消息全回来**。
+        // 压缩的目的就是持久化，唯一可信的判据只能是 DB；内存只作诊断信息。
+        if (fromDb != expectedNodes) {
             throw IllegalStateException(
-                "压缩结果未生效：期望 $expectedNodes 个节点，" +
-                    "内存=${fromSession ?: "无会话"}，数据库=${fromDb ?: "无记录"}（请重试）"
+                "压缩结果未写入数据库：期望 $expectedNodes 个节点，" +
+                    "数据库=${fromDb ?: "无记录"}，内存=${fromSession ?: "无会话"}。" +
+                    "（已回退尝试，请重试；若反复出现请把这条原文发我）"
             )
         }
         android.util.Log.i(
@@ -1744,6 +1762,44 @@ class ChatService(
     }
 
     // ---- 对话状态更新 ----
+
+    /**
+     * ★v5.3.56：只改「元数据字段」（标题 / 建议）的原子写回。
+     *
+     * 收口一类结构性错误：**读全量 → 改一个字段 → 整对象写回**。
+     * 旧写法 `getConversationById(...)?.copy(字段) → saveConversation(...)` 在
+     * `saveConversation` 于 v5.2.0 改为「入参即权威」之后变得危险 —— 它会把入参里的
+     * `messageNodes` 一并覆盖进内存与 DB，而 DB 相对内存**总是滞后的**（流式落库约 1s 节流）。
+     * 标题/建议生成要跑数秒，这期间发出的下一条消息会被旧快照覆盖并持久化。
+     *
+     * 现在两条路都只动目标字段：
+     *  · 有就绪内存态 → [ConversationSession.updateMetadata]（先应用到**最新内存**，
+     *    再以内存为权威落库；节点取自内存，不用旧快照）；
+     *  · 无内存态（会话已回收/未加载）→ 读 DB 补齐后**直写 DB**，不经过 session，
+     *    也不走 `saveConversation`（那条路在 session 未就绪时会 skip，标题会丢）。
+     */
+    suspend fun updateConversationMeta(
+        conversationId: Uuid,
+        update: (Conversation) -> Conversation,
+    ): Conversation? {
+        val session = sessionManager.get(conversationId)
+        if (session != null && session.isReady) {
+            session.updateMetadata(
+                update = update,
+                persist = { persistConversationState(conversationId) },
+            )
+            return session.state.value
+        }
+        val base = conversationRepo.getConversationById(conversationId)
+        if (base == null) {
+            Log.w(TAG, "updateConversationMeta: no session & no DB row, skip id=$conversationId")
+            return null
+        }
+        val updated = update(base)
+        conversationRepo.updateConversation(updated)
+        Log.i(TAG, "updateConversationMeta: wrote DB directly (no ready session) id=$conversationId")
+        return updated
+    }
 
     private fun updateConversation(conversationId: Uuid, conversation: Conversation) {
         if (conversation.id != conversationId) return
@@ -1963,7 +2019,9 @@ class ChatService(
                     return@withLock
                 }
                 if (conversationRepo.existsConversationById(conversationId)) {
-                    conversationRepo.updateConversation(conversation)
+                    // ★v5.3.56：结构性替换（压缩）在会话被回收时也要能落库，
+                    // 否则仓库层的「消息骤减拒绝」会把压缩结果拦在 message_node 表外。
+                    conversationRepo.updateConversation(conversation, allowShrink = forceReplace)
                 } else {
                     conversationRepo.insertConversation(conversation)
                 }
@@ -1999,7 +2057,9 @@ class ChatService(
                 if (forceReplace) {
                     // v5.1.19：结构性变更（压缩）在 session 未加载时也必须落库，
                     // 否则「跳过 + 补加载」会把整次压缩结果丢掉（用户看到的又是"什么都没变"）。
-                    conversationRepo.updateConversation(conversation)
+                    // ★v5.3.56：必须带 allowShrink —— 压缩天然是「骤减」，
+                    // 不带的话会被仓库层的防丢数据守卫拦下（只写元数据、不写节点）。
+                    conversationRepo.updateConversation(conversation, allowShrink = true)
                     Log.w(
                         TAG,
                         "saveConversation: forceReplace on unloaded session — wrote DB directly " +
@@ -2051,7 +2111,11 @@ class ChatService(
             if (!exists) {
                 conversationRepo.insertConversation(snapshot)
             } else {
-                conversationRepo.updateConversation(snapshot)
+                // ★v5.3.56：forceReplace（压缩等结构性替换）必须透传 allowShrink。
+                // 否则仓库层的「骤减拒绝」会把压缩结果拦在 message_node 表之外：
+                // 内存已是压缩后的样子（校验因此"通过"），但 DB 仍是旧节点 →
+                // 重启后原消息全部回来（用户视角=压缩没生效）。
+                conversationRepo.updateConversation(snapshot, allowShrink = forceReplace)
             }
         }
 

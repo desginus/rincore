@@ -412,7 +412,21 @@ class ConversationRepository(
         return false
     }
 
-    suspend fun updateConversation(conversation: Conversation) {
+    /**
+     * 更新会话（整对象）。
+     *
+     * @param allowShrink ★v5.3.56：允许「消息节点显著变少」的**结构性变更**。
+     *
+     * 为什么需要它（真 P0）：下方 v5.0.24 的「骤减拒绝」守卫用 `incoming < existing / 2`
+     * 判定数据丢失特征 —— 但**压缩上下文天然就是这个形状**（200 条 → 摘要 + 最近 10 条）。
+     * 于是压缩结果被这条守卫拦在 `message_node` 表之外：只写了元数据、没写节点；
+     * 而内存已被 `saveConversation` 改成压缩后的样子 → 校验看到内存命中即「成功」，
+     * 用户当下也看到摘要，**但重启/重新加载后原消息全部回来**。
+     *
+     * 语义：只有调用方**明确声明这是结构性替换**（压缩 / 导入制定状态）时才为 true，
+     * 默认 false 保持原有防丢数据保护。
+     */
+    suspend fun updateConversation(conversation: Conversation, allowShrink: Boolean = false) {
         var nodesWritten = false
         database.withTransaction {
             conversationDAO.update(
@@ -427,7 +441,7 @@ class ConversationRepository(
             // 第二道守卫 —— 非空但骤减（少于已有一半）一律视为数据丢失特征，拒绝写节点。
             // 正常编辑/重新生成/分支切换只会等量或小幅变化，不会腰斩。
             val suspiciousShrink = existing > 0 && incoming > 0 && incoming < existing / 2
-            if (suspiciousShrink) {
+            if (suspiciousShrink && !allowShrink) {
                 android.util.Log.w(
                     "ConversationRepository",
                     "updateConversation: REFUSE suspicious shrink ${conversation.id} ($existing -> $incoming) — metadata only"

@@ -169,10 +169,12 @@ fun Route.conversationRoutes(
         // POST /api/conversations/{id}/pin - Toggle pinned status
         post("/{id}/pin") {
             val uuid = call.parameters["id"].toUuid("conversation id")
-            val conversation = conversationRepo.getConversationById(uuid)
+            conversationRepo.getConversationById(uuid)
                 ?: throw NotFoundException("Conversation not found")
 
-            chatService.saveConversation(uuid, conversation.copy(isPinned = !conversation.isPinned))
+            // ★v5.3.56 只改 isPinned：旧实现读 DB 全量后整对象写回，
+            // 而 DB 相对内存滞后（流式落库约 1s 节流）→ 正在生成时置顶会回退最新消息。
+            chatService.updateConversationMeta(uuid) { it.copy(isPinned = !it.isPinned) }
             call.respond(HttpStatusCode.OK, mapOf("status" to "updated"))
         }
 
@@ -196,10 +198,11 @@ fun Route.conversationRoutes(
                 throw BadRequestException("Title must not be blank")
             }
 
-            val conversation = conversationRepo.getConversationById(uuid)
+            conversationRepo.getConversationById(uuid)
                 ?: throw NotFoundException("Conversation not found")
 
-            chatService.saveConversation(uuid, conversation.copy(title = title))
+            // ★v5.3.56 只改 title（同 /pin 的理由：不得用 DB 快照整对象覆盖内存）
+            chatService.updateConversationMeta(uuid) { it.copy(title = title) }
             call.respond(HttpStatusCode.OK, mapOf("status" to "updated"))
         }
 
@@ -224,11 +227,10 @@ fun Route.conversationRoutes(
                 modeInjectionIds = request.modeInjectionIds,
                 lorebookIds = request.lorebookIds,
             )
-            val updatedConversation = conversation.copy(
-                modeInjectionIds = modeInjectionIds,
-                lorebookIds = lorebookIds,
-            )
-            chatService.saveConversation(uuid, updatedConversation)
+            // ★v5.3.56 只改两个注入字段，不再整对象写回
+            val updatedConversation = chatService.updateConversationMeta(uuid) {
+                it.copy(modeInjectionIds = modeInjectionIds, lorebookIds = lorebookIds)
+            } ?: throw NotFoundException("Conversation not found")
 
             val isGenerating = chatService.getGenerationJobStateFlow(uuid).first() != null
             call.respond(HttpStatusCode.OK, updatedConversation.toDto(isGenerating))
@@ -245,10 +247,11 @@ fun Route.conversationRoutes(
                 throw BadRequestException("Assistant not found")
             }
 
-            val conversation = conversationRepo.getConversationById(uuid)
+            conversationRepo.getConversationById(uuid)
                 ?: throw NotFoundException("Conversation not found")
 
-            chatService.saveConversation(uuid, conversation.copy(assistantId = targetAssistantId))
+            // ★v5.3.56 只改 assistantId（同 /pin、/title：不得用 DB 快照整对象覆盖内存）
+            chatService.updateConversationMeta(uuid) { it.copy(assistantId = targetAssistantId) }
             call.respond(HttpStatusCode.OK, mapOf("status" to "updated"))
         }
 
