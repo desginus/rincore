@@ -338,14 +338,78 @@ class ConversationRepository(
         return conversationDAO.countAll()
     }
 
+    /**
+     * 插入新会话。
+     *
+     * ★v5.3.55 **幂等化** —— 用户实测崩溃：
+     * `UNIQUE constraint failed: ConversationEntity.id (code 1555)`，
+     * 弹出位置是「自动生成标题失败」。调用链：
+     * `generateTitle` → `getConversationById`（拿到行）→ `saveConversation` →
+     * `existsConversationById` 判 false → 本函数 `insert` → 撞主键。
+     *
+     * 根因**不是某个调用点写错**，而是「先查存在、再插入」本身就是非原子操作：
+     *  - `saveConversation` 的 `saveLock` 只覆盖它自己；
+     *  - `HistoryVM.restoreConversation` / `BackupVM` / `DebugVM` /
+     *    `SubAgentEngine` / `CronJobWorker` 都**直接调本函数**，不走那把锁；
+     *  - Room 的 `existsById` 是独立读事务，与随后的写之间天然存在窗口。
+     * 于是同一个 id 在「查完 → 写进去」之间被另一条路径插入，就会撞主键；
+     * 异常又被 `generateTitle` 的 `runCatching` 捕获，表现成「标题生成失败」。
+     *
+     * 修法：不为某个并发者打补丁，而是**让插入在重复发生时安全收敛** ——
+     * 捕获主键冲突后转 update（语义即「这条会话已存在，把内容对齐」），
+     * 等价于数据库层的 upsert。**非主键冲突一律原样抛出**，不掩盖真问题。
+     */
     suspend fun insertConversation(conversation: Conversation) {
-        database.withTransaction {
-            conversationDAO.insert(
-                conversationToConversationEntity(conversation)
+        try {
+            database.withTransaction {
+                conversationDAO.insert(
+                    conversationToConversationEntity(conversation)
+                )
+                saveMessageNodes(conversation.id.toString(), conversation.messageNodes)
+            }
+        } catch (e: Exception) {
+            if (!e.isPrimaryKeyConflict()) throw e
+            Log.w(
+                "ConversationRepository",
+                "insertConversation: PK already exists id=${conversation.id} " +
+                    "→ 幂等转 update（并发插入 / 重复恢复 / 标题生成与落库撞窗）",
             )
-            saveMessageNodes(conversation.id.toString(), conversation.messageNodes)
+            // updateConversation 自带「空节点不清空历史」「骤减拒绝」两道守卫，
+            // 直接复用它，避免在这里再造一套写节点语义（也不重复刷 FTS）。
+            updateConversation(conversation)
+            return
         }
         messageFtsManager.indexConversation(conversation)
+    }
+
+    /**
+     * ★v5.3.55：判断异常是否为「主键/唯一约束冲突」。
+     *
+     * 设备上抛的是 `android.database.sqlite.SQLiteConstraintException`，但 SQLite
+     * 驱动有多种实现（framework / requery），**类名不同、message 一致**，
+     * 因此按 **cause 链逐层看「类名 + message」**，而不是只 catch 某一个具体类
+     * （否则换机型/换驱动就失效，正是这类崩溃只在部分设备出现的原因）。
+     *
+     * **只认 UNIQUE / PRIMARY KEY**：外键、非空、CHECK 约束都不在此列 ——
+     * 那些是真正的数据问题，必须原样抛出，不能被「幂等」悄悄吞掉。
+     */
+    private fun Throwable.isPrimaryKeyConflict(): Boolean {
+        var current: Throwable? = this
+        var depth = 0
+        while (current != null && depth < 8) {
+            val name = current.javaClass.simpleName
+            val msg = current.message.orEmpty()
+            val looksLikeConstraint =
+                name.contains("Constraint", ignoreCase = true) ||
+                    msg.contains("constraint", ignoreCase = true)
+            val isKeyCollision =
+                msg.contains("UNIQUE constraint failed", ignoreCase = true) ||
+                    msg.contains("PRIMARY KEY", ignoreCase = true)
+            if (looksLikeConstraint && isKeyCollision) return true
+            current = current.cause
+            depth++
+        }
+        return false
     }
 
     suspend fun updateConversation(conversation: Conversation) {

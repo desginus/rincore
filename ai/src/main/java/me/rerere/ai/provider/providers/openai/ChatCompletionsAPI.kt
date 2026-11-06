@@ -182,9 +182,14 @@ class ChatCompletionsAPI(
         // 多一次全量 JSON 序列化 + logcat, 纯发送前开销; 错误路径 (下方) 保留完整请求体
         val response = effClient(providerSetting).resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
         if (!response.isSuccessful) {
-            // v3.6.78: 报错带完整请求体 — 定位 400 触发字段 (grok 排查)
-            val reqSummary = json.encodeToString(requestBody)
-            throw Exception("Failed to get response: ${response.code} ${response.body.string()} REQ=$reqSummary")
+            // ★v5.3.55 错误信息可读性（用户实测：压缩失败的报错是几万字符的 JSON）：
+            // v3.6.78 为排查 400 触发字段，把**整个请求体**拼进了异常 message。后果是
+            // 用户在界面上看到的是一整段含全部对话历史的 JSON（他原话「一串无意义的乱码」），
+            // 而且这条 message 会被一路带到 addError/日志里，把小日志也撑爆。
+            // 排查价值保留在 Log 里（完整 REQ 仍打），message 只给「状态码 + 服务端错误描述」。
+            val bodyText = response.body.string()
+            Log.w(TAG, "generateText failed: http=${response.code} REQ=${json.encodeToString(requestBody)}")
+            throw Exception("Failed to get response: ${response.code} ${bodyText.take(600)}")
         }
 
         val bodyStr = response.body.string()

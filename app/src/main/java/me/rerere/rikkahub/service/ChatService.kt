@@ -1585,16 +1585,52 @@ class ChatService(
             val settingsNow = settingsStore.settingsFlow.first()
             val compressLevel = settingsNow.fastModelReasoningLevel
             android.util.Log.i("ChatService", "compressMessages: model=${model.modelId} level=$compressLevel chunk=${messages.size}msgs chars=${contentToCompress.length}")
-            // v5.1.17 ★用户实测「上下文压缩全崩」根因：压缩用 ``compressModelId`` 指定的模型，
-            // 而它可能是一个**服务端已弃用**的模型（本次报错 Model deepseek-flash has been
-            // deprecated. Use deepseek-v4.1-flash instead.）→ 压缩请求被拒 → 摘要生成失败
-            // → 无法保存压缩记录，而设置页**没有压缩模型这一项**，用户无从自救。
-            // 这里加「已弃用自动回退」：识别模型无效类错误后用当前对话模型重试一次。
-            fun isStaleModelError(e: Throwable): Boolean {
+            // ★v5.3.55 从「只认已弃用模型」扩展到「任何可恢复的压缩失败」。
+            //
+            // 用户实测的关键线索：**同一个 DeepSeek 官方 API，对话完全正常，压缩报 402**。
+            // 原因就在本函数开头那行 `findModelById(compressModelId)` —— 它**优先**，
+            // 只有模型被删（返回 null）才回退。而 compressModelId 指向的是一个旧模型条目
+            // （报错 REQ 里 model=deepseek-flash），那个条目/那个 key 在服务端被判余额不足；
+            // 用户正在用的对话模型是另一个条目 —— 所以「能聊天、不能压缩」。
+            //
+            // v5.1.17 只识别「已弃用/不存在」，402/401/429/超时/上下文超限全都直接抛给用户，
+            // 明明当前对话模型可用也不试一下。现在全部归入「可恢复」并自动回退。
+            fun isRecoverableCompressionError(e: Throwable): Boolean {
                 val msg = (e.message ?: "").lowercase()
-                return msg.contains("deprecated") || msg.contains("not found") ||
-                    msg.contains("invalid model") || msg.contains("model_not_found") ||
-                    msg.contains("does not exist")
+                return listOf(
+                    // 模型无效 / 已下线
+                    "deprecated", "not found", "invalid model", "model_not_found", "does not exist",
+                    // 余额 / 配额 / 计费（本次 402 Insufficient Balance）
+                    "insufficient", "balance", "quota", "credit", "billing", "payment", " 402 ",
+                    // 鉴权：该 provider 的 key 失效 → 换当前对话模型即可
+                    "unauthorized", "invalid api key", "invalid_api_key", "authentication", " 401 ",
+                    // 限流
+                    "rate limit", "too many requests", " 429 ",
+                    // 上下文超出压缩模型的窗口（压缩对象本来就是长对话，这项很常见）
+                    "context length", "maximum context", "context_length_exceeded", "too long",
+                    // 连接 / 超时
+                    "timeout", "timed out", "connect", "network", "unreachable",
+                ).any { msg.contains(it) }
+            }
+
+            /** 把服务端错误压成一句人能看懂的话（剥掉 JSON 壳与 request_id）。 */
+            fun humanizeCompressError(e: Throwable): String {
+                val raw = e.message ?: return "未知错误"
+                // 常见形态：{"error":{"message":"Insufficient Balance (request_id: ...)"}}
+                val marker = "\"message\""
+                val idx = raw.indexOf(marker)
+                val detail = if (idx >= 0) {
+                    val colon = raw.indexOf(':', idx + marker.length)
+                    val start = if (colon >= 0) raw.indexOf('"', colon + 1) else -1
+                    val end = if (start >= 0) raw.indexOf('"', start + 1) else -1
+                    if (start >= 0 && end > start) raw.substring(start + 1, end) else raw
+                } else {
+                    raw
+                }
+                return detail
+                    .replace(Regex("""\s*\(request_id:[^)]*\)"""), "")
+                    .lineSequence().firstOrNull().orEmpty()
+                    .trim().take(160).ifBlank { "未知错误" }
             }
 
             val result = try {
@@ -1605,19 +1641,59 @@ class ChatService(
                 )
             } catch (e: Throwable) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                val fbModel = settings.getCurrentChatModel()
-                if (!isStaleModelError(e) || fbModel == null || fbModel.id == model.id) throw e
-                val fbProvider = fbModel.findProvider(settings.providers) ?: throw e
+                // ★v5.3.55 可空性收口：不再用 `canFallback` 布尔量 + `!!`，
+                // 而是把「可回退的目标」直接算成一个非空局部变量 ——
+                // 编译器据此给出智能转换，避免 `fbModel.findProvider(...)` 这类
+                // 「可空接收者直接调方法」的编译错（null-safety 靠类型系统保证，
+                // 不靠后面散落的 !! 断言）。
+                val currentChatModel = settings.getCurrentChatModel()
+                val fallbackModel = currentChatModel?.takeIf {
+                    isRecoverableCompressionError(e) && it.id != model.id
+                }
+                if (fallbackModel == null) {
+                    // 不能回退时给出**能照着做**的说明，而不是把服务端原始 JSON 丢给用户。
+                    throw IllegalStateException(
+                        buildString {
+                            append("压缩失败：模型 ").append(model.modelId)
+                            append(" 不可用（").append(humanizeCompressError(e)).append("）。")
+                            when {
+                                currentChatModel == null ->
+                                    append("当前对话没有可用模型可回退，请到「设置 → 模型与服务 → 压缩模型」指定一个可用模型。")
+                                currentChatModel.id == model.id ->
+                                    append("当前对话用的也是这个模型，请检查它的余额，或到「设置 → 模型与服务 → 压缩模型」换一个模型。")
+                                else ->
+                                    append("该错误不在可自动回退范围内，请到「设置 → 模型与服务 → 压缩模型」换一个模型。")
+                            }
+                        },
+                        e,
+                    )
+                }
+                val fbProvider = fallbackModel.findProvider(settings.providers)
+                    ?: throw IllegalStateException(
+                        "压缩失败：模型 ${model.modelId} 不可用（${humanizeCompressError(e)}），" +
+                            "且回退目标的提供商未找到。请到「设置 → 模型与服务 → 压缩模型」换一个模型。",
+                        e,
+                    )
                 val fbHandler = providerManager.getProviderByType(fbProvider)
                 android.util.Log.w(
                     "ChatService",
-                    "compress: model=${model.modelId} 失败(${(e.message ?: "").take(120)}) → 回退 ${fbModel.modelId} 重试",
+                    "compress: model=${model.modelId} 失败(${humanizeCompressError(e)}) → 回退 ${fallbackModel.modelId} 重试",
                 )
-                fbHandler.generateText(
-                    providerSetting = fbProvider,
-                    messages = listOf(UIMessage.user(prompt)),
-                    params = backgroundTextGenerationParams(fbModel, compressLevel, sessionId = conversationId.toString()),
-                )
+                try {
+                    fbHandler.generateText(
+                        providerSetting = fbProvider,
+                        messages = listOf(UIMessage.user(prompt)),
+                        params = backgroundTextGenerationParams(fallbackModel, compressLevel, sessionId = conversationId.toString()),
+                    )
+                } catch (fbError: Throwable) {
+                    if (fbError is kotlinx.coroutines.CancellationException) throw fbError
+                    throw IllegalStateException(
+                        "压缩失败：压缩模型 ${model.modelId} 不可用（${humanizeCompressError(e)}），" +
+                            "回退到当前对话模型 ${fallbackModel.modelId} 也失败（${humanizeCompressError(fbError)}）。" +
+                            "请到「设置 → 模型与服务 → 压缩模型」指定一个可用模型。",
+                        fbError,
+                    )
+                }
             }
 
             return result.message.toText().trim().ifEmpty { throw IllegalStateException("Failed to generate compressed summary") }
