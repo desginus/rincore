@@ -1705,7 +1705,12 @@ private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
         val lines = output.mapNotNull { part ->
             when (part) {
                 is UIMessagePart.Text -> part.text
-                is UIMessagePart.Image -> "[图片已省略: 工具返回的图片已作为随后的用户消息附图提供]"
+                is UIMessagePart.Image ->
+                    // ★v5.3.54：文案收短。图片确实**只发送一次** —— 按 OpenAI 规范
+                    // `role=tool` 的 content 只能放 text，所以图片被移到紧随其后的 user
+                    // 消息里（见本函数上方 groupImages 的处理），这里只需要告诉模型
+                    // "图在哪"，不必再复述一遍来龙去脉（旧文案太长，观感上像发生了两次）。
+                    "[图片见下一条消息]"
                 else -> null
             }
         }

@@ -671,8 +671,21 @@ class WorkspaceRepository(
         if (pool == null) {
             manager.executeCommand(root = workspace.root, command = command, cwd = cwd, timeoutMillis = timeoutMillis)
         } else {
+            // ★v5.3.54 一致性修复：**key 必须含 cwd**。
+            // 常驻会话的 `/workspace` 挂载源在建会话那一刻就固定了
+            // （ProotShellRunner：`File(filesDir, cwd):/workspace`），而 key 原来只有
+            // `"$id:$sessionKey"` → 同一工作区的不同对话/不同项目包共享同一个 `main` 会话，
+            // 于是「shell 里的 /workspace」停在第一个对话的 cwd 上，而文件工具/read_image
+            // 每次按**当前** cwd 解析 → 同一个 `/workspace/x` 字符串两边指向不同文件
+            // （用户实测：shell 写到 /workspace/.tmp_top.png 成功，read_image 报
+            //  「rootfs 解析失败（cwd=/workspace/KEEP-默认-CWD）」）。
+            // 归一化规则与 workspaceCwdRel / workspaceScopeDir 同口径，避免
+            // "x" 与 "/workspace/x" 建出两个会话。
+            val cwdKey = cwd.trim().replace('\\', '/').trim('/')
+                .let { if (it == "workspace") "" else it.removePrefix("workspace/") }
+                .trim('/')
             pool.run(
-                key = "$id:$sessionKey",
+                key = "$id:$sessionKey@$cwdKey",
                 root = workspace.root,
                 cwd = cwd,
                 command = command,

@@ -124,15 +124,23 @@ fun createReadImageTool(
             }
             var bytes: ByteArray? = null
             var lastErr: String? = null
-            for (candidate in candidates) {
-                val got = runCatching {
-                    workspaceRepository.readRootfsBuffer(workspaceId, candidate, cwd).toByteArray()
-                }.getOrNull()
-                if (got != null && got.isNotEmpty()) {
-                    bytes = got
-                    break
+            // ★v5.3.54 用户建议的宽容策略：「在校验失败时自动尝试第二种形态」。
+            // 两套口径本来就是并存的 —— shell/job 的 `/workspace` 是**当前 cwd 的挂载视图**，
+            // 而历史上也有按工作区根写进来的文件（session 复用、跨对话、模型自己拼的路径）。
+            // 先按 cwd 解析（保持 CWD 专一空间的隔离语义），找不到再按工作区根解析；
+            // 无论文件是哪种方式写进来的都能读到，彻底消除「shell 写成功、read_image 说不存在」。
+            val cwdPasses = listOf(cwd, null).distinct()
+            outer@ for (passCwd in cwdPasses) {
+                for (candidate in candidates) {
+                    val got = runCatching {
+                        workspaceRepository.readRootfsBuffer(workspaceId, candidate, passCwd).toByteArray()
+                    }.getOrNull()
+                    if (got != null && got.isNotEmpty()) {
+                        bytes = got
+                        break@outer
+                    }
+                    lastErr = candidate
                 }
-                lastErr = candidate
             }
             @Suppress("NAME_SHADOWING")
             val bytesFinal = bytes
@@ -145,7 +153,7 @@ fun createReadImageTool(
                     UIMessagePart.Image(url = uris.first().toString()),
                 )
             }
-            rootfsErr = "rootfs 解析失败（cwd=${cwd ?: "(无)"}, 试过 ${candidates.size} 种形态${lastErr?.let { ", 最后=$it" } ?: ""}）"
+            rootfsErr = "rootfs 解析失败（cwd=${cwd ?: "(无)"} 与工作区根两种口径、共 ${candidates.size * cwdPasses.size} 次尝试${lastErr?.let { ", 最后=$it" } ?: ""}）"
         }
         val decoded = decodeFsPath(path)
         val file = File(decoded)

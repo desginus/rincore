@@ -533,7 +533,7 @@ private fun createGrepTool(
 ) = Tool(
     name = "workspace_grep",
     description = """
-        (v5.0.80: merged into workspace_search — prefer calling workspace_search with mode="content"; this tool remains as a compatibility alias.)
+        (Content search. Use workspace_search with mode="content" for the unified entry; this tool stays available for direct calls.)
         Search file contents in the workspace (ripgrep when available, grep fallback).
         Returns matching lines as path:line:content. Use this instead of shell grep/rg for code search.
         Parameters: pattern (regex, required); path (search root, defaults to /workspace);
@@ -674,7 +674,7 @@ private fun createGlobTool(
 ) = Tool(
     name = "workspace_glob",
     description = """
-        (v5.0.80: merged into workspace_search — prefer calling workspace_search with mode="name"; this tool remains as a compatibility alias.)
+        (Find files by name. Use workspace_search with mode="name" for the unified entry; this tool stays available for direct calls.)
         Find files by name pattern in the workspace (e.g. "*.kt", "README*", "config.*"). Patterns containing "/" or "**" are matched against the full path at any depth (e.g. "**/*" lists all files; "**/*.kt" all .kt files at any depth).
         Returns matching file paths sorted by modification time (newest first).
         Use this instead of shell find/ls for file discovery.
