@@ -661,7 +661,28 @@ class ChatVM(
             val conv = conversation.value
             if (conv.compressRetentions.isNotEmpty() || conv.compressedContext != null) {
                 val migrated = if (conv.compressRetentions.isEmpty()) conv.migrateLegacyCompress() else conv
-                chatService.saveConversation(_conversationId, migrated.restoreCompressAt(index))
+                // ★v5.3.57 forceReplace = true（结构性替换）：
+                // 恢复位点是「把消息集合换回压缩前的旧集合」，与压缩同类。
+                // 不带这个标记时会被仓库层的「消息骤减拒绝」守卫拦下：位点存的是 200 条，
+                // 而对话已聊到 500 条 → 200 < 250 → 判为「疑似数据丢失」→ 只写元数据、
+                // 不写节点，**用户点恢复毫无反应也没有任何提示**（v5.3.56 修压缩时漏掉的同族路径）。
+                //
+                // ★同批补错误反馈：原来这段没有任何 try/catch —— saveConversation 抛异常
+                // （DB 错误 / 会话被回收）会直接冒到 viewModelScope 的未捕获处理器**崩掉应用**，
+                // 而用户只是点了一下"恢复压缩前状态"。对齐 deleteMessage 的处理范式。
+                runCatching {
+                    chatService.saveConversation(
+                        _conversationId,
+                        migrated.restoreCompressAt(index),
+                        forceReplace = true,
+                    )
+                }.exceptionOrNull()?.let { e ->
+                    chatService.addError(
+                        error = e,
+                        conversationId = _conversationId,
+                        title = "恢复压缩前状态失败",
+                    )
+                }
             }
         }
     }
@@ -756,20 +777,28 @@ class ChatVM(
 
     fun moveConversationToAssistant(conversation: Conversation, targetAssistantId: Uuid) {
         viewModelScope.launch {
-            // v5.0.24 空对话修复（v4.8.148 教训）：未入库的空会话 getConversationById 返回 null，
-            // 旧实现直接 return → 双星轨点击「点亮但没切换」。改为：DB 缺失时以内存态为基线。
-            val conversationFull = conversationRepo.getConversationById(conversation.id) ?: conversation
-            // 文件夹是助手内分组，切换助手后原文件夹在新助手下不可见，需清空归属避免会话丢失
-            val updatedConversation = conversationFull.copy(
-                assistantId = targetAssistantId,
-                folderId = null,
-            )
+            // ★v5.3.57 改为「只改两个字段」的原子写回，不再读全量再整对象写回。
+            //
+            // 旧实现两处都属于同一类危险模式（v5.3.56 修过的标题/建议同族）：
+            //   · 当前对话分支：`updateConversationState { updatedConversation }` **忽略当前值**，
+            //     直接返回从 DB 读到的旧快照 → 正在流式生成时，内存里最新的节点被旧快照覆盖；
+            //   · 其它对话分支：`conversationRepo.updateConversation(updatedConversation)`
+            //     把旧快照整对象写库 → 后台正在生成的对话同样会被截断。
+            // `updateConversationMeta` 只改指定字段：有就绪内存态时以内存为权威，
+            // 无内存态时读 DB 打补丁后写回，节点永远取最新的那一份。
+            //
+            // 顺带修掉「当前对话只改内存、不落库」：原来注释写「发送时随机制落库」，
+            // 但用户移动后直接杀掉应用，这次移动就丢了（重启后对话仍在原助手，
+            // 用户看到的就是"移过去了又自己回来 / 记录消失"）。updateConversationMeta 自带落库。
             if (conversation.id == _conversationId) {
-                // 空会话不入库：只更新内存态；发送时随机制落库
-                chatService.updateConversationState(_conversationId) { updatedConversation }
+                chatService.updateConversationMeta(_conversationId) {
+                    it.copy(assistantId = targetAssistantId, folderId = null)
+                }
                 settingsStore.updateAssistant(targetAssistantId)
             } else {
-                conversationRepo.updateConversation(updatedConversation)
+                chatService.updateConversationMeta(conversation.id) {
+                    it.copy(assistantId = targetAssistantId, folderId = null)
+                }
             }
         }
     }
