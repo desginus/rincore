@@ -119,15 +119,13 @@ data class Settings(
     val fileUploadMode: String = "compat",
     val enableWebSearch: Boolean = false,
     val deferAutoReply: Boolean = false,
-    val swapSendReasoningKeys: Boolean = false,
     val projectPackClickStats: String = "",
     val opencodeRequestMode: Boolean = false,
     val videoGenerationModelId: Uuid = Uuid.random(),
     val compressModelId: Uuid = Uuid.random(),
-    // v5.0.25 用户定案：记忆专用模型（做梦/记忆整理用；null = 回落 fastModel → chatModel）
-    val memoryModelId: Uuid? = null,
-    // v5.0.67 用户定案：做梦（自动记忆整理）单独一个模型，可与记忆模型不同。
-    // 回落顺序：dreamMemoryModelId ?: memoryModelId ?: fastModelId ?: chatModelId
+    // v5.0.67 用户定案：做梦（自动记忆整理）单独一个模型。
+    // v5.3.58：删掉从未有 UI 的 memoryModelId（与做梦模型职责重复，且会让人以为「记忆模型」可设）。
+    // 回落顺序：dreamMemoryModelId ?: fastModelId ?: chatModelId
     val dreamMemoryModelId: Uuid? = null,
     val compressPrompt: String = DEFAULT_COMPRESS_PROMPT,
     val routingModelId: Uuid? = null,

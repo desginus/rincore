@@ -195,26 +195,9 @@ private fun Model.findModelProviderFromList(providers: List<ProviderSetting>): P
     return null
 }
 
-/**
- * RinCore 自研：删除模型后的级联清理 — 所有指向被删模型的引用全部清空/回退。
- * 设置项（chat/fast/title/image/video/translate/suggestion/ocr/compress/routing）
- * + 收藏列表 + 助手绑定（回退全局默认 null）。
- */
-fun Settings.cleanupDeletedModels(deletedModelIds: Set<Uuid>): Settings {
-    fun Uuid?.clearIfDeleted(): Uuid? = if (this != null && this in deletedModelIds) null else this
-    fun Uuid.rollbackIfDeleted(): Uuid = if (this in deletedModelIds) Uuid.random() else this
-    return copy(
-        chatModelId = chatModelId.rollbackIfDeleted(),
-        fastModelId = fastModelId.rollbackIfDeleted(),
-        imageGenerationModelId = imageGenerationModelId.rollbackIfDeleted(),
-        videoGenerationModelId = videoGenerationModelId.rollbackIfDeleted(),
-        translateModeId = translateModeId.rollbackIfDeleted(),
-        ocrModelId = ocrModelId.rollbackIfDeleted(),
-        compressModelId = compressModelId.rollbackIfDeleted(),
-        routingModelId = routingModelId.clearIfDeleted(),
-        favoriteModels = favoriteModels.filterNot { it in deletedModelIds },
-        assistants = assistants.map { a ->
-            if (a.chatModelId != null && a.chatModelId in deletedModelIds) a.copy(chatModelId = null) else a
-        },
-    )
-}
+// ★v5.3.58：原来的 Settings.cleanupDeletedModels() 已删除。
+// 它**全库零调用点**（死代码）—— 删模型/删提供商时从没被调用过，所以设置里指向
+// 已删模型的引用一直留着，用户会在 标题/OCR/翻译/做梦 上看到「模型未找到」。
+// 现在改为在 SettingsNormalization.withoutInvalidReferences() 里自愈：
+// 读盘、每次修改、备份导入都会自动把悬空引用清空/回落，不需要任何调用点。
+

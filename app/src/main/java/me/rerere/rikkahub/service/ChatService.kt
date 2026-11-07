@@ -1420,6 +1420,10 @@ class ChatService(
 
         runCatching {
             val settings = settingsStore.settingsFlow.first()
+            // ★v5.3.58 「自动生成标题」开关一直是**假开关**：它有 UI、能持久化，
+            // 但 generateTitle 从未读过它 —— 关掉之后仍然每轮对话跑一次标题模型（还扣费）。
+            // force=true（用户点「重新生成标题」）不受此限。
+            if (!force && !settings.enableAutoTitle) return@runCatching
             val model = settings.findModelById(settings.fastModelId)
                 ?: throw IllegalStateException(context.getString(R.string.error_fast_model_not_found))
             val provider = model.findProvider(settings.providers)

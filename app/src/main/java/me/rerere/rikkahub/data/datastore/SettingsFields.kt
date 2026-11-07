@@ -164,11 +164,22 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
         plain(FILE_UPLOAD_MODE, Settings::fileUploadMode) { copy(fileUploadMode = it) },
         plain(ENABLE_WEB_SEARCH, Settings::enableWebSearch) { copy(enableWebSearch = it) },
         plain(DEFER_AUTO_REPLY, Settings::deferAutoReply) { copy(deferAutoReply = it) },
-        plain(SWAP_SEND_REASONING_KEYS, Settings::swapSendReasoningKeys) { copy(swapSendReasoningKeys = it) },
+        plain(SWAP_SEND_AND_REASONING, Settings::swapSendAndReasoning) { copy(swapSendAndReasoning = it) },
+        plain(SHOW_SEND_BUTTON, Settings::showSendButton) { copy(showSendButton = it) },
+        plain(SHOW_REASONING_BUTTON, Settings::showReasoningButton) { copy(showReasoningButton = it) },
         plain(PROJECT_PACK_CLICK_STATS, Settings::projectPackClickStats) { copy(projectPackClickStats = it) },
         plain(OPENCODE_REQUEST_MODE, Settings::opencodeRequestMode) { copy(opencodeRequestMode = it) },
         uuid(VIDEO_GENERATION_MODEL, Settings::videoGenerationModelId) { copy(videoGenerationModelId = it) },
         uuid(COMPRESS_MODEL, Settings::compressModelId) { copy(compressModelId = it) },
+        // ★v5.3.58 做梦记忆模型（用户实测：选完重启就丢）。
+        // 根因=字段一直没登记进 SETTINGS_FIELDS —— Settings 走 DataStore<Preferences> 手动字段映射，
+        // 未登记的字段**只存在内存里**，进程一重启就回到默认 null（表现为「没法选模型」）。
+        SettingsField(
+            DREAM_MEMORY_MODEL, Settings::dreamMemoryModelId, { copy(dreamMemoryModelId = it) },
+            // 没选时不存这个 key
+            encode = { it?.toString() },
+            decode = { Uuid.parse(it) },
+        ),
         plain(COMPRESS_PROMPT, Settings::compressPrompt) { copy(compressPrompt = it) },
         SettingsField(
             ROUTING_MODEL, Settings::routingModelId, { copy(routingModelId = it) },

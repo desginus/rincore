@@ -371,11 +371,10 @@ private fun Settings.memoryIdOf(conversation: Conversation): String? =
 private fun Settings.consolidationModel(conversation: Conversation?, assistant: Assistant): Model? {
     val fastModel = findModelById(fastModelId)?.takeIf { ModelAbility.TOOL in it.abilities }
     val chatModel = conversation?.let { getChatModelOf(it) } ?: findModelById(assistant.chatModelId ?: chatModelId)
-    // v5.0.25 用户定案：记忆有专用模型优先用它（做梦/整理），未配置再回落 fastModel
-    val memoryModel = memoryModelId?.let { findModelById(it) }
-    // v5.0.67: 做梦（自动整理）可单独指定模型，优先于通用记忆模型
+    // v5.0.67: 做梦（自动整理）可单独指定模型
+    // v5.3.58: memoryModelId 已删除（无 UI、与做梦模型职责重复），回退链简化为三级
     val dreamModel = dreamMemoryModelId?.let { findModelById(it) }
-    return (dreamModel ?: memoryModel ?: fastModel ?: chatModel)?.copy(tools = emptySet())
+    return (dreamModel ?: fastModel ?: chatModel)?.copy(tools = emptySet())
 }
 
 /**

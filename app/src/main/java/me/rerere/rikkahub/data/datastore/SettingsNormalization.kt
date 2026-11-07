@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.datastore
 
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.registry.ModelRegistry
+import kotlin.uuid.Uuid
 
 /** 读盘后和每次修改后都要过一遍，保证内存里的设置始终是规整的。 */
 internal fun Settings.normalized(): Settings =
@@ -82,7 +83,9 @@ internal fun Settings.withoutInvalidReferences(): Settings {
                 // 过滤掉不存在的快捷消息 ID
                 quickMessageIds = assistant.quickMessageIds.filter { id ->
                     id in validQuickMessageIds
-                }.toSet()
+                }.toSet(),
+                // ★v5.3.58：助手自己绑定的模型被删 → 回落到全局默认（null 会走 assistant.chatModelId ?: chatModelId）
+                chatModelId = assistant.chatModelId.nullIfGone(validModelIds),
             )
         },
         ttsProviders = settings.ttsProviders.distinctBy { it.id },
@@ -91,6 +94,17 @@ internal fun Settings.withoutInvalidReferences(): Settings {
             ?.takeIf { id -> asrProviders.any { provider -> provider.id == id } }
             ?: asrProviders.firstOrNull()?.id,
         favoriteModels = settings.favoriteModels.filter { it in validModelIds },
+        // ★v5.3.58 悬空模型引用自愈（旧 cleanupDeletedModels 是零调用点死代码，已并入这里）。
+        // 只处理**可空**字段：它们各自有回退链，清成 null 是安全且正确的
+        //（做梦 → fastModel → chatModel）。非空字段刻意不动 ——
+        // DEFAULT_AUTO_MODEL_ID 并不是任何真实模型的 id（只是缺省占位），
+        // 把它塞进去等于「修了个寂寞」；而随便挑一个真实模型又可能把用户
+        // 悄悄指向一个没配 key 的提供商。删了模型就该让用户重选，报错比乱猜好。
+        dreamMemoryModelId = settings.dreamMemoryModelId.nullIfGone(validModelIds),
+        routingModelId = settings.routingModelId.nullIfGone(validModelIds),
+        // 快速/极致池里被删掉的模型要剔除，否则竞速探针会去打已经不存在的模型
+        fastChatModelIds = settings.fastChatModelIds.filter { it in validModelIds },
+        ultraChatModelIds = settings.ultraChatModelIds.filter { it in validModelIds },
         modeInjections = settings.modeInjections.distinctBy { it.id },
         lorebooks = settings.lorebooks.distinctBy { it.id },
         quickMessages = settings.quickMessages.distinctBy { it.id },
@@ -136,3 +150,6 @@ internal fun Settings.withOurDataRepairs(): Settings {
         assistants = assistants,
     )
 }
+
+/** ★v5.3.58：指向已不存在模型的可空设置 → 清成 null，交给各自的三级回退链。 */
+private fun Uuid?.nullIfGone(valid: Set<Uuid>): Uuid? = this?.takeIf { it in valid }
