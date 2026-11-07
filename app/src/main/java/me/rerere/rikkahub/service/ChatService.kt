@@ -1243,10 +1243,10 @@ class ChatService(
             saveConversation(conversationId, finalConversation)
 
             launchWithConversationReference(conversationId) {
-                generateTitle(conversationId, finalConversation)
+                generateTitle(finalConversation)
             }
             launchWithConversationReference(conversationId) {
-                generateSuggestion(conversationId, finalConversation)
+                generateSuggestion(finalConversation)
             }
             // 5.0.0 并树：记忆整理登记（对话后自动整理；仅 enableMemory 助手）
             runCatching {
@@ -1406,11 +1406,21 @@ class ChatService(
 
     // ---- 生成标题 ----
 
+    /**
+     * ★v5.3.60 只接受 conversation，**不再单独收 conversationId**。
+     *
+     * 事故（用户实测）：在抽屉里给「另一个对话」重新生成标题 → 标题写到了**当前打开的那个对话**上；
+     * 而当前对话若还是个没落库的新空对话，就会被 [persistConversationState] 插入成一条
+     * **只有标题、零消息的空壳对话**（列表顶部凭空多一条，点进去什么都没有）。
+     *
+     * 根因就是这个多余的参数：读取用 `conversation.id`，写入却用调用方传进来的 `_conversationId`。
+     * 去掉它之后，「写错对话」在**类型层面**不可能发生 —— 写哪里只由这个对象自己决定。
+     */
     suspend fun generateTitle(
-        conversationId: Uuid,
         conversation: Conversation,
         force: Boolean = false
     ) {
+        val conversationId = conversation.id
         val shouldGenerate = when {
             force -> true
             conversation.title.isBlank() -> true
@@ -1466,7 +1476,9 @@ class ChatService(
 
     // ---- 生成建议 ----
 
-    suspend fun generateSuggestion(conversationId: Uuid, conversation: Conversation) {
+    /** ★v5.3.60 同 [generateTitle]：写入目标只能是 `conversation.id`，不存在写错对话的可能。 */
+    suspend fun generateSuggestion(conversation: Conversation) {
+        val conversationId = conversation.id
         runCatching {
             val settings = settingsStore.settingsFlow.first()
             if (!settings.enableSuggestion) return
@@ -1848,8 +1860,17 @@ class ChatService(
             }
             val snapshot = session.state.value
             val exists = conversationRepo.existsConversationById(conversationId)
-            if (!exists && snapshot.title.isBlank() && snapshot.messageNodes.isEmpty()) {
-                return@withLock // 新会话且为空时不保存
+            // ★v5.3.60 只有**有消息**的新对话才允许落库。
+            // 旧判据是 `title.isBlank() && nodes.isEmpty()` —— 只要标题非空就插入，于是任何一次
+            // 「给一个不存在的对话写元数据（标题/建议/归属）」都会凭空造出一条**只有标题、零消息**的
+            // 空壳（用户实测：抽屉里重新生成标题 → 列表顶部多一个空对话，点进去空白）。
+            // 元数据不是对话存在的理由：真有消息时，它会连同标题一起被正常落库。
+            if (!exists && snapshot.messageNodes.isEmpty()) {
+                Log.w(
+                    TAG,
+                    "persistConversationState: refuse message-less conversation id=$conversationId title='${snapshot.title}'",
+                )
+                return@withLock
             }
             if (exists) {
                 conversationRepo.updateConversation(snapshot)
@@ -1968,6 +1989,16 @@ class ChatService(
         conversation: Conversation,
         forceReplace: Boolean = false,
     ) {
+        // ★v5.3.60 硬闸：写入目标 id 必须与对象自身的 id 一致。
+        // 这类错位真实发生过：generateTitle 读取用抽屉里那条对话、写入却用当前打开的对话，
+        // 结果标题写到别的对话上，还凭空造出一条只有标题的空壳。宁可拒写并留日志，也不能写错对象。
+        if (conversation.id != conversationId) {
+            Log.e(
+                TAG,
+                "saveConversation: id mismatch (target=$conversationId, object=${conversation.id}) — refused",
+            )
+            return
+        }
         // v5.0.83 ★★★数据丢失根修（用户实测：并发生成+切换→重启后对话内容消失）：
         //
         // 旧实现三宗罪：

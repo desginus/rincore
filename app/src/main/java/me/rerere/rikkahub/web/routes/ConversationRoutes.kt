@@ -184,7 +184,8 @@ fun Route.conversationRoutes(
             val conversation = conversationRepo.getConversationById(uuid)
                 ?: throw NotFoundException("Conversation not found")
 
-            chatService.generateTitle(uuid, conversation, force = true)
+            // ★v5.3.60：目标对话由 conversation 自身决定（不再另传 uuid，避免两者不一致时写错对象）
+            chatService.generateTitle(conversation, force = true)
             call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
         }
 

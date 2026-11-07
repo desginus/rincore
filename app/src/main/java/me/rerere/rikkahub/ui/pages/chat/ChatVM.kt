@@ -809,14 +809,18 @@ class ChatVM(
 
     fun generateTitle(conversation: Conversation, force: Boolean = false) {
         viewModelScope.launch {
+            // ★v5.3.60 写入目标只能是 `conversation.id`。
+            // 旧实现读取用 `conversation.id`（抽屉里那一条）、写入却用 `_conversationId`（当前打开的对话）
+            // → 在抽屉里给别的对话重生成标题时，标题会写到当前对话上；若当前对话还是新空对话，
+            // 就会被插入成一条只有标题的空壳（用户实测：标题没变 + 顶部多出一个空对话）。
             val conversationFull = conversationRepo.getConversationById(conversation.id) ?: return@launch
-            chatService.generateTitle(_conversationId, conversationFull, force)
+            chatService.generateTitle(conversationFull, force)
         }
     }
 
     fun generateSuggestion(conversation: Conversation) {
         viewModelScope.launch {
-            chatService.generateSuggestion(_conversationId, conversation)
+            chatService.generateSuggestion(conversation)
         }
     }
 
