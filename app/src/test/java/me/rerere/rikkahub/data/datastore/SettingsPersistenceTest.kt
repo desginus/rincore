@@ -22,6 +22,15 @@ import org.junit.Test
  */
 class SettingsPersistenceTest {
 
+    /**
+     * 不该落盘的属性（**不是**用户配置）。
+     *
+     * `init` 是「设置是否已从磁盘加载完成」的运行时哨兵：`Settings.dummy() = Settings(init = true)`，
+     * `awaitLoaded()` 靠它阻塞等待，`updateSync()` 靠它拒绝写入未加载的假设置。
+     * 它每次进程启动都从 false 开始，本来就不该持久化。
+     */
+    private val runtimeOnlyProperties = setOf("init")
+
     @Test
     fun `every Settings property is registered in SETTINGS_FIELDS`() {
         val registered = SETTINGS_FIELDS.map { it.property.name }.toSet()
@@ -31,7 +40,7 @@ class SettingsPersistenceTest {
             .map { it.name }
             .toSet()
 
-        val missing = (declared - registered).sorted()
+        val missing = (declared - registered - runtimeOnlyProperties).sorted()
 
         assertTrue(
             "以下设置项没有登记进 SETTINGS_FIELDS，会「内存有效、重启即丢」：$missing",
