@@ -24,7 +24,23 @@ internal class SettingsField<T, P : Any>(
     /** key 不存在时保留 [settings] 里原有的值。 */
     fun read(preferences: Preferences, settings: Settings): Settings {
         val stored = preferences[key] ?: return settings
-        return settings.set(decode(stored))
+        return try {
+            settings.set(decode(stored))
+        } catch (e: Exception) {
+            // ★v5.3.59 单个 key 损坏不能拖垮整份设置。
+            //
+            // 旧实现直接让 decode 抛出去 → `toSettings()` 整体失败 → PreferencesStore 的加载
+            // catch 分支执行 **Runtime.getRuntime().halt(1)**（故意不带着默认值运行，防止把
+            // 默认设置写回用户数据）→ 结果是「一个损坏的值 = 每次启动都直接死」，用户只能清数据。
+            //
+            // 现在：该字段保留默认值继续加载，其余字段照常；下一次落盘时这个 key 会被默认值
+            // 覆盖（首次 persist 是全量写，persisted 仍为 null），即**自愈**。
+            android.util.Log.e(
+                "SettingsFields",
+                "corrupt value for key=${key.name} — keeping default (${e.javaClass.simpleName}: ${e.message})",
+            )
+            settings
+        }
     }
 
     /** 编码结果为 null 时删除 key。 */
