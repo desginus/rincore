@@ -73,6 +73,7 @@ import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.filterByKeywords
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.AiMagic
@@ -473,7 +474,9 @@ private fun ColumnScope.ModelList(
         settings.value.providers,
         modelType,
     ) {
-        settings.value.favoriteModels.mapNotNull { modelId ->
+        // ★v5.3.61：历史数据里可能有重复 id（去重规则是后加的），这里也兜一层，
+        // 否则 LazyColumn 重复 key 会直接闪退。
+        settings.value.favoriteModels.distinct().mapNotNull { modelId ->
             val model = settings.value.providers.findModelById(modelId) ?: return@mapNotNull null
             if (model.type != modelType) return@mapNotNull null
             val provider = model.findProvider(providers = settings.value.providers, checkOverwrite = false) ?: return@mapNotNull null
@@ -507,11 +510,13 @@ private fun ColumnScope.ModelList(
         }
     }
 
+    // ★v5.3.61（对齐上游 3.1.2）：多关键词搜索 —— 空格分隔，每个词都要命中
+    // 模型 ID 或显示名（旧实现只把整串拿去比 displayName，输入两个词永远搜不到）
     val searchFilteredModelsByProvider = remember(providers, modelType, searchKeywords) {
         providers.associate { provider ->
-            provider.id to provider.models.fastFilter {
-                it.type == modelType && it.displayName.contains(searchKeywords, true)
-            }
+            provider.id to provider.models
+                .fastFilter { it.type == modelType }
+                .filterByKeywords(searchKeywords)
         }
     }
 
@@ -522,7 +527,7 @@ private fun ColumnScope.ModelList(
     }
 
     // 计算当前选中模型的位置
-    val selectedModelPosition = remember(currentModel, favoriteModels, providers, typeFilteredModelsByProvider) {
+    val selectedModelPosition = remember(currentModel, favoriteModels, providers, searchFilteredModelsByProvider, searchKeywords) {
         // 仅用于初始定位，搜索关键词此时为空
         if (currentModel == null) return@remember 0
 
@@ -552,7 +557,7 @@ private fun ColumnScope.ModelList(
         // 在providers中查找
         for (provider in providers) {
             position += 1 // provider header
-            val models = typeFilteredModelsByProvider[provider.id].orEmpty()
+            val models = searchFilteredModelsByProvider[provider.id].orEmpty()
             val modelIndex = models.indexOfFirst { it.id == currentModel }
             val collapsed = isCollapsed(provider)
             if (modelIndex >= 0) {
@@ -636,6 +641,19 @@ private fun ColumnScope.ModelList(
                     modifier = Modifier.padding(8.dp)
                 )
             }
+        }
+
+        // ★v5.3.61：恢复搜索入口。删除是在 v5.1.7（当时只有「整串比 displayName」的
+        // 劣质实现，搜不动），现在配上多关键词过滤，输入即筛（列表规模小，无需防抖）。
+        item(key = "search") {
+            OutlinedTextField(
+                value = searchKeywords,
+                onValueChange = { searchKeywords = it },
+                placeholder = { Text(stringResource(R.string.model_list_search_placeholder)) },
+                leadingIcon = { Icon(HugeIcons.Search01, null) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
 
         if (favoriteModels.isNotEmpty()) {

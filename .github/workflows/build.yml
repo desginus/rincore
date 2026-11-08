@@ -251,4 +251,5 @@ jobs:
             --tests "me.rerere.rikkahub.data.ai.ModelLatencyStatsTest" \
             --tests "me.rerere.rikkahub.data.ai.ModelRoutingTest" \
             --tests "me.rerere.rikkahub.data.datastore.SettingsPersistenceTest" \
-            --tests "me.rerere.rikkahub.data.datastore.SettingsFieldsTest"
+            --tests "me.rerere.rikkahub.data.datastore.SettingsFieldsTest" \
+            --tests "me.rerere.rikkahub.ModelFilterTest"

@@ -6,6 +6,7 @@ package me.rerere.rikkahub.ui.components.richtext
  * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -787,7 +788,29 @@ private fun AnnotatedString.Builder.appendHtmlInlineNode(
     onClickCitation: (String) -> Unit,
 ) {
     when (node) {
-        is TextNode -> append(node.text())
+        is TextNode -> {
+            val text = node.text()
+            if (text.indexOf('#') >= 0 && INLINE_COLOR_CODE.containsMatchIn(text)) {
+                var cursor = 0
+                INLINE_COLOR_CODE.findAll(text).forEach { match ->
+                    val code = match.value
+                    val swatchColor = parseColorCode(code)
+                    if (swatchColor == null) return@forEach
+                    if (match.range.first > cursor) append(text.substring(cursor, match.range.first))
+                    val key = "swatch:" + code
+                    inlineContents.putIfAbsent(
+                        key,
+                        colorSwatch(swatchColor, colorScheme, density, style.fontSize),
+                    )
+                    appendInlineContent(key, "\u25A0")
+                    append(' ')
+                    cursor = match.range.last + 1
+                }
+                if (cursor < text.length) append(text.substring(cursor))
+            } else {
+                append(text)
+            }
+        }
         is Element -> appendHtmlInlineElement(
             element = node,
             colorScheme = colorScheme,
@@ -859,6 +882,16 @@ private fun AnnotatedString.Builder.appendHtmlInlineElement(
                 color = colorScheme.primary,
             ).merge(cssStyle ?: SpanStyle())
         ) {
+            // ★v5.3.61：`#FF5722` 这类色值在代码样式里也给一个色块
+            parseColorCode(element.text())?.let { swatchColor ->
+                val key = "swatch:" + element.text().trim()
+                inlineContents.putIfAbsent(
+                    key,
+                    colorSwatch(swatchColor, colorScheme, density, style.fontSize),
+                )
+                appendInlineContent(key, "\u25A0")
+                append(' ')
+            }
             append(' ')
             append(element.text())
             append(' ')
@@ -934,7 +967,13 @@ private fun AnnotatedString.Builder.appendHtmlInlineElement(
         }
 
         "span" -> {
-            if (element.hasClass("math") && element.attr("inline") == "true") {
+            if (element.hasClass("user-del")) {
+                // ★v5.3.61（对齐上游 3.1.2）：删除线此前**从不渲染**。
+                // 我们的 markdown 生成器把 GFM `~~x~~` 输出成 `<span class="user-del">`
+                // （不是 `<del>`），而这里只认 del/s/strike → 走 else 分支原样输出文字，
+                // 用户看到的就是「删除线不渲染」。
+                appendElementChildren(SpanStyle(textDecoration = TextDecoration.LineThrough))
+            } else if (element.hasClass("math") && element.attr("inline") == "true") {
                 val formula = element.text()
                 if (enableLatexRendering) {
                     appendInlineContent(formula, formula)
@@ -1343,6 +1382,42 @@ private fun parseFontFamily(fontFamily: String): FontFamily? {
         normalized.contains("sans") || normalized.contains("arial") || normalized.contains("helvetica") -> FontFamily.SansSerif
         normalized.contains("cursive") -> FontFamily.Cursive
         else -> null
+    }
+}
+
+/**
+ * ★v5.3.61（对齐上游 3.1.2）：行内颜色代码（#RGB / #RRGGBB）。
+ * 命中时在文字前画一个小色块 —— 纯文字的 `#FF5722` 很难一眼判断是什么颜色。
+ */
+private val INLINE_COLOR_CODE = Regex("#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\\b")
+
+private fun parseColorCode(raw: String): Color? {
+    val text = raw.trim()
+    if (!INLINE_COLOR_CODE.matches(text)) return null
+    return parseColor(text)
+}
+
+private fun colorSwatch(
+    color: Color,
+    colorScheme: androidx.compose.material3.ColorScheme,
+    density: Density,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+): InlineTextContent {
+    val boxSize = with(density) { (fontSize * 0.95f).toDp() }
+    return InlineTextContent(
+        placeholder = Placeholder(
+            width = fontSize * 0.95f,
+            height = fontSize * 0.95f,
+            placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
+        ),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(boxSize)
+                .clip(RoundedCornerShape(2.dp))
+                .background(color)
+                .border(0.5.dp, colorScheme.outlineVariant, RoundedCornerShape(2.dp))
+        )
     }
 }
 

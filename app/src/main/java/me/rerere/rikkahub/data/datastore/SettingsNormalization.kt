@@ -93,7 +93,10 @@ internal fun Settings.withoutInvalidReferences(): Settings {
         selectedASRProviderId = settings.selectedASRProviderId
             ?.takeIf { id -> asrProviders.any { provider -> provider.id == id } }
             ?: asrProviders.firstOrNull()?.id,
-        favoriteModels = settings.favoriteModels.filter { it in validModelIds },
+        // ★v5.3.61（对齐上游 3.1.2）：收藏模型必须去重。
+        // 重复时 LazyColumn 的 `key = { it.id }` 会出现相同 key → Compose 抛
+        // "Key ... was already used" → **直接闪退**（用户报的「收藏模型重复导致闪退」）。
+        favoriteModels = settings.favoriteModels.filter { it in validModelIds }.distinct(),
         // ★v5.3.58 悬空模型引用自愈（旧 cleanupDeletedModels 是零调用点死代码，已并入这里）。
         // 只处理**可空**字段：它们各自有回退链，清成 null 是安全且正确的
         //（做梦 → fastModel → chatModel）。非空字段刻意不动 ——

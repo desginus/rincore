@@ -64,7 +64,12 @@ internal suspend fun exportConversationPdf(
     options: ExportOptions,
 ): Result<String> = runCatching {
     val filename = "chat-export-${
-        LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
+        // ★v5.3.61：显式用 ISO（Locale.ROOT）。
+        // 用默认 locale 时，泰国（佛历 2568）、阿拉伯/波斯（本地数字）等系统会生成
+        // 非 ASCII 数字的文件名 —— 用户报的「非英文系统导出出问题」里最典型的一类。
+        LocalDateTime.now().format(
+            DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss", java.util.Locale.ROOT)
+        )
     }.pdf"
 
     val nodes = withContext(Dispatchers.IO) {

@@ -64,5 +64,22 @@ sealed class BuiltInTools {
     data object ImageGeneration : BuiltInTools()
 }
 
-
-
+/**
+ * ★v5.3.61（对齐上游 3.1.2）：按空格分隔的多关键词筛选模型。
+ *
+ * 每个关键词都要命中 **模型 ID 或显示名称** 的一部分，关键词之间不要求顺序，忽略大小写；
+ * 没有关键词时返回原列表。
+ *
+ * 旧实现是 `displayName.contains(整串, true)` —— 输入「gpt 4」这种带空格的多个词时
+ * 永远匹配不到（等于把空格当成了一个必须存在的字符），且完全不搜 modelId。
+ */
+fun List<Model>.filterByKeywords(query: String): List<Model> {
+    val keywords = query.split(" ").filter { it.isNotBlank() }
+    if (keywords.isEmpty()) return this
+    return filter { model ->
+        keywords.all { keyword ->
+            model.modelId.contains(keyword, ignoreCase = true) ||
+                model.displayName.contains(keyword, ignoreCase = true)
+        }
+    }
+}

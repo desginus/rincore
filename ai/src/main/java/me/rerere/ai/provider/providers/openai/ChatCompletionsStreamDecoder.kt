@@ -92,9 +92,9 @@ internal class ChatCompletionsStreamDecoder : StreamChunkDecoder {
     }
 
     private fun parseMessage(payload: JsonObject): UIMessage {
-        val role = MessageRole.valueOf(
-            payload["role"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "ASSISTANT"
-        )
+        // ★v5.3.61：中转可能给空串/非标准 role，valueOf 会抛异常 → 安全解析 + 回落
+        val role = MessageRole.fromValueOrNull(payload["role"]?.jsonPrimitiveOrNull?.contentOrNull)
+            ?: MessageRole.ASSISTANT
         val content = payload["content"]?.jsonPrimitiveOrNull?.contentOrNull ?: ""
         val reasoning = payload["reasoning_content"]?.jsonPrimitiveOrNull?.contentOrNull
             ?: payload["reasoning"]?.jsonPrimitiveOrNull?.contentOrNull

@@ -1724,9 +1724,9 @@ private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
     }
 
     private fun parseMessage(jsonObject: JsonObject): UIMessage {
-        val role = MessageRole.valueOf(
-            jsonObject["role"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "ASSISTANT"
-        )
+        // ★v5.3.61：同流式解码器 —— 未知 role 不能让整次响应解析崩掉
+        val role = MessageRole.fromValueOrNull(jsonObject["role"]?.jsonPrimitiveOrNull?.contentOrNull)
+            ?: MessageRole.ASSISTANT
 
         // content 可能是字符串或 block 数组 (如 [{type:"text",text:"..."}]); 数组时拼接 text 块, 否则文本丢失 (对齐原版)
         val contentElement = jsonObject["content"]
