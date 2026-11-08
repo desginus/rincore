@@ -38,10 +38,11 @@ object WorkspaceJobKeeper {
         workspaceId: String,
         jobId: String,
     ) {
-        val context: Context? = runCatching {
+        // ★收窄成非空 val：可空局部变量被下面的协程闭包捕获时会失去智能转换（CI 实测
+        // 「Argument type mismatch: actual type is 'Context?', but 'Context' was expected」）
+        val context: Context = runCatching {
             GlobalContext.getOrNull()?.getOrNull<Context>()
-        }.getOrNull()
-        if (context == null) {
+        }.getOrNull() ?: run {
             Log.w(TAG, "no Context available — job $jobId runs without foreground protection")
             return
         }
@@ -73,7 +74,7 @@ object WorkspaceJobKeeper {
     /** 任务被主动 kill 时立即释放，不必等轮询发现。 */
     fun forget(jobId: String) {
         watchers.remove(jobId)?.cancel()
-        val context: Context? = runCatching {
+        val context: Context = runCatching {
             GlobalContext.getOrNull()?.getOrNull<Context>()
         }.getOrNull() ?: return
         runCatching { WorkspaceJobForegroundService.release(context, jobId) }
