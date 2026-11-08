@@ -468,11 +468,10 @@ class WorkspaceRepository(
         id: String,
         command: String,
         cwd: String = "",
-    ): me.rerere.workspace.WorkspaceCommandResult = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
-        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
-        manager.ensureWorkspace(workspace.root)
-        manager.executeCommand(root = workspace.root, command = command, cwd = cwd)
-    }
+    ): me.rerere.workspace.WorkspaceCommandResult =
+        // ★v5.3.63：委托给带 runInterruptible 的重载 —— 否则这条（grep 等工具走它）
+        // 同样是「取消了也要把命令跑完」。
+        executeCommand(id, command, cwd, WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS)
 
     // ── v4.8.72: 后台任务直通 (workspace_job 工具) ──
     suspend fun startJob(id: String, command: String, cwd: String, jobId: String) = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
@@ -669,7 +668,10 @@ class WorkspaceRepository(
         manager.ensureWorkspace(workspace.root)
         val pool = sessionPool
         if (pool == null) {
-            manager.executeCommand(root = workspace.root, command = command, cwd = cwd, timeoutMillis = timeoutMillis)
+            // ★v5.3.63：这条分支同样是阻塞的 Process.waitFor，必须 runInterruptible 才能被取消
+            runInterruptible(Dispatchers.IO) {
+                manager.executeCommand(root = workspace.root, command = command, cwd = cwd, timeoutMillis = timeoutMillis)
+            }
         } else {
             // ★v5.3.54 一致性修复：**key 必须含 cwd**。
             // 常驻会话的 `/workspace` 挂载源在建会话那一刻就固定了

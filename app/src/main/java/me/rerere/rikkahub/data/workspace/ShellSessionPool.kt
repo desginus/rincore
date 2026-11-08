@@ -9,6 +9,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.rerere.workspace.WorkspaceCommandResult
@@ -68,19 +70,36 @@ class ShellSessionPool(private val manager: WorkspaceManager) {
         return mutex.withLock {
             val session = try {
                 ensureSession(key, root, cwd)
+            } catch (e: CancellationException) {
+                // ★v5.3.63 取消必须直通（这是「按停止键要按很多下」的两层根因之二，
+                // 见下面 runInSession 处的注释）。建会话期间被取消 → 原样抛出。
+                throw e
             } catch (t: Throwable) {
                 Log.w(TAG, "open session '$key' failed — fallback to one-shot", t)
                 null
             }
             if (session == null) {
-                return@withLock oneShot(root, cwd, command, timeoutMillis)
+                // 一次性执行同样是阻塞的 Process.waitFor —— 必须走 runInterruptible，
+                // 否则取消只会在命令跑完后才生效（= 用户按了没反应）。
+                return@withLock runInterruptible { oneShot(root, cwd, command, timeoutMillis) }
             }
             try {
-                runInSession(session, root, cwd, command, timeoutMillis)
+                // ★v5.3.63 两层根因之一：读输出是**阻塞等待**（LinkedBlockingQueue.poll），
+                // 旧实现直接在 suspend 函数里调它 → 协程取消根本无法送达（取消只在下个挂起点生效），
+                // 命令会一直跑到自己的超时（最长 660s）= 用户实测「按停止键没反应」。
+                // runInterruptible 把取消转成线程中断，poll 抛 InterruptedException → 立即返回。
+                runInterruptible { runInSession(session, root, cwd, command, timeoutMillis) }
+            } catch (e: CancellationException) {
+                // ★v5.3.63 两层根因之二（「要按很多下」）：旧代码是 `catch (t: Throwable)` →
+                // 取消也被接住 → 关会话后**回退到一次性重跑同一条命令**！
+                // 于是用户每按一次停止，命令就重新执行一次，永远停不下来。
+                // 正确语义：取消 → 关掉会话（进程可能在跑）→ 原样抛出，绝不重跑。
+                close(key)
+                throw e
             } catch (t: Throwable) {
                 Log.w(TAG, "run in session '$key' failed — fallback to one-shot", t)
                 close(key)
-                oneShot(root, cwd, command, timeoutMillis)
+                runInterruptible { oneShot(root, cwd, command, timeoutMillis) }
             }
         }
     }
@@ -183,6 +202,11 @@ class ShellSessionPool(private val manager: WorkspaceManager) {
             session.stdin.newLine()
             session.stdin.flush()
         } catch (t: Throwable) {
+            // ★v5.3.63：取消/中断不能走"回退重跑"（否则按一次停止会重新执行一条命令）
+            if (t is InterruptedException || Thread.currentThread().isInterrupted) {
+                close(session.key)
+                throw CancellationException("shell session cancelled")
+            }
             Log.w(TAG, "session '${session.key}' write failed", t)
             close(session.key)
             return oneShot(root, cwd, command, timeoutMillis)
@@ -197,9 +221,14 @@ class ShellSessionPool(private val manager: WorkspaceManager) {
             }
             val line = try {
                 session.lines.poll(remain, TimeUnit.MILLISECONDS)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-                null
+            } catch (e: InterruptedException) {
+                // ★v5.3.63：这里**必须抛出**。旧实现是
+                //   `Thread.currentThread().interrupt(); null` → 中断标志被恢复后
+                //   poll 立刻再次抛出 → 循环变成 100% CPU 空转，直到 timeoutMillis
+                //   （最长 660 秒）才退出 —— 用户按了停止却看到"没反应"，机器还在发热。
+                //   抛给 runInterruptible，它会转成 CancellationException 并终止整轮生成。
+                close(session.key)
+                throw e
             } ?: continue
 
             if (line.startsWith(marker)) {
