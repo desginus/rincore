@@ -1798,4 +1798,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_page_preferences_notification_floating_window_desc">切到后台时 AI 还在回复，显示一个悬浮图标，点开可查看进度、确认工具调用和快速回复</string>
   <string name="setting_page_preferences_notification_overlay_permission">授予悬浮窗权限</string>
   <string name="setting_page_preferences_notification_overlay_permission_desc">没有权限时不会显示悬浮窗</string>
+    <string name="workspace_job_notification_title">后台命令</string>
+    <string name="workspace_job_notification_running">%1$d 个任务运行中</string>
 </resources>

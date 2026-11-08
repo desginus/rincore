@@ -76,6 +76,8 @@ const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 const val MEDIA_CREATION_NOTIFICATION_CHANNEL_ID = "media_creation"
 const val MEMORY_DREAM_NOTIFICATION_CHANNEL_ID = "memory_dream"
 const val GENERATION_FOREGROUND_NOTIFICATION_CHANNEL_ID = "generation_foreground"
+/** ★v5.3.62：工作区后台任务保活通知（与「生成」分开，用户可单独关掉） */
+const val WORKSPACE_JOB_NOTIFICATION_CHANNEL_ID = "workspace_job"
 
 class RikkaHubApp : Application() {
 
@@ -626,6 +628,15 @@ class RikkaHubApp : Application() {
                 .build()
             notificationManager.createNotificationChannel(generationForegroundChannel)
         }.onFailure { Log.e(TAG, "channel generation_foreground failed", it) }
+
+        runCatching {
+            // ★v5.3.62：工作区后台任务通知渠道（低优先级：不打扰，只是常驻提示）
+            val workspaceJobChannel = NotificationChannelCompat
+                .Builder(WORKSPACE_JOB_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
+                .setName(getString(R.string.workspace_job_notification_title))
+                .build()
+            notificationManager.createNotificationChannel(workspaceJobChannel)
+        }.onFailure { Log.e(TAG, "channel workspace_job failed", it) }
 
         runCatching {
             // 5.0.0 并树补齐：媒体创作通知渠道（上游 3.0.0）——缺失则媒体进度通知被系统静默丢弃

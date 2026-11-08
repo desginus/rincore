@@ -1896,4 +1896,6 @@
   <string name="setting_page_preferences_notification_floating_window_desc">When you leave the app while the AI is still replying, show a floating icon. Tap it to check progress, confirm tool calls and reply quickly</string>
   <string name="setting_page_preferences_notification_overlay_permission">Grant overlay permission</string>
   <string name="setting_page_preferences_notification_overlay_permission_desc">The floating window will not appear without this permission</string>
+    <string name="workspace_job_notification_title">Background commands</string>
+    <string name="workspace_job_notification_running">%1$d jobs running</string>
 </resources>

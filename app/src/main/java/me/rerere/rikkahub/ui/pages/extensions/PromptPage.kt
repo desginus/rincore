@@ -53,6 +53,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -114,6 +115,7 @@ import me.rerere.ui.components.FormItem
 import me.rerere.ui.components.RikkaConfirmDialog
 import me.rerere.ui.components.Select
 import org.koin.androidx.compose.koinViewModel
+import sh.calvin.reorderable.ReorderableColumn
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -906,16 +908,33 @@ private fun LorebookEditSheet(
                     }
                 }
 
-                Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
-                    book.entries.fastForEachIndexed { index, entry ->
-                        RegexInjectionEntryCard(
-                            entry = entry,
-                            shape = cardGroupItemShape(index, book.entries.size),
-                            onEdit = { entryEditState.open(entry) },
-                            onDelete = {
-                                onEdit(book.copy(entries = book.entries - entry))
-                            }
-                        )
+                // ★v5.3.62（对齐上游 3.1.2）：世界书条目支持长按拖拽排序。
+                // 顺序即注入优先级，用户此前只能删掉重建来调整。
+                ReorderableColumn(
+                    list = book.entries,
+                    onSettle = { fromIndex, toIndex ->
+                        val entries = book.entries.toMutableList().apply {
+                            add(toIndex, removeAt(fromIndex))
+                        }
+                        onEdit(book.copy(entries = entries))
+                    },
+                    verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+                ) { index, entry, isDragging ->
+                    key(entry.id) {
+                        ReorderableItem {
+                            RegexInjectionEntryCard(
+                                entry = entry,
+                                shape = cardGroupItemShape(index, book.entries.size),
+                                modifier = longPressReorder(
+                                    isDragging = isDragging,
+                                    enabled = book.entries.size > 1,
+                                ),
+                                onEdit = { entryEditState.open(entry) },
+                                onDelete = {
+                                    onEdit(book.copy(entries = book.entries - entry))
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -950,12 +969,13 @@ private fun LorebookEditSheet(
 private fun RegexInjectionEntryCard(
     entry: PromptInjection.RegexInjection,
     shape: Shape,
+    modifier: Modifier = Modifier,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     Surface(
         onClick = onEdit,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {

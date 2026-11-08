@@ -166,6 +166,11 @@
 
     <!-- 5.0.0 并树：上游前景服务声明（媒体创作 / 记忆整理"做梦"） -->
     <service
+      android:name=".service.WorkspaceJobForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="dataSync" />
+
+    <service
       android:name=".service.MediaCreationForegroundService"
       android:exported="false"
       android:foregroundServiceType="dataSync" />

@@ -922,6 +922,21 @@ private fun createJobTool(
                 val jobId = "j" + java.lang.Long.toHexString(System.currentTimeMillis()) +
                     java.lang.Long.toHexString(System.nanoTime() % 0x10000L)
                 workspaceRepository.startJob(workspaceId, command, cwd, jobId)
+                // ★v5.3.62（对齐上游 3.1.2）：把进程留在前台，应用被系统回收时任务不再一起消失。
+                // 整段是可失败旁路：拿不到 AppScope / 系统禁止后台起前台服务 → 只记日志，
+                // 任务照常运行，行为与引入这个服务之前完全一致。
+                runCatching {
+                    val appScope = org.koin.core.context.GlobalContext.getOrNull()
+                        ?.getOrNull<me.rerere.rikkahub.AppScope>()
+                    if (appScope != null) {
+                        me.rerere.rikkahub.service.WorkspaceJobKeeper.watch(
+                            scope = appScope,
+                            repository = workspaceRepository,
+                            workspaceId = workspaceId,
+                            jobId = jobId,
+                        )
+                    }
+                }
                 listOf(
                     UIMessagePart.Text(
                         buildJsonObject {
@@ -971,6 +986,8 @@ private fun createJobTool(
             "kill" -> {
                 val jobId = params.string("job_id") ?: error("job_id is required for action=kill")
                 val killed = workspaceRepository.killJob(workspaceId, jobId)
+                // 主动 kill 后立即撤掉前台保活，不必等轮询发现
+                runCatching { me.rerere.rikkahub.service.WorkspaceJobKeeper.forget(jobId) }
                 listOf(
                     UIMessagePart.Text(
                         buildJsonObject {
