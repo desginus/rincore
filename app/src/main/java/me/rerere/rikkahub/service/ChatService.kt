@@ -319,6 +319,16 @@ class ChatService(
     // ---- Session 管理 (v4.7.2: 2.5.3 ConversationSessionManager 收口) ----
 
     private fun onSessionGenerationFinished(session: ConversationSession, cause: Throwable?) {
+        // ★v5.3.64：被存活守卫判定卡死而中止 → 给一条明确错误（否则用户只看到"生成中"消失）
+        session.stalledReason?.let { reason ->
+            _errors.update {
+                it + ChatError(
+                    title = context.getString(R.string.error_title_send_message),
+                    error = IllegalStateException(reason),
+                    conversationId = session.id,
+                )
+            }
+        }
         if (cause != null) session.messageQueue.pause()
         if (session.state.value.currentMessages.any { message ->
                 message.parts.any { it is UIMessagePart.Tool && it.isPending }

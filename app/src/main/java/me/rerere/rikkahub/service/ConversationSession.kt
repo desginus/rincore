@@ -178,6 +178,7 @@ class ConversationSession(
         }
         val next = update(_state.value)
         _state.value = next
+        markProgress()
         next
     }
 
@@ -195,6 +196,7 @@ class ConversationSession(
                 pendingUpdates.addLast { conversation }
             }
             _state.value = conversation
+            markProgress()
         }
     }
 
@@ -274,6 +276,44 @@ class ConversationSession(
     // 空闲检查任务
     private var idleCheckJob: Job? = null
 
+    /**
+     * ★v5.3.64 生成存活守卫（用户实测：对话放后台跑一会就"彻底卡死"、切回来也无任何反应、一直挂起）。
+     *
+     * 为什么需要它：`StreamWatchdog` 只守 **SSE 流内部**（首包/思考/正文三段），
+     * 而卡在**流之外**（工具执行、落库、等待子代理、重试退避）时**没有任何超时** →
+     * job 永不完成 → `_generationJob` 永不置空 → UI 永久"生成中"，且 `invokeOnCompletion`
+     * 不执行 → 前台服务/唤醒锁也不会释放。这是"一直挂起"的结构性缺口。
+     *
+     * 语义：**只要有进展就重置**（流式 chunk / 内存写入 / 工具产出都会 markProgress），
+     * 连续 [LIVENESS_STALL_MS] 毫无进展才判定卡死并取消本轮 —— 只做"兜底不无限挂"，
+     * 不参与正常节奏判断（正常思考/长工具都在闸值内）。
+     */
+    @Volatile
+    private var lastProgressAtMs: Long = System.currentTimeMillis()
+
+    /** 被守卫判定卡死而中止时的原因（供 ChatService 转成用户可见错误）。 */
+    @Volatile
+    var stalledReason: String? = null
+        private set
+
+    private var livenessJob: Job? = null
+
+    private companion object {
+        /** 守卫检查粒度（30s 一次，几乎零开销） */
+        const val LIVENESS_TICK_MS = 30_000L
+        /**
+         * 判定卡死的阈值：20 分钟。
+         * 必须大于「首包 480s + 思考 480s + 工具 660s」里最长的那一段，
+         * 否则会误杀合法的长思考/长命令；同时保证绝不会无限挂起。
+         */
+        const val LIVENESS_STALL_MS = 20 * 60 * 1000L
+    }
+
+    /** 任何"本轮确实在推进"的信号都应调用它（流式 chunk / 状态写入 / 工具产出）。 */
+    fun markProgress() {
+        lastProgressAtMs = System.currentTimeMillis()
+    }
+
     internal fun acquire(): Int = refCount.incrementAndGet().also {
         cancelIdleCheck()
     }
@@ -284,7 +324,10 @@ class ConversationSession(
         val previous = _generationJob.value
         _generationJob.value = job
         if (cancelPrevious) previous?.cancel()
-        if (job != null) activeJobs.add(job)
+        if (job != null) {
+            activeJobs.add(job)
+            startLivenessGuard(job)
+        }
         job?.invokeOnCompletion { cause ->
             synchronized(this) {
                 activeJobs.remove(job)
@@ -310,6 +353,34 @@ class ConversationSession(
     fun cancelJobs(): List<Job> = activeJobs.toList().also { jobs ->
         // Cancel waiters first so a predecessor finishing cannot start the next approval.
         jobs.asReversed().forEach { it.cancel() }
+    }
+
+    /**
+     * ★v5.3.64：job 存活守卫 —— 连续 [LIVENESS_STALL_MS] 无任何进展就取消本轮。
+     *
+     * 只解决"永远挂起"，不改任何正常路径的节奏。取消后由 [stalledReason] 让上层
+     * 给出一条明确错误（而不是继续显示"生成中"）。
+     */
+    private fun startLivenessGuard(job: Job) {
+        markProgress()
+        livenessJob?.cancel()
+        livenessJob = scope.launch {
+            while (job.isActive) {
+                delay(LIVENESS_TICK_MS)
+                if (!job.isActive) break
+                val idle = System.currentTimeMillis() - lastProgressAtMs
+                if (idle >= LIVENESS_STALL_MS) {
+                    val seconds = idle / 1000
+                    Log.e(
+                        TAG,
+                        "liveness: generation stalled (idle=${seconds}s) — cancelling job id=$id",
+                    )
+                    stalledReason = "本轮生成连续 ${seconds} 秒没有任何进展（可能上游/网络/工具侧卡住），已自动中止"
+                    job.cancel(CancellationException("generation stalled: idle ${seconds}s"))
+                    break
+                }
+            }
+        }
     }
 
     private fun scheduleIdleCheck() {
