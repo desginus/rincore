@@ -296,31 +296,6 @@ class ConversationSession(
     var stalledReason: String? = null
         private set
 
-    /**
-     * ★v5.3.65「工具结束 → 下一轮请求」交接计时。
-     *
-     * 用户实测：工具调用结束后三四分钟没有任何反应。`PERF/resume_gap` 只覆盖
-     * 「已经走到 preStream」的情况，若循环卡在交接段（写库/组装/探活）则永远
-     * 走不到那一行，也没有任何东西判死 —— 这就是「一直不恢复输出」。
-     *
-     * 语义：工具批执行完成时置为 now；下一轮请求就绪（preStream）时归零。
-     * 归零前若超过 [TOOL_HANDOFF_STALL_MS] → 客户端侧卡住，直接取消并说明。
-     */
-    @Volatile
-    private var toolHandoffAtMs: Long = 0L
-
-    /** 工具批执行完成：开始计「多久没发起下一轮请求」。 */
-    fun markToolHandoffStart() {
-        toolHandoffAtMs = System.currentTimeMillis()
-        markProgress()
-    }
-
-    /** 下一轮请求已经就绪（preStream）：交接完成。 */
-    fun markToolHandoffEnd() {
-        toolHandoffAtMs = 0L
-        markProgress()
-    }
-
     private var livenessJob: Job? = null
 
     private companion object {
@@ -332,13 +307,6 @@ class ConversationSession(
          * 否则会误杀合法的长思考/长命令；同时保证绝不会无限挂起。
          */
         const val LIVENESS_STALL_MS = 20 * 60 * 1000L
-
-        /**
-         * 「工具已结束但没发起下一轮请求」的判定阈值：30 秒。
-         * 正常交接实测 78~141ms（v5.3.38 trace），30s 是 200 倍余量；
-         * 超过它仍没动静 = 循环卡在客户端侧，而不是上游在思考。
-         */
-        const val TOOL_HANDOFF_STALL_MS = 30_000L
     }
 
     /** 任何"本轮确实在推进"的信号都应调用它（流式 chunk / 状态写入 / 工具产出）。 */
@@ -369,9 +337,6 @@ class ConversationSession(
                 if (_generationJob.compareAndSet(job, null)) {
                     // v5.3.3：本轮结束即清空开始时间 —— 否则下一轮开始前它仍是上一轮的值，
                     // 悬浮窗"只显示本轮错误"的判据会把旧错误当成本轮。
-                    // v5.3.65：交接计时同样必须清空，否则残留值会让下一轮
-                    // 一开跑就被判「工具交接卡住」。
-                    toolHandoffAtMs = 0L
                     generationStartedAt.value = null
                     replyMessageId.value = null
                     onGenerationFinished(id, cause)
@@ -403,24 +368,6 @@ class ConversationSession(
             while (job.isActive) {
                 delay(LIVENESS_TICK_MS)
                 if (!job.isActive) break
-                // ★v5.3.65：先查「工具结束 → 下一轮请求」的交接段（30s），
-                // 再查 20 分钟的任务级无进展。前者是用户真正看到的「工具跑完了
-                // 却一直没恢复输出」，后者只兜底整轮彻底挂死。
-                val handoffAt = toolHandoffAtMs
-                if (handoffAt > 0) {
-                    val gap = System.currentTimeMillis() - handoffAt
-                    if (gap >= TOOL_HANDOFF_STALL_MS) {
-                        val seconds = gap / 1000
-                        Log.e(
-                            TAG,
-                            "liveness: tool handoff stalled (gap=${seconds}s) — cancelling job id=$id",
-                        )
-                        stalledReason =
-                            "工具结果已生成，但 ${seconds} 秒内未能发起下一轮请求（客户端侧卡住），已自动中止"
-                        job.cancel(CancellationException("tool handoff stalled: ${seconds}s"))
-                        break
-                    }
-                }
                 val idle = System.currentTimeMillis() - lastProgressAtMs
                 if (idle >= LIVENESS_STALL_MS) {
                     val seconds = idle / 1000

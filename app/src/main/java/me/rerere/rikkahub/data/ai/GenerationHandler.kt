@@ -212,17 +212,19 @@ class GenerationHandler(
 ) {
 
     /**
-     * v5.3.65：取当前对话会话（只用于「工具结束 → 下一轮请求」交接计时）。
-     * Koin 未就绪 / 会话未创建时返回 null —— 守卫是可选增强，绝不影响生成。
+     * v5.3.66：工具结果回写后**立即**继续下一轮（不再做「30 秒未交接就掐断」）。
+     * 交接本身是同步的 —— 真正会拖慢它的是 emit 链上的同步落库，
+     * 已在 ChatService 的收集器里改为异步落库（不挡下一轮请求）。
      */
-    private fun sessionOf(conversationId: Uuid?): me.rerere.rikkahub.service.ConversationSession? =
-        conversationId?.let {
-            runCatching {
-                org.koin.core.context.GlobalContext.get()
-                    .get<me.rerere.rikkahub.service.ConversationSessionManager>()
-                    .get(it)
-            }.getOrNull()
+    private fun markToolHandoff(conversationId: Uuid?, toolEndAt: Long) {
+        if (toolEndAt <= 0L) return
+        // 仅诊断：这一行若出现在日志里，说明工具结束→请求就绪超过 2 秒，
+        // 可用它判断是组装慢、探活慢还是落库慢（不再中止本轮）。
+        val gap = System.currentTimeMillis() - toolEndAt
+        if (gap > 2_000L) {
+            CallTracer.event("PERF", "handoff_slow", "toolEnd→requestReady=${gap}ms")
         }
+    }
 
     /**
      * v4.5.17: 仿 OpenCode 请求模式 — 对 opencode.ai 网关按模型协议映射
@@ -1398,9 +1400,6 @@ class GenerationHandler(
 
             // v4.8.105 (E): 计时打点 — 工具完成 → 下一轮首包 (resume_gap, 仅诊断)
             retry.lastToolEndAt = System.currentTimeMillis()
-            // ★v5.3.65：交给会话侧计时 —— 若 30 秒内没走到下一轮 preStream，
-            // 由存活守卫取消并给出可见原因（覆盖「工具结束却一直不恢复输出」）。
-            sessionOf(conversationId)?.markToolHandoffStart()
         }
         // v3.11.6: 生成结束兜底清除重试提示 — 取消/异常路径不经过
         // 成功/预算耗尽分支, 提示会残留 (用户: 恢复后提示必须消失)
@@ -1901,10 +1900,9 @@ class GenerationHandler(
                     "SSE", "resume: toolEnd→preStream=${postToolMs}ms (assembly=${preStreamMs}ms, poke=${pokeWaitMs}ms)"
                 )
                 CallTracer.event("PERF", "resume_gap", "toolEnd→preStream=${postToolMs}ms assembly=${preStreamMs}ms poke=${pokeWaitMs}ms")
+                markToolHandoff(conversationId, retry.lastToolEndAt)
                 retry.lastToolEndAt = 0L
             }
-            // ★v5.3.65：请求已就绪 = 交接完成，解除 30s 交接守卫。
-            sessionOf(conversationId)?.markToolHandoffEnd()
             // 4.2.0: 消费侧切原版 StreamChunkHandler (2.5.x 架构)
             val streamHandler = me.rerere.ai.ui.StreamChunkHandler(model = model)
             // v4.5.17: 仿 OpenCode 请求模式 — 开启且目标为 opencode.ai 网关时,

@@ -736,7 +736,17 @@ class ChatService(
             try {
                 // v4.8.118 (B140): 追踪键控 — 本对话独立追踪单元
                 withContext(TraceKey(conversationId.toString())) {
-                previousJob?.join()
+                // ★v5.3.66：有界等待 —— 旧实现是无界 `join()`，前一轮若卡在不可取消段
+                // （工具/网络/DB），重生成会一直排队，用户体感「点了没反应」。
+                // 先等 10s；仍未结束则取消它再等 2s，保证本轮一定能开工。
+                if (previousJob != null) {
+                    val finished = withTimeoutOrNull(10_000) { previousJob.join() } != null
+                    if (!finished) {
+                        Log.w(TAG, "regenerate: previous job still running after 10s — cancelling")
+                        previousJob.cancel(CancellationException("superseded by regenerate"))
+                        withTimeoutOrNull(2_000) { previousJob.join() }
+                    }
+                }
                 val conversation = session.state.value
 
                 if (message.role == MessageRole.USER) {
@@ -1199,8 +1209,19 @@ class ChatService(
                         // IO 降 90%+, 收尾仍全量落盘。
                         val now = System.currentTimeMillis()
                         if (now - lastStreamPersistMs > 1_000) {
-                            persistConversationState(conversationId)
                             lastStreamPersistMs = now
+                            // ★v5.3.66（用户定案）：落库转异步，**绝不挡下一轮请求**。
+                            // 旧实现就地 `persistConversationState(...)`（saveLock + 全量
+                            // updateConversation）会挂住 emit 链 —— 工具结果回写恰好也走
+                            // 这条 emit，于是「工具已结束，下一轮迟迟发不出去」。
+                            // 异步后：内存态同步生效（UI 立刻可见），DB 在 IO 线程补写；
+                            // persist 内部读的是 session.state（最新权威），不会写旧快照。
+                            appScope.launch(Dispatchers.IO) {
+                                runCatching { persistConversationState(conversationId) }
+                                    .onFailure {
+                                        Log.w(TAG, "stream persist failed id=$conversationId", it)
+                                    }
+                            }
                         }
 
                         // 通知等边缘副作用由 ChatNotificationManager 消费；
