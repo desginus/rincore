@@ -212,21 +212,6 @@ class GenerationHandler(
 ) {
 
     /**
-     * v5.3.66：工具结果回写后**立即**继续下一轮（不再做「30 秒未交接就掐断」）。
-     * 交接本身是同步的 —— 真正会拖慢它的是 emit 链上的同步落库，
-     * 已在 ChatService 的收集器里改为异步落库（不挡下一轮请求）。
-     */
-    private fun markToolHandoff(conversationId: Uuid?, toolEndAt: Long) {
-        if (toolEndAt <= 0L) return
-        // 仅诊断：这一行若出现在日志里，说明工具结束→请求就绪超过 2 秒，
-        // 可用它判断是组装慢、探活慢还是落库慢（不再中止本轮）。
-        val gap = System.currentTimeMillis() - toolEndAt
-        if (gap > 2_000L) {
-            CallTracer.event("PERF", "handoff_slow", "toolEnd→requestReady=${gap}ms")
-        }
-    }
-
-    /**
      * v4.5.17: 仿 OpenCode 请求模式 — 对 opencode.ai 网关按模型协议映射
      * (models.dev 同源) 分派传输 handler: Anthropic / Google / Responses 模型
      * 走对应协议, Chat Completions 或非 opencode 网关返回 null (原路径)。
@@ -1900,7 +1885,10 @@ class GenerationHandler(
                     "SSE", "resume: toolEnd→preStream=${postToolMs}ms (assembly=${preStreamMs}ms, poke=${pokeWaitMs}ms)"
                 )
                 CallTracer.event("PERF", "resume_gap", "toolEnd→preStream=${postToolMs}ms assembly=${preStreamMs}ms poke=${pokeWaitMs}ms")
-                markToolHandoff(conversationId, retry.lastToolEndAt)
+                // v5.3.66：只诊断、不中止 —— 超过 2 秒单独打一条，便于定位是组装/探活/落库。
+                if (postToolMs > 2_000L) {
+                    CallTracer.event("PERF", "handoff_slow", "toolEnd→requestReady=${postToolMs}ms")
+                }
                 retry.lastToolEndAt = 0L
             }
             // 4.2.0: 消费侧切原版 StreamChunkHandler (2.5.x 架构)
