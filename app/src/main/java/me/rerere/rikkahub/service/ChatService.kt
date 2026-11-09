@@ -135,6 +135,7 @@ import me.rerere.rikkahub.data.workspace.EffectiveCwd
 import me.rerere.rikkahub.web.BadRequestException
 import me.rerere.rikkahub.web.NotFoundException
 import me.rerere.rikkahub.utils.applyPlaceholders
+import me.rerere.rikkahub.utils.AppDispatchers
 import me.rerere.workspace.WorkspaceShellStatus
 import java.time.Instant
 import java.util.Locale
@@ -598,7 +599,7 @@ class ChatService(
         val answer = queued.answer
         // 4.1.0: CoroutineStart.LAZY — setJob 内 job?.start() 启动, 队列/审批链
         // 可在 start 前挂起等待前驱 (RinCore 无 FGS acquire 机制, 用 LAZY 直通)
-        val job = appScope.launch(start = CoroutineStart.LAZY) {
+        val job = appScope.launch(AppDispatchers.Generation, start = CoroutineStart.LAZY) {
             try {
                 // v4.8.118 (B140): 追踪键控 — 本对话为独立追踪单元 (并行会话
                 // 互不串扰: start/event/finish 全按 TraceKey 隔离)
@@ -731,7 +732,7 @@ class ChatService(
         val session = sessionManager.getOrCreate(conversationId)
         val previousJob = session.getJob()
 
-        val job = appScope.launch(start = CoroutineStart.LAZY) {
+        val job = appScope.launch(AppDispatchers.Generation, start = CoroutineStart.LAZY) {
             try {
                 // v4.8.118 (B140): 追踪键控 — 本对话独立追踪单元
                 withContext(TraceKey(conversationId.toString())) {
@@ -786,7 +787,7 @@ class ChatService(
                 part is UIMessagePart.Tool && part.isPending && part.toolCallId != toolCallId
             }
         }
-        val job = appScope.launch(start = CoroutineStart.LAZY) {
+        val job = appScope.launch(AppDispatchers.Generation, start = CoroutineStart.LAZY) {
             try {
                 // v4.8.118 (B140): 追踪键控 — 本对话独立追踪单元
                 withContext(TraceKey(conversationId.toString())) {

@@ -309,6 +309,13 @@ class RikkaHubApp : Application() {
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching { me.rerere.rikkahub.sandbox.SandboxBridgeServer.start(this@RikkaHubApp) }
         }
+        // ═══ v5.3.65 ★用户定案：每次打开应用即预热 PRoot + 浏览器内核 ═══
+        // 与 v5.0.78「启动不预热」的区别：不是同步塞进 onCreate 链路，而是
+        // 启动完成后 1.2s 的独立 IO 协程（不抢首帧/Room/Coil 的 IO），
+        // 只为首个工具调用服务；失败无害（内部有 3 次熔断）。
+        runCatching {
+            me.rerere.rikkahub.service.SandboxPrewarmer.warmOnAppStartAsync(get<AppScope>())
+        }.onFailure { Log.w("RikkaHubApp", "sandbox startup prewarm failed to schedule", it) }
         // v5.0.78 ★预热机制重写（用户指令）："预热改为每次开始在输入框中输入的时候进行一次"。
         // 旧实现=启动即后台预热 proot/rootfs/officecli —— 与启动期 Room/Coil/工作区扫描
         // 抢 IO，用户实测"没什么用，反倒容易将数字等待时间拖得越来越长"（启动变慢）。

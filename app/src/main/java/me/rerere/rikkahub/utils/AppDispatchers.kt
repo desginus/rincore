@@ -25,6 +25,19 @@ object AppDispatchers {
     /** CPU 密集计算 — 序列化/解析/编码 (线程数=核数) */
     val Compute: CoroutineDispatcher get() = Dispatchers.Default
 
+    /** 生成链路专用池 (v5.3.65) — agent 循环 / SSE 收集 / 工具编排。
+     *
+     *  为什么需要独立一层：
+     *  ① 与 Main 解耦 —— 旧实现 `appScope.launch` 用的是 Dispatchers.Main，
+     *     组请求/收流/写库/下一轮全部跑在主线程，与 Compose 重组抢同一根线程；
+     *     界面本该是显示层，不该同时是执行层。
+     *  ② 与 Sandbox 解耦 —— 工具里的长阻塞命令（最长 660s）走 Sandbox 池，
+     *     循环本身不能被它拖住，也不能占用 CPU 池（Default 只有核数个线程）。
+     *  ③ 用 IO 视图而非 Default：循环内可能调用 runInterruptible / 阻塞工具，
+     *     占 Default 会把解析、序列化等 CPU 任务饿死。
+     *  limitedParallelism 只是调度视图，不新增线程。 */
+    val Generation: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(4)
+
     /** 沙箱进程专用隔离池 — proot 启动/阻塞等待/PTY/MCP stdio (与共享 IO 池隔离)。
      *  v5.0.79：8 → 12 —— 工具层并行度 MAX_PARALLEL_TOOL_EXECUTIONS=6，每条 shell 最长
      *  阻塞 660s，8 个槽位极易被长命令占满导致 PTY/MCP stdio 排队；12 给短驻留

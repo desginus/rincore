@@ -212,6 +212,19 @@ class GenerationHandler(
 ) {
 
     /**
+     * v5.3.65：取当前对话会话（只用于「工具结束 → 下一轮请求」交接计时）。
+     * Koin 未就绪 / 会话未创建时返回 null —— 守卫是可选增强，绝不影响生成。
+     */
+    private fun sessionOf(conversationId: Uuid?): me.rerere.rikkahub.service.ConversationSession? =
+        conversationId?.let {
+            runCatching {
+                org.koin.core.context.GlobalContext.get()
+                    .get<me.rerere.rikkahub.service.ConversationSessionManager>()
+                    .get(it)
+            }.getOrNull()
+        }
+
+    /**
      * v4.5.17: 仿 OpenCode 请求模式 — 对 opencode.ai 网关按模型协议映射
      * (models.dev 同源) 分派传输 handler: Anthropic / Google / Responses 模型
      * 走对应协议, Chat Completions 或非 opencode 网关返回 null (原路径)。
@@ -1385,6 +1398,9 @@ class GenerationHandler(
 
             // v4.8.105 (E): 计时打点 — 工具完成 → 下一轮首包 (resume_gap, 仅诊断)
             retry.lastToolEndAt = System.currentTimeMillis()
+            // ★v5.3.65：交给会话侧计时 —— 若 30 秒内没走到下一轮 preStream，
+            // 由存活守卫取消并给出可见原因（覆盖「工具结束却一直不恢复输出」）。
+            sessionOf(conversationId)?.markToolHandoffStart()
         }
         // v3.11.6: 生成结束兜底清除重试提示 — 取消/异常路径不经过
         // 成功/预算耗尽分支, 提示会残留 (用户: 恢复后提示必须消失)
@@ -1887,6 +1903,8 @@ class GenerationHandler(
                 CallTracer.event("PERF", "resume_gap", "toolEnd→preStream=${postToolMs}ms assembly=${preStreamMs}ms poke=${pokeWaitMs}ms")
                 retry.lastToolEndAt = 0L
             }
+            // ★v5.3.65：请求已就绪 = 交接完成，解除 30s 交接守卫。
+            sessionOf(conversationId)?.markToolHandoffEnd()
             // 4.2.0: 消费侧切原版 StreamChunkHandler (2.5.x 架构)
             val streamHandler = me.rerere.ai.ui.StreamChunkHandler(model = model)
             // v4.5.17: 仿 OpenCode 请求模式 — 开启且目标为 opencode.ai 网关时,
