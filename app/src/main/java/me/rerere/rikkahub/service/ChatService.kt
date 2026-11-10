@@ -305,6 +305,10 @@ class ChatService(
     // 用 per-conversation Mutex 串行化同一对话的保存；不同对话互不阻塞（不引入全局锁）。
     private val saveLocks = java.util.concurrent.ConcurrentHashMap<Uuid, kotlinx.coroutines.sync.Mutex>()
 
+    /** v5.3.67：流式异步落库「单飞」标记（同一对话最多一个在飞，防排队拖慢下次发送）。 */
+    private val streamPersistInFlight: MutableSet<Uuid> =
+        java.util.concurrent.ConcurrentHashMap.newKeySet()
+
     /** ★v5.3.56：正在压缩的对话（原子集合，防重复点击导致重复扣费 + 结果互相覆盖）。 */
     private val compressingConversations: MutableSet<Uuid> =
         java.util.concurrent.ConcurrentHashMap.newKeySet()
@@ -337,6 +341,11 @@ class ChatService(
             session.messageQueue.failReplyWaiters(context.getString(R.string.chat_page_voice_tool_approval))
         }
         appScope.launch { dispatchNextQueuedMessage(session.id) }
+        // ★v5.3.67：本轮结束 → 空闲预热（5 秒后；期间再发送会被 cancel 掉）。
+        // 预热只服务下一轮的工具调用，绝不再与首字抢资源。
+        if (!session.state.value.title.startsWith(me.rerere.rikkahub.subagent.SUBAGENT_TITLE_PREFIX)) {
+            SandboxPrewarmer.warmAfterGeneration(appScope)
+        }
     }
 
     // ---- 引用管理 ----
@@ -601,6 +610,8 @@ class ChatService(
         // 可在 start 前挂起等待前驱 (RinCore 无 FGS acquire 机制, 用 LAZY 直通)
         val job = appScope.launch(AppDispatchers.Generation, start = CoroutineStart.LAZY) {
             try {
+                // ★v5.3.67：生成开始 = 启动预热立即让路（首字优先）。
+                SandboxPrewarmer.cancelForGeneration()
                 // v4.8.118 (B140): 追踪键控 — 本对话为独立追踪单元 (并行会话
                 // 互不串扰: start/event/finish 全按 TraceKey 隔离)
                 withContext(TraceKey(conversationId.toString())) {
@@ -633,7 +644,13 @@ class ChatService(
                         ).toMessageNode(),
                     )
                 }
+                // ★v5.3.67 诊断：发送前的同步落库若被异步落库排队挡住，会直接推迟首字。
+                val persistT0 = System.currentTimeMillis()
                 persistConversationState(conversationId)
+                val persistWaitMs = System.currentTimeMillis() - persistT0
+                if (persistWaitMs > 300L) {
+                    Log.w(TAG, "send persist blocked ${persistWaitMs}ms id=$conversationId")
+                }
                 session.submittingMessage = null
 
                 // 开始补全
@@ -734,6 +751,8 @@ class ChatService(
 
         val job = appScope.launch(AppDispatchers.Generation, start = CoroutineStart.LAZY) {
             try {
+                // ★v5.3.67：生成开始 = 启动预热立即让路（首字优先）。
+                SandboxPrewarmer.cancelForGeneration()
                 // v4.8.118 (B140): 追踪键控 — 本对话独立追踪单元
                 withContext(TraceKey(conversationId.toString())) {
                 // ★v5.3.66：有界等待 —— 旧实现是无界 `join()`，前一轮若卡在不可取消段
@@ -799,6 +818,8 @@ class ChatService(
         }
         val job = appScope.launch(AppDispatchers.Generation, start = CoroutineStart.LAZY) {
             try {
+                // ★v5.3.67：生成开始 = 启动预热立即让路（首字优先）。
+                SandboxPrewarmer.cancelForGeneration()
                 // v4.8.118 (B140): 追踪键控 — 本对话独立追踪单元
                 withContext(TraceKey(conversationId.toString())) {
                 me.rerere.rikkahub.data.ai.CallTracer.event(
@@ -1188,11 +1209,13 @@ class ChatService(
                 // v5.3.34：本轮第一个 chunk 即视为「首字到达」，记一条样本
                 if (!ttfbRecorded) {
                     ttfbRecorded = true
+                    val ttfbMs = System.currentTimeMillis() - genStartedAt
                     runCatching {
-                        me.rerere.rikkahub.data.ai.ModelLatencyStats.record(
-                            model.id, System.currentTimeMillis() - genStartedAt
-                        )
+                        me.rerere.rikkahub.data.ai.ModelLatencyStats.record(model.id, ttfbMs)
                     }
+                    // ★v5.3.67 诊断：首字耗时一行可查（用户反馈「首字被拉到十几秒」时，
+                    // 用它区分「客户端发送前等待」与「上游 TTFT」）。
+                    Log.i(TAG, "ttfb id=$conversationId model=${model.id} ms=$ttfbMs")
                 }
                 when (chunk) {
                     is GenerationChunk.Messages -> {
@@ -1211,16 +1234,22 @@ class ChatService(
                         if (now - lastStreamPersistMs > 1_000) {
                             lastStreamPersistMs = now
                             // ★v5.3.66（用户定案）：落库转异步，**绝不挡下一轮请求**。
-                            // 旧实现就地 `persistConversationState(...)`（saveLock + 全量
-                            // updateConversation）会挂住 emit 链 —— 工具结果回写恰好也走
-                            // 这条 emit，于是「工具已结束，下一轮迟迟发不出去」。
-                            // 异步后：内存态同步生效（UI 立刻可见），DB 在 IO 线程补写；
-                            // persist 内部读的是 session.state（最新权威），不会写旧快照。
-                            appScope.launch(Dispatchers.IO) {
-                                runCatching { persistConversationState(conversationId) }
-                                    .onFailure {
-                                        Log.w(TAG, "stream persist failed id=$conversationId", it)
+                            // ★v5.3.67：但异步也必须单飞 —— 旧写法每个节流窗口都
+                            // `launch` 一个全量 updateConversation，长对话下会排成一队
+                            // 抢 saveLock；用户下一次「发送」的同步落库排在这条队尾，
+                            // 首字就被拖到十几秒。现在同一对话最多一个在飞，
+                            // 后来的 tick 直接跳过（在飞的那次读的是最新 state，不会漏）。
+                            if (streamPersistInFlight.add(conversationId)) {
+                                appScope.launch(Dispatchers.IO) {
+                                    try {
+                                        persistConversationState(conversationId)
+                                    } catch (e: Throwable) {
+                                        if (e is CancellationException) throw e
+                                        Log.w(TAG, "stream persist failed id=$conversationId", e)
+                                    } finally {
+                                        streamPersistInFlight.remove(conversationId)
                                     }
+                                }
                             }
                         }
 

@@ -20,7 +20,9 @@ package me.rerere.rikkahub.service
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -36,6 +38,19 @@ object SandboxPrewarmer {
     /** 启动预热延迟：让首帧、Room、Coil 先把启动 IO 跑完，再走沙箱重活。 */
     private const val STARTUP_DELAY_MS = 1_200L
 
+    /** 生成结束后的空闲预热延迟（给收尾落库/通知让路）。 */
+    private const val POST_GENERATION_DELAY_MS = 5_000L
+
+    /**
+     * 启动预热里「先 PRoot/officecli，再等 8 秒才拉 Chromium」。
+     * 这 8 秒是给用户发第一条消息的窗口：一旦发送，cancelForGeneration 会取消
+     * 整个任务，Chromium 根本不会启动。
+     */
+    private const val BROWSER_DEFER_MS = 8_000L
+
+    /** Chromium 走热最多 10 分钟一次（它是 20~30 秒的重活，不能每轮都做）。 */
+    private const val BROWSER_WARM_WINDOW_MS = 10 * 60_000L
+
     // ═══ v5.3.42 ★★熔断：预热在部分 rootfs/机型上会失败（officecli 崩溃）═══
     // 连续 3 次失败 → 24 小时内不再尝试；成功一次即清零。
     private const val FAIL_THRESHOLD = 3
@@ -50,6 +65,18 @@ object SandboxPrewarmer {
     @Volatile
     private var lastWarmAtMs = 0L
 
+    /** 浏览器内核最近一次走热时间（10 分钟内不重复拉 Chromium）。 */
+    @Volatile
+    private var lastBrowserWarmAtMs = 0L
+
+    /** 当前在跑的预热任务（生成开始时会被取消 —— 预热永远给首字让路）。 */
+    @Volatile
+    private var warmJob: kotlinx.coroutines.Job? = null
+
+    /** 每次生成开始自增；预热在关键步骤前比对，发现已开始生成就安静退出。 */
+    @Volatile
+    private var generationEpoch: Long = 0L
+
     private val mutex = Mutex()
 
     /**
@@ -57,9 +84,46 @@ object SandboxPrewarmer {
      * 由 RikkaHubApp.onCreate 在 Koin 就绪后调用；内部自行延迟到启动 IO 之后。
      */
     fun warmOnAppStartAsync(scope: CoroutineScope) {
-        scope.launch(Dispatchers.IO) {
+        warmJob?.cancel()
+        warmJob = scope.launch(Dispatchers.IO) {
             delay(STARTUP_DELAY_MS)
             runCatching { warmOnce(source = "app-start") }
+        }
+    }
+
+    /**
+     * v5.3.67：生成开始 = 预热立即让路。
+     *
+     * 用户实测：首字从 ~1s 被拉到十几秒，时间点正好在「启动预热（PRoot +
+     * officecli + Chromium）」之后。Chromium 在 proot 里启动会吃掉 10~30 秒的
+     * CPU/IO，与 DNS/TLS/首包完全重叠。
+     *
+     * 这里取消在跑的预热；v5.3.63 起 executeCommand 走 runInterruptible，
+     * 取消会转成线程中断并杀掉 proot 进程。同时清空节流窗口，让本轮结束后的
+     * 空闲预热可以重新开始。
+     */
+    fun cancelForGeneration() {
+        generationEpoch += 1
+        lastWarmAtMs = 0L
+        val job = warmJob
+        if (job != null && job.isActive) {
+            job.cancel()
+            Log.i(TAG, "prewarm cancelled: generation started")
+        }
+        warmJob = null
+    }
+
+    /**
+     * 一轮生成结束后的空闲预热：不抢首字，只服务下一轮的工具调用。
+     * 延迟 5 秒执行；期间若又开始生成，epoch 变化会让它安静退出。
+     */
+    fun warmAfterGeneration(scope: CoroutineScope) {
+        if (warmJob?.isActive == true) return
+        val epoch = generationEpoch
+        warmJob = scope.launch(Dispatchers.IO) {
+            delay(POST_GENERATION_DELAY_MS)
+            if (epoch != generationEpoch) return@launch
+            runCatching { warmOnce(source = "idle") }
         }
     }
 
@@ -68,7 +132,10 @@ object SandboxPrewarmer {
      * 节流窗口内零成本；失败无害。
      */
     fun warmOnTypingStartAsync(scope: CoroutineScope) {
-        scope.launch(Dispatchers.IO) { runCatching { warmOnce(source = "typing-start") } }
+        // 已有预热在跑（可能是启动预热的 Chromium 阶段）就不要替换它 ——
+        // 替换只会把重活取消在一个中间状态，反而留下孤儿进程。
+        if (warmJob?.isActive == true) return
+        warmJob = scope.launch(Dispatchers.IO) { runCatching { warmOnce(source = "typing-start") } }
     }
 
     suspend fun warmOnce(source: String = "typing-start") {
@@ -120,8 +187,18 @@ object SandboxPrewarmer {
                 consecutiveFailures = 0
             }
 
-            // ── 预热项 2：浏览器内核（仅启动预热做；纯 best-effort，失败不计熔断）──
-            if (source == "app-start") {
+            // ── 预热项 2：浏览器内核（best-effort，失败不计熔断）──
+            // ★v5.3.67：Chromium 在 proot 里启动是 20~30 秒的 CPU/IO 重活，
+            // 绝不能在「用户刚发消息」的首字窗口里做。策略：
+            //   ① 启动预热先让 PRoot/officecli 走热，再等 8 秒；期间发送即被取消；
+            //   ② 生成结束后的空闲预热可以补做，但 10 分钟内最多一次；
+            //   ③ 每一步前 ensureActive()，取消后不再启动下一个重活。
+            val browserAllowed = source == "app-start" ||
+                (source == "idle" && System.currentTimeMillis() - lastBrowserWarmAtMs >= BROWSER_WARM_WINDOW_MS)
+            if (browserAllowed) {
+                if (source == "app-start") delay(BROWSER_DEFER_MS)
+                currentCoroutineContext().ensureActive()
+                lastBrowserWarmAtMs = System.currentTimeMillis()
                 warmBrowserKernel(repo, ws.id)
             }
 
