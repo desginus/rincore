@@ -31,7 +31,6 @@ import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.components.richtext.warmMarkdownCache
 import org.koin.core.context.GlobalContext
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.uuid.Uuid
 
 /**
  * 预热管线 v1 (v4.8.50, 铺展架构 — 用户定版):
@@ -44,10 +43,10 @@ import kotlin.uuid.Uuid
  */
 object WarmPipeline {
 
-    private const val WINDOW = 80
-    private const val STARTUP_MESSAGES = 160
-    private const val BATCH = 12
-    private const val BATCH_GAP_MS = 35L
+    private const val WINDOW = 40
+    private const val STARTUP_MESSAGES = 80
+    private const val BATCH = 6
+    private const val BATCH_GAP_MS = 40L
     private const val STARTUP_DELAY_MS = 2_500L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -143,9 +142,11 @@ object WarmPipeline {
         val assistant = runCatching {
             GlobalContext.get().get<SettingsStore>().settingsFlow.value.getCurrentAssistant()
         }.getOrNull()
+        // v5.3.70：Koin 解析一次；逐条检查（旧实现每 BATCH 条才检查，生成中最多白跑 12 条）。
+        val chatService = runCatching { GlobalContext.get().get<ChatService>() }.getOrNull()
         var worked = 0
         for (idx in order) {
-            if (worked == 0 && isGenerating(conversation.id)) return
+            if (chatService?.isConversationGenerating(conversation.id) == true) return
             val node = conversation.messageNodes.getOrNull(idx) ?: continue
             val message = node.messages.getOrNull(node.selectIndex) ?: continue
             val scope = if (message.role == MessageRole.USER) AssistantAffectScope.USER
@@ -166,7 +167,4 @@ object WarmPipeline {
         }
     }
 
-    private fun isGenerating(conversationId: Uuid): Boolean = runCatching {
-        GlobalContext.get().get<ChatService>().isConversationGenerating(conversationId)
-    }.getOrDefault(false)
 }

@@ -1253,7 +1253,10 @@ class ChatService(
                             if (streamPersistInFlight.add(conversationId)) {
                                 appScope.launch(Dispatchers.IO) {
                                     try {
-                                        persistConversationState(conversationId)
+                                        // ★v5.3.70：流式期不重新分词（旧实现每秒对增长中的
+                                        // 消息做 DELETE+INSERT FTS，长对话是固定卡顿源）。
+                                        // 收尾 save / 停止 / 下一次发送会统一 flush。
+                                        persistConversationState(conversationId, indexFts = false)
                                     } catch (e: Throwable) {
                                         if (e is CancellationException) throw e
                                         Log.w(TAG, "stream persist failed id=$conversationId", e)
@@ -1916,7 +1919,7 @@ class ChatService(
      * 交给 [saveConversation] —— 外部快照与 session 状态之间存在传播延迟，
      * 用它整对象写回会把刚 apply 的归属/消息覆盖回旧值（切换后记录消失的根因）。
      */
-    suspend fun persistConversationState(conversationId: Uuid) {
+    suspend fun persistConversationState(conversationId: Uuid, indexFts: Boolean = true) {
         saveLockFor(conversationId).withLock {
             // v5.0.83：绝不创建空壳；未就绪则跳过错过的保存由后续信号补齐
             val session = sessionManager.get(conversationId)
@@ -1944,7 +1947,8 @@ class ChatService(
                 return@withLock
             }
             if (exists) {
-                conversationRepo.updateConversation(snapshot)
+                // ★v5.3.70：流式落库可延迟 FTS 分词（indexFts=false），收尾统一 flush。
+                conversationRepo.updateConversation(snapshot, indexFts = indexFts)
             } else {
                 conversationRepo.insertConversation(snapshot)
             }

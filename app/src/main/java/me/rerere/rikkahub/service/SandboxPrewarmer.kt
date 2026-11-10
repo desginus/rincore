@@ -162,9 +162,12 @@ object SandboxPrewarmer {
                 // (2) 探测改用 `--help` 而不是 `--version`：同样会加载 34MB 二进制并触发
                 //     页缓存，但避开更容易崩溃的初始化路径。
                 // (3) 返回非零即视为失败（旧实现用 `; true` 把失败也变成成功）。
+                // (4) v5.3.70：`nice -n 19` 降低 CPU 优先级 —— 预热是后台活，
+                //     不能让 proot/officecli 与首帧/滚动抢 CPU。rootfs 无 nice 时自动退化为原命令。
                 val result = repo.executeCommand(
                     ws.id,
-                    "ulimit -c 0 2>/dev/null; officecli --help >/dev/null 2>&1",
+                    "ulimit -c 0 2>/dev/null; NICE=; command -v nice >/dev/null 2>&1 && NICE='nice -n 19'; " +
+                        "\$NICE officecli --help >/dev/null 2>&1",
                     "",
                 )
                 // executeCommand **不会**因非零退出码抛异常，必须显式 check。
@@ -226,7 +229,9 @@ object SandboxPrewarmer {
             append("B=\$(ls -d /root/.cache/ms-playwright/chromium-*/chrome-linux*/chrome 2>/dev/null | head -1); ")
             append("[ -z \"\$B\" ] && B=\$(ls -d /root/.cache/ms-playwright/chromium_headless_shell-*/chrome-linux*/headless_shell 2>/dev/null | head -1); ")
             append("if [ -n \"\$B\" ]; then ")
-            append("timeout 30 \"\$B\" --headless=new --no-sandbox --disable-gpu ")
+            // v5.3.70：同样降优先级；无 nice 时 NICE 为空，退化为原命令。
+            append("NICE=; command -v nice >/dev/null 2>&1 && NICE='nice -n 19'; ")
+            append("\$NICE timeout 30 \"\$B\" --headless=new --no-sandbox --disable-gpu ")
             append("--disable-dev-shm-usage --dump-dom about:blank >/dev/null 2>&1 || true; ")
             append("fi")
         }

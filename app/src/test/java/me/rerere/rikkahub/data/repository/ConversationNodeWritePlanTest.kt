@@ -115,4 +115,15 @@ class ConversationNodeWritePlanTest {
         val plan = planNodeWrite(emptyMap(), emptyList())
         assertTrue(plan.fullRewrite)
     }
+
+    @Test
+    fun `precomputed hashes produce the same plan as the two-arg overload`() {
+        val a = node("a")
+        val b = node("b")
+        val hashes = nodeFingerprints(listOf(a, b))
+        val planDefault = planNodeWrite(hashes, listOf(a, b))
+        val planPrecomputed = planNodeWrite(hashes, listOf(a, b), hashes)
+        assertEquals(planDefault, planPrecomputed)
+    }
+
 }

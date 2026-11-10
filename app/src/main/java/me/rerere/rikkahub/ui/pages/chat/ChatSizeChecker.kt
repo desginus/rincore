@@ -43,12 +43,16 @@ private val DefaultSizeInfo = ConversationSizeInfo(
 fun rememberConversationSizeInfo(conversation: Conversation): ConversationSizeInfo {
     return remember(conversation.messageNodes) {
         val nodeCount = conversation.messageNodes.size
-        val lastAssistantInputTokens = conversation.messageNodes.asReversed()
-            .map { it.currentMessage }
-            .firstOrNull { it.role == MessageRole.ASSISTANT }
-            ?.usage
-            ?.promptTokens
-            ?: 0
+        // ★v5.3.70：旧实现 `asReversed().map { it.currentMessage }.firstOrNull { ... }`
+        // 每次重组都分配一个 N 元素中间列表（流式期每 50ms 一次）；倒序索引循环零分配。
+        var lastAssistantInputTokens = 0
+        for (i in conversation.messageNodes.indices.reversed()) {
+            val message = conversation.messageNodes[i].currentMessage
+            if (message.role == MessageRole.ASSISTANT) {
+                lastAssistantInputTokens = message.usage?.promptTokens ?: 0
+                break
+            }
+        }
         val exceedNodeCountThreshold = nodeCount > MESSAGE_NODE_WARNING_THRESHOLD
         val exceedInputTokenThreshold = lastAssistantInputTokens > LAST_ASSISTANT_INPUT_TOKEN_WARNING_THRESHOLD
         ConversationSizeInfo(

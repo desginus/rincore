@@ -57,6 +57,11 @@ class ConversationRepository(
     private fun writeLockOf(id: String): Mutex =
         conversationWriteLocks.computeIfAbsent(id) { Mutex() }
 
+    /** ★v5.3.70：流式落库延迟的 FTS 变化（收尾统一 flush，避免每秒重新分词）。 */
+    private val pendingFtsNodes = ConcurrentHashMap<String, MutableSet<String>>()
+    private val pendingFtsRemoved = ConcurrentHashMap<String, MutableSet<String>>()
+    private val pendingFtsFull = ConcurrentHashMap.newKeySet<String>()
+
     suspend fun hasFileReference(fileUrl: String): Boolean =
         messageNodeDAO.hasFileReference(JsonInstant.encodeToString(fileUrl))
 
@@ -377,6 +382,7 @@ class ConversationRepository(
      * 等价于数据库层的 upsert。**非主键冲突一律原样抛出**，不掩盖真问题。
      */
     suspend fun insertConversation(conversation: Conversation) {
+        requireNoBase64(conversation.messageNodes)
         try {
             database.withTransaction {
                 conversationDAO.insert(
@@ -397,9 +403,14 @@ class ConversationRepository(
             return
         }
         messageFtsManager.indexConversation(conversation)
+        val insertedId = conversation.id.toString()
         // ★v5.3.69：插入即落库完当前节点，播种指纹，下一次流式落库可直接走增量。
-        nodeFingerprintCache[conversation.id.toString()] =
+        nodeFingerprintCache[insertedId] =
             NodeFingerprintCache(nodeFingerprints(conversation.messageNodes))
+        // ★v5.3.70：插入是全量索引，清掉任何延迟记账，避免收尾重复分词。
+        pendingFtsNodes.remove(insertedId)
+        pendingFtsRemoved.remove(insertedId)
+        pendingFtsFull.remove(insertedId)
     }
 
     /**
@@ -446,28 +457,28 @@ class ConversationRepository(
      * 语义：只有调用方**明确声明这是结构性替换**（压缩 / 导入制定状态）时才为 true，
      * 默认 false 保持原有防丢数据保护。
      */
-    suspend fun updateConversation(conversation: Conversation, allowShrink: Boolean = false) {
+    suspend fun updateConversation(
+        conversation: Conversation,
+        allowShrink: Boolean = false,
+        indexFts: Boolean = true,
+    ) {
         val conversationId = conversation.id.toString()
         // ★v5.3.69：同一对话的落库串行化，保证「读指纹 → 写增量 → 更新指纹」不会互相踩。
         writeLockOf(conversationId).withLock {
-            updateConversationLocked(conversation, allowShrink)
+            updateConversationLocked(conversation, allowShrink, indexFts)
         }
     }
 
     /**
-     * ★v5.3.69：落库从「整表删 + 全量重插 + 全量 FTS 重建」改为**按节点指纹增量写**。
-     *
-     * 旧实现每秒（流式节流）执行 `DELETE 全部节点 + INSERT 全部节点 + FTS 重建全部消息`；
-     * 300 条历史 = 每秒 300 删 + 300 插 + 300 条分词索引，是 UI 卡顿的主要来源。
-     * 现在只写真正变化的节点（流式时通常只有最后一条），并只重建这些节点的 FTS。
-     *
-     * 正确性边界（任何一条不满足就退回全量重写）：
-     *   · 首次落库 / 进程重启（无指纹缓存）
-     *   · allowShrink（压缩、恢复位点等结构性替换）
-     *   · 节点数量骤减（沿用 v5.0.24 的数据丢失守卫）
-     *   · 标题变化（FTS 行里存了 title，需整段重建）
+     * ★v5.3.69：按节点指纹增量写（只 upsert 变化节点）。
+     * ★v5.3.70：FTS 分词从「每次流式落库」改为「可延迟到本轮收尾」—— 流式期每秒
+     * 对增长中的消息重新分词是长对话卡顿的最后一个固定成本；延迟后每轮只分词一次。
      */
-    private suspend fun updateConversationLocked(conversation: Conversation, allowShrink: Boolean) {
+    private suspend fun updateConversationLocked(
+        conversation: Conversation,
+        allowShrink: Boolean,
+        indexFts: Boolean,
+    ) {
         val conversationId = conversation.id.toString()
         var plan = NodeWritePlan(fullRewrite = true, changed = emptyList(), removed = emptySet())
         var nodesWritten = false
@@ -479,13 +490,9 @@ class ConversationRepository(
                 conversationToConversationEntity(conversation)
             )
             // v5.0.19 (B201 数据事故修复): 空消息列表绝不清空已落库节点。
-            // 事故链：ChatPage 打开即 updateDraftFolder(空壳) → saveConversation →
-            // 此处 deleteByConversation + 写入 0 条 = 该对话消息全部永久删除。
             val existing = messageNodeDAO.countByConversation(conversationId)
             val incoming = conversation.messageNodes.size
-            // v5.0.24 用户明令「不希望再看见任何形式的删除上下文」：
-            // 第二道守卫 —— 非空但骤减（少于已有一半）一律视为数据丢失特征，拒绝写节点。
-            // 正常编辑/重新生成/分支切换只会等量或小幅变化，不会腰斩。
+            // v5.0.24: 非空但骤减（少于已有一半）一律视为数据丢失特征，拒绝写节点。
             val suspiciousShrink = existing > 0 && incoming > 0 && incoming < existing / 2
             if (suspiciousShrink && !allowShrink) {
                 Log.w(
@@ -493,20 +500,25 @@ class ConversationRepository(
                     "updateConversation: REFUSE suspicious shrink ${conversation.id} ($existing -> $incoming) — metadata only"
                 )
             } else if (conversation.messageNodes.isNotEmpty() || existing == 0) {
+                val incomingHashes = nodeFingerprints(conversation.messageNodes)
                 if (allowShrink) {
                     // 结构性替换：全量重写（压缩/恢复位点），并重置指纹
+                    requireNoBase64(conversation.messageNodes)
                     messageNodeDAO.deleteByConversation(conversationId)
                     saveMessageNodes(conversationId, conversation.messageNodes)
                     nodesWritten = true
                 } else {
                     val cached = nodeFingerprintCache[conversationId]
-                    plan = planNodeWrite(cached?.hashes, conversation.messageNodes)
+                    plan = planNodeWrite(cached?.hashes, conversation.messageNodes, incomingHashes)
                     if (plan.fullRewrite) {
+                        requireNoBase64(conversation.messageNodes)
                         messageNodeDAO.deleteByConversation(conversationId)
                         saveMessageNodes(conversationId, conversation.messageNodes)
                         nodesWritten = true
                     } else {
                         if (plan.changed.isNotEmpty()) {
+                            // v5.3.70：只校验真正要写的节点（旧实现每次落库都全量扫）。
+                            requireNoBase64(plan.changed.map { it.value })
                             messageNodeDAO.insertAll(
                                 plan.changed.map { (index, node) -> node.toEntity(conversationId, index) }
                             )
@@ -519,32 +531,92 @@ class ConversationRepository(
                         appliedIncremental = true
                     }
                 }
-                cacheToStore = NodeFingerprintCache(
-                    hashes = nodeFingerprints(conversation.messageNodes),
-                )
+                cacheToStore = NodeFingerprintCache(hashes = incomingHashes)
             }
         }
         // ★只在事务提交成功后更新指纹：事务回滚时缓存若先更新，下一次同内容写入会被
         // 误判为「已落库」而跳过 —— 那才是真正的数据丢失。
         cacheToStore?.let { nodeFingerprintCache[conversationId] = it }
 
-        if (appliedIncremental) {
-            if (plan.changed.isNotEmpty()) {
-                messageFtsManager.indexNodes(conversation, plan.changed.map { it.value })
+        if (indexFts) {
+            flushPendingFts(conversation, plan, nodesWritten, appliedIncremental)
+        } else if (nodesWritten) {
+            deferFts(conversationId, plan, appliedIncremental)
+        }
+    }
+
+    /** 把延迟的 FTS 变化与本次变化合并，一次写入。 */
+    private suspend fun flushPendingFts(
+        conversation: Conversation,
+        plan: NodeWritePlan,
+        nodesWritten: Boolean,
+        appliedIncremental: Boolean,
+    ) {
+        val conversationId = conversation.id.toString()
+        val pendingNodes = pendingFtsNodes.remove(conversationId)
+        val pendingRemoved = pendingFtsRemoved.remove(conversationId)
+        val fullNeeded = pendingFtsFull.remove(conversationId)
+
+        // 防御：空壳更新不得吞掉待索引变化（否则延迟的节点永远不会再进 FTS）。
+        // 正常的空对话不会走到这里（上层有空壳总闸），这是最后一道保险。
+        if (conversation.messageNodes.isEmpty()) {
+            pendingNodes?.let { pendingFtsNodes[conversationId] = it }
+            pendingRemoved?.let { pendingFtsRemoved[conversationId] = it }
+            if (fullNeeded) pendingFtsFull.add(conversationId)
+            return
+        }
+
+        if (fullNeeded || (nodesWritten && !appliedIncremental)) {
+            if (conversation.messageNodes.isNotEmpty()) {
+                messageFtsManager.indexConversation(conversation)
             }
-            if (plan.removed.isNotEmpty()) {
-                messageFtsManager.deleteNodes(conversationId, plan.removed)
-            }
-            // 标题 / 更新时间不再写 FTS：检索 SQL 已改为 JOIN conversationentity
-            // 实时读取（UNINDEXED 列仍保留以兼容旧库），因此这里零额外写入。
-        } else if (nodesWritten || conversation.messageNodes.isNotEmpty()) {
-            // v5.0.24: 节点未写入时不得用空壳重建索引（否则 FTS 也被清空）
-            messageFtsManager.indexConversation(conversation)
+            return
+        }
+
+        // 一次建索引，避免 pending × 全表的 firstOrNull（O(pending×n)）。
+        val currentById = conversation.messageNodes.associateBy { it.id.toString() }
+        val toIndex = LinkedHashMap<String, MessageNode>()
+        plan.changed.forEach { (_, node) -> toIndex[node.id.toString()] = node }
+        pendingNodes?.forEach { nodeId ->
+            currentById[nodeId]?.let { toIndex[nodeId] = it }
+        }
+        if (toIndex.isNotEmpty()) {
+            messageFtsManager.indexNodes(conversation, toIndex.values.toList())
+        }
+
+        val toDelete = LinkedHashSet<String>(plan.removed)
+        pendingRemoved?.let { toDelete.addAll(it) }
+        // 节点可能先被延迟记账、后来又被重新加回（分支操作）—— 存在的不删。
+        toDelete.removeAll(currentById.keys)
+        if (toDelete.isNotEmpty()) {
+            messageFtsManager.deleteNodes(conversationId, toDelete)
+        }
+    }
+
+    /** 流式期间只记账，不在热路径上分词。 */
+    private fun deferFts(conversationId: String, plan: NodeWritePlan, appliedIncremental: Boolean) {
+        if (!appliedIncremental) {
+            pendingFtsFull.add(conversationId)
+            pendingFtsNodes.remove(conversationId)
+            pendingFtsRemoved.remove(conversationId)
+            return
+        }
+        if (plan.changed.isNotEmpty()) {
+            val set = pendingFtsNodes.computeIfAbsent(conversationId) { mutableSetOf() }
+            plan.changed.forEach { set.add(it.value.id.toString()) }
+        }
+        if (plan.removed.isNotEmpty()) {
+            val set = pendingFtsRemoved.computeIfAbsent(conversationId) { mutableSetOf() }
+            set.addAll(plan.removed)
         }
     }
 
     suspend fun deleteConversation(conversation: Conversation) {
-        nodeFingerprintCache.remove(conversation.id.toString())
+        val deletedId = conversation.id.toString()
+        nodeFingerprintCache.remove(deletedId)
+        pendingFtsNodes.remove(deletedId)
+        pendingFtsRemoved.remove(deletedId)
+        pendingFtsFull.remove(deletedId)
         // 获取完整的 Conversation（包含 messageNodes）以正确清理文件
         val fullConversation = if (conversation.messageNodes.isEmpty()) {
             getConversationById(conversation.id) ?: conversation
@@ -598,8 +670,18 @@ class ConversationRepository(
         }
     }
 
+    /**
+     * ★v5.3.70：base64 图片禁止落库的校验，从「每次整对象映射」移到「真正写节点的边界」。
+     * 旧实现放在 conversationToConversationEntity 里 —— 每次流式落库（1s）都要扫全部
+     * messageNodes × messages × parts；现在只在写变化的节点 / 全量重写时校验。
+     */
+    private fun requireNoBase64(nodes: List<MessageNode>) {
+        require(nodes.none { node -> node.messages.any { it.hasBase64Part() } }) {
+            "Base64 images are not allowed in the database"
+        }
+    }
+
     fun conversationToConversationEntity(conversation: Conversation): ConversationEntity {
-        require(conversation.messageNodes.none { it.messages.any { message -> message.hasBase64Part() } })
         return ConversationEntity(
             id = conversation.id.toString(),
             title = conversation.title,
@@ -798,22 +880,30 @@ internal fun nodeFingerprints(nodes: List<MessageNode>): Map<String, Int> {
     return out
 }
 
-internal fun planNodeWrite(cachedHashes: Map<String, Int>?, nodes: List<MessageNode>): NodeWritePlan {
+internal fun planNodeWrite(cachedHashes: Map<String, Int>?, nodes: List<MessageNode>): NodeWritePlan =
+    planNodeWrite(cachedHashes, nodes, nodeFingerprints(nodes))
+
+/**
+ * ★v5.3.70：接收已算好的指纹，避免「判定变化」与「写缓存」各算一遍（每次落库省一次 O(n) 哈希）。
+ */
+internal fun planNodeWrite(
+    cachedHashes: Map<String, Int>?,
+    nodes: List<MessageNode>,
+    incomingHashes: Map<String, Int>,
+): NodeWritePlan {
     if (cachedHashes == null || cachedHashes.isEmpty() || nodes.isEmpty()) {
         return NodeWritePlan(fullRewrite = true, changed = emptyList(), removed = emptySet())
     }
-    val incoming = HashMap<String, Int>(nodes.size)
     val changed = ArrayList<IndexedValue<MessageNode>>()
     nodes.forEachIndexed { index, node ->
-        val key = node.id.toString()
-        val hash = nodeFingerprint(node, index)
-        incoming[key] = hash
-        if (cachedHashes[key] != hash) changed += IndexedValue(index, node)
+        if (cachedHashes[node.id.toString()] != incomingHashes[node.id.toString()]) {
+            changed += IndexedValue(index, node)
+        }
     }
     return NodeWritePlan(
         fullRewrite = false,
         changed = changed,
-        removed = cachedHashes.keys - incoming.keys,
+        removed = cachedHashes.keys - incomingHashes.keys,
     )
 }
 

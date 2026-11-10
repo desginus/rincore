@@ -76,12 +76,22 @@ data class Conversation(
             .map { it.toUri() }
 
     /**
-     *  当前选中的 message
+     * ★v5.3.70：缓存「当前选中消息」列表。
+     *
+     * 旧实现是纯 getter：`ChatPage` 一次重组里会访问 4 次，每次都 map 出 N 条；
+     * 流式期每 50ms 一次重组 → 每秒数十次 N 元素列表分配（300 条历史 = 每秒上万次引用拷贝）。
+     * Conversation 是不可变的，同一个实例内结果恒定；`copy()` 会新建实例并自然重算一次，
+     * 语义与旧实现完全一致（缓存字段不参与 equals/hashCode/序列化）。
      */
-    val currentMessages
-        get(): List<UIMessage> {
-            return messageNodes.map { node -> node.messages[node.selectIndex] }
-        }
+    @Transient
+    @Volatile
+    private var cachedCurrentMessages: List<UIMessage>? = null
+
+    /** 当前选中的 message（同实例内复用，见上方缓存说明）。 */
+    val currentMessages: List<UIMessage>
+        get() = cachedCurrentMessages ?: messageNodes
+            .map { node -> node.messages[node.selectIndex] }
+            .also { cachedCurrentMessages = it }
 
     fun getMessageNodeByMessageId(messageId: Uuid): MessageNode? {
         return messageNodes.firstOrNull { node -> node.messages.any { it.id == messageId } }
