@@ -532,10 +532,13 @@ class ChatVM(
         // v5.0.92 ★发送时**不再**预热：v4.1.3 已实证"生成前预热"与主请求同 key 会被
         // 网关串行化，预热挂在慢网关上时主请求反而排队等它（v3.12.6 用户实测）。
         // 连接新鲜度由 ConnectionWarmer 的 60s 常驻心跳 + 输入栏打开时的即时刷新保证。
-        // v5.0.90 ★沙箱预热改在"发送之后"（用户实证：旧输入沿预热与首字请求抢 IO，
-        // 预热没什么用还越等越久）。此时 LLM 请求已发出，proot/officecli 走热与
-        // 服务端 TTFB 并行，只为"首个工具调用"服务，不再影响首字。
-        me.rerere.rikkahub.service.SandboxPrewarmer.warmOnTypingStartAsync(appScope)
+        // ★v5.3.68：删除「发送时预热沙箱」。
+        // 这里其实在 chatService.sendMessage **之前**执行（注释原写"请求已发出"，
+        // 与实际顺序不符），而 v5.3.67 起生成 job 一开始就会 cancelForGeneration()
+        // 把它取消 —— 等于每次发送都白起一个 proot 再立刻杀掉；若 job 被前一轮
+        // 排队，它还会在等待期间与上一轮抢 IO。沙箱预热现在只由两处负责：
+        //   · 应用启动后 1.2s（8s 内未发送才拉 Chromium）
+        //   · 每轮生成结束后的空闲预热（5s 后）
         // v4.8.123 (用户定版): 压缩期可发送 — 与模型输出期同款排队"等待中"
         // (派发门在压缩期挂起; 压缩完成由 ChatService.runCompression 统一派发)
         analytics.logEvent("ai_send_message", null)

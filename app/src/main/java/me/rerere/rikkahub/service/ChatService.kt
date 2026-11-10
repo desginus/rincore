@@ -502,7 +502,11 @@ class ChatService(
             )
         )
         synchronized(session) {
-            if (session.messageQueue.state.value.messages.isEmpty()) session.messageQueue.resume()
+            // ★v5.3.68：用户主动发送 = 明确的继续意图，必须解除暂停。
+            // 旧判据只在「队列为空」时 resume —— 而停止生成/生成失败都会 pause()，
+            // 若此时队列里还有排队消息，用户再发新消息也不会 resume → takeNext 恒 null
+            // → 新旧消息全部永远发不出去（只能手动点排队条的继续）。
+            session.messageQueue.resume()
             session.messageQueue.enqueue(content, answer)
             dispatchNextQueuedMessage(conversationId)
         }
@@ -688,6 +692,11 @@ class ChatService(
             // v5.3.8 ★竞速结果预取：本轮结束就测好「下一轮哪个模型最快」，
             // 下一轮发送时直接命中缓存（零额外等待），同时仍满足「每轮都用最新测量」。
             scheduleRoutePrefetch(conversationId)
+            // ★v5.3.68 安全网：正常路径在 flow 的 onCompletion 里释放前台服务；
+            // 但若异常发生在 flow 建立之前（DB/路由/组请求抛错），onCompletion 不会执行
+            // → 通知常驻不消失。release 是幂等的（Set 移除 + 空集防抖停止），
+            // 这里兜底一次，不影响其它仍在生成中的会话。
+            runCatching { GenerationForegroundService.release(context, conversationId.toString()) }
         }
         session.setJob(job)
         return job
@@ -980,7 +989,9 @@ class ChatService(
         runCatching {
 
             // reset suggestions
-            updateConversation(conversationId, initialConversation.copy(chatSuggestions = emptyList()))
+            // ★v5.3.68：改为原子改单字段 —— 旧写法用 initialConversation 整对象写回，
+            // 组请求期间若有其它写入（编辑/归属/流式残留），会被这份旧快照盖掉。
+            updateConversationState(conversationId) { it.copy(chatSuggestions = emptyList()) }
 
             // memory tool
             if (!model.abilities.contains(ModelAbility.TOOL)) {
@@ -1263,9 +1274,8 @@ class ChatService(
                     }
                     is GenerationChunk.LoadedDomains -> {
                         // Feature #4: 持久化已加载的域到 Conversation
-                        val updatedConversation = getConversationFlow(conversationId).value
-                            .copy(loadedDomains = chunk.domains)
-                        updateConversation(conversationId, updatedConversation)
+                        // ★v5.3.68：原子改单字段（同 suggestions，避免旧快照覆盖）
+                        updateConversationState(conversationId) { it.copy(loadedDomains = chunk.domains) }
                     }
                 }
             }
