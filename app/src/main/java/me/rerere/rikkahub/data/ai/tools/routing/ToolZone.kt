@@ -156,9 +156,6 @@ class ZoneTree(zones: List<ToolZone>) {
  * 播种后它们就是普通区：用户删了就真没了；需要时用「恢复出厂」把缺失的补回来（只增不删）。
  */
 val DEFAULT_TOOL_ZONES: List<ToolZone> = listOf(
-    // 兜底区（永远存在，不可删除）
-    ToolZone(FALLBACK_ZONE_ID, "未分类", null, "", "无法归入其他工具区的工具", listOf("未分类", "uncategorized", "method", "方法", "流程", "策略", "框架")),
-
     // 1. 搜索
     ToolZone("搜索", "搜索", null, "", "搜索网页、查资料、查新闻", listOf("搜索", "查找", "搜")),
     ToolZone("搜索/搜索引擎", "搜索引擎", "搜索", "", "通用网页搜索引擎", listOf("search", "搜一下", "搜狗", "夸克", "维基", "wikipedia", "webSearch", "scrape", "网页搜索", "search_web", "web_search")),
@@ -178,6 +175,9 @@ val DEFAULT_TOOL_ZONES: List<ToolZone> = listOf(
     ToolZone("文件控制", "文件控制", null, "", "读写管理文件、压缩解压、工作区 Shell", listOf("文件", "file", "读文件", "保存", "压缩", "解压", "zip", "目录", "workspace", "shell", "工作区", "bash", "下载")),
     ToolZone("文件控制/浏览", "浏览", "文件控制", "", "列出目录、查看文件信息", listOf("列出", "列表", "list", "目录", "文件信息", "ls", "dir", "list_files", "read_file")),
     ToolZone("文件控制/读写", "读写", "文件控制", "", "读取、写入、编辑文件", listOf("读取", "写入", "read", "write", "创建文件", "保存内容", "编辑文件", "edit_file", "write_file", "workspace_read", "workspace_write", "workspace_edit")),
+    // ★v5.3.72：workspace_search 的专属子区（此前 grep/glob 与 search 三份并列，且被
+    // `workspace_` 前缀误归「系统」）。搜索只保留这一个入口后，给它一个明确的家。
+    ToolZone("文件控制/搜索", "搜索", "文件控制", "", "按内容或文件名搜索工作区", listOf("搜索文件", "查找文件", "grep", "glob", "workspace_search")),
     ToolZone("文件控制/压缩", "压缩", "文件控制", "", "创建 ZIP、解压", listOf("压缩", "解压", "zip", "archive", "打包", "tar")),
 
     // 5. 浏览工具
@@ -232,8 +232,9 @@ val DEFAULT_TOP_LEVEL_TOOLS: Set<String> = setOf(
     "manage_zone",
     "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_show_file",
     "workspace_job",
-    "workspace_grep", "workspace_glob",
-    "manage_mcp_servers", "plugin_install",
+    // ★v5.3.72：搜索只保留 unified entry；grep/glob 不再顶层/不再进池
+    "workspace_search",
+    // ★v5.3.72：MCP/插件管理不是高频工具，回落「系统」区按需 invoke_tools 加载
     "read_image",
     "upload_fetch", // v4.8.90: 上传码直取 —— 顶层常驻，任何对话都能直接定位用户上传的文件
     "task_tool",

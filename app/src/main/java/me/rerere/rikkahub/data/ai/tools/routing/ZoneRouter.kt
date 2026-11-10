@@ -74,13 +74,30 @@ class ZoneRouter(
         "invoke_tools" to "系统",
         "clawhub_" to "系统",
         "plugin_install" to "系统",
-        "workspace_" to "系统",
         "get_battery_status" to "系统",
         "skill__" to "技能",
         "skill_" to "技能",
         "plugin__" to "插件",
         "mcp__plugin__" to "插件",
         "operit__" to "插件",
+    )
+
+    /**
+     * ★v5.3.72：工作区工具的**精确归属**。
+     *
+     * 旧实现用 `"workspace_" to "系统"` 前缀把 8 个工作区工具全塞进「系统」——
+     * 而「系统」的语义是 manage_zone / MCP / 插件这类内部管理工具，
+     * 于是工具矩阵里「文件控制」几乎空着、「系统」却挤满读写文件/Shell。
+     * 这里逐个点名到「文件控制」的子区；未列出的 workspace_* 仍由关键词兜底。
+     */
+    private val exactRules = mapOf(
+        "workspace_read_file" to "文件控制/读写",
+        "workspace_write_file" to "文件控制/读写",
+        "workspace_edit_file" to "文件控制/读写",
+        "workspace_show_file" to "文件控制/浏览",
+        "workspace_search" to "文件控制/搜索",
+        "workspace_shell" to "文件控制",
+        "workspace_job" to "文件控制",
     )
 
     /** MCP 服务器名 → 出厂工具区（避免服务器名关键词误匹配） */
@@ -109,6 +126,7 @@ class ZoneRouter(
      */
     fun classify(name: String, description: String): String {
         linkedZone(name)?.let { return it }
+        exactRules[name]?.let { hit(it) }?.let { return it }
         for ((prefix, zoneId) in prefixRules) {
             if (name.startsWith(prefix)) hit(zoneId)?.let { return it }
         }

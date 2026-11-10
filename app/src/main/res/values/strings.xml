@@ -1301,10 +1301,10 @@
   <string name="assistant_page_local_tools_media_player_desc">允许 AI 播放/暂停/停止/跳转音频文件，并支持锁屏媒体控制</string>
   <string name="assistant_page_local_tools_media_scanner_title">媒体扫描器</string>
   <string name="assistant_page_local_tools_media_scanner_desc">允许 AI 触发 Android 媒体扫描器，将新文件索引到相册/音乐应用</string>
-  <string name="assistant_page_local_tools_files_title">文件管理</string>
-  <string name="assistant_page_local_tools_files_desc">让 AI 列出、读取、写入、删除、移动、复制、搜索文件，以及显示图片</string>
-  <string name="assistant_page_local_tools_download_title">下载工具</string>
-  <string name="assistant_page_local_tools_download_desc">让 AI 通过 DownloadManager 下载文件并写入文本文件</string>
+  <string name="assistant_page_local_tools_files_title">打开文件（交给其他应用）</string>
+  <string name="assistant_page_local_tools_files_desc">只保留「用其他应用打开文件」。读取、写入、编辑、搜索文件请使用工作区工具（workspace_read_file / write_file / edit_file / search）</string>
+  <string name="assistant_page_local_tools_download_title">下载文件</string>
+  <string name="assistant_page_local_tools_download_desc">让 AI 通过 DownloadManager 下载网络文件（写入文本请用 workspace_write_file）</string>
   <string name="assistant_page_local_tools_archive_title">压缩解压</string>
   <string name="assistant_page_local_tools_archive_desc">让 AI 创建、解压 ZIP 压缩包，以及列出压缩包内容</string>
   <string name="assistant_page_local_tools_cost_guards_title">用量守护</string>

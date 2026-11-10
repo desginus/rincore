@@ -111,9 +111,10 @@ private fun createWorkspaceToolsWithApprovals(
         createJobTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
         // v4.6.1: 代码探索双件套 (对齐 Claude Code 的 Grep/Glob 设计 —
         // 专用工具优于 shell 拼接: 结构化输出/统一截断/免审批只读)
-        createGrepTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
-        createGlobTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
-        // v5.0.80 合并入口：content/name 一参分流（grep/glob 保留兼容，模型优先用 search）
+        // ★v5.3.72：搜索只暴露一个入口。旧 workspace_grep / workspace_glob 仍作为
+        // workspace_search 的内部实现存在（私有工厂），但**不再进入模型工具池** ——
+        // 三个工具做两件事是工具面最大的重复源（v5.0.80 已提供 unified entry，
+        // 但顶层仍同时注入 grep/glob，模型自然会看到三份描述并混用）。
         createSearchTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
     )
 }
@@ -250,8 +251,9 @@ private fun createWriteFileTool(
 ) = Tool(
     name = "workspace_write_file",
     description = """
-        Write a UTF-8 text file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
-        Use /workspace for the workspace files area.
+        Write / replace / append a WHOLE UTF-8 text file in the workspace Rootfs.
+        For a small targeted change use workspace_edit_file instead (patch, no full rewrite).
+        Paths must be absolute inside Rootfs; /workspace is the workspace files area.
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
@@ -340,8 +342,8 @@ private fun createEditFileTool(
 ) = Tool(
     name = "workspace_edit_file",
     description = """
-        Edit a UTF-8 text file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
-        Use /workspace for the workspace files area.
+        Patch an EXISTING UTF-8 text file in the workspace Rootfs (small, targeted change).
+        For a new file or a full rewrite use workspace_write_file instead.
         Provide old_text and new_text. By default old_text must occur exactly once; set replace_all=true to replace every occurrence.
         If no exact match is found, whitespace-tolerant line matching is attempted automatically.
     """.trimIndent().replace("\n", " "),
@@ -543,7 +545,7 @@ private fun createGrepTool(
 ) = Tool(
     name = "workspace_grep",
     description = """
-        (Content search. Use workspace_search with mode="content" for the unified entry; this tool stays available for direct calls.)
+        [internal] Content-search implementation used by workspace_search(mode="content"); not exposed to the model.
         Search file contents in the workspace (ripgrep when available, grep fallback).
         Returns matching lines as path:line:content. Use this instead of shell grep/rg for code search.
         Parameters: pattern (regex, required); path (search root, defaults to /workspace);
@@ -684,7 +686,7 @@ private fun createGlobTool(
 ) = Tool(
     name = "workspace_glob",
     description = """
-        (Find files by name. Use workspace_search with mode="name" for the unified entry; this tool stays available for direct calls.)
+        [internal] File-name search implementation used by workspace_search(mode="name"); not exposed to the model.
         Find files by name pattern in the workspace (e.g. "*.kt", "README*", "config.*"). Patterns containing "/" or "**" are matched against the full path at any depth (e.g. "**/*" lists all files; "**/*.kt" all .kt files at any depth).
         Returns matching file paths sorted by modification time (newest first).
         Use this instead of shell find/ls for file discovery.
@@ -823,10 +825,10 @@ private fun createSearchTool(
 ) = Tool(
     name = "workspace_search",
     description = """
-        Search the workspace: one unified entry for both content search and file-name lookup.
-        mode="content": regex search inside files (like workspace_grep; glob filters files; returns path:line:content).
-        mode="name": find files by name pattern (like workspace_glob; pattern may contain * and ** for full-path match; returns paths sorted by mtime).
-        Prefer this over workspace_grep/workspace_glob. Absolute /workspace paths resolve against the current CWD.
+        Search the workspace — the ONLY search tool (content + file names in one entry).
+        mode="content": regex search inside files (optional `glob` filters which files are searched); returns path:line:content.
+        mode="name": find files by name pattern (e.g. "*.kt", "README*", "**/*.md"); paths sorted by mtime, newest first.
+        Absolute /workspace paths resolve against the current CWD.
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
@@ -877,7 +879,7 @@ private fun createJobTool(
     defaultCwd: String? = null,
 ) = Tool(
     name = "workspace_job",
-    description = "Durable background jobs in the sandbox. Each workspace_shell call is a fresh isolated proot instance whose processes die when the call ends — long tasks MUST run as jobs to survive. " +
+    description = "Durable background jobs in the sandbox. workspace_shell normally reuses ONE live sandbox session (only the first call pays proot startup), but processes you start still die when their command returns — long tasks MUST run as jobs to survive. " +
         "action=start launches a job and returns a job_id; action=status returns state (running/done/dead), exit code and log tail; action=kill stops it. " +
         "Logs persist at /workspace/.rin-jobs/<job_id>.log. Never use ps/pgrep from a new shell call to judge a job (instances are isolated — it will look dead while running).",
     parameters = {
@@ -1074,12 +1076,12 @@ private fun createShellTool(
         // 直接读宿主文件系统 → 毫秒级；而 shell 里的 cat/ls/find/cp/mv 每次都要付
         // 1~3 秒的 proot/rootfs 启动。模型若用 shell 做文件操作，就会觉得「文件操作特别久」。
         append("FILES: for reading / writing / editing / searching files, ALWAYS prefer the dedicated tools ")
-        append("(workspace_read_file, workspace_write_file, workspace_edit_file, workspace_glob, workspace_grep) — ")
+        append("(workspace_read_file, workspace_write_file, workspace_edit_file, workspace_search) — ")
         append("they run on the host filesystem and return in milliseconds, while the SAME operation via shell ")
-        append("(cat/ls/find/cp/mv/grep) pays 1-3s of proot startup EVERY call. ")
+        append("must be parsed/quoted and pays 1-3s of proot startup on the FIRST call of a session (reused afterwards). ")
         append("Use shell only when you must run a program/script/compiler. ")
-        append("If you truly need many shell file operations, either pass one `session` name to reuse the sandbox, ")
-        append("or do it with a single command (e.g. `cp a b && mv b c`) instead of several calls. ")
+        append("If you truly need many shell file operations, prefer one command (e.g. `cp a b && mv b c`) ")
+        append("or a dedicated session; do not issue many separate shell calls for simple file reads/writes. ")
         append("NOT AVAILABLE in this rootfs (do not try): LibreOffice/soffice (proot lacks standard /proc, aborts) — use `officecli view <file> screenshot` for document preview; ")
         append("Playwright/Chromium may crash on some environments — retry once with --no-sandbox, else switch to weasyprint/pdftoppm. ")
         append("stderr noise like 'onnxruntime ... GPU device discovery failed' is harmless and is filtered from the result. ")

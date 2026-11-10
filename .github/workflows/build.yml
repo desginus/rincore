@@ -253,4 +253,5 @@ jobs:
             --tests "me.rerere.rikkahub.data.datastore.SettingsPersistenceTest" \
             --tests "me.rerere.rikkahub.data.datastore.SettingsFieldsTest" \
             --tests "me.rerere.rikkahub.data.repository.ConversationNodeWritePlanTest" \
+            --tests "me.rerere.rikkahub.data.ai.tools.ToolSurfaceTest" \
             --tests "me.rerere.rikkahub.ModelFilterTest"

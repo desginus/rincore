@@ -150,23 +150,15 @@ class LocalTools(
             tools.add(mediaScannerTool(context))
         }
         if (options.contains(LocalToolOption.Files)) {
-            tools.add(listFilesTool())
-            tools.add(readFileTool())
-            tools.add(writeBinaryFileTool())
-            tools.add(deleteFileTool())
-            tools.add(moveFileTool())
-            tools.add(copyFileTool())
-            tools.add(createDirectoryTool())
-            tools.add(fileInfoTool())
-            tools.add(findFilesTool())
+            // ★v5.3.72：旧「文件管理」套件（list/read/write/delete/move/copy/find/batch）
+            // 与工作区工具完全重叠，是模型看到「两套读写文件」的根源。这里只保留
+            // 工作区工具无法替代的一项：**交给其他应用打开**。文件读写/搜索一律走
+            // workspace_read_file / workspace_write_file / workspace_edit_file / workspace_search。
             tools.add(openFileTool(context, invocationContext))
-            tools.add(batchCopyTool())
-            tools.add(batchMoveTool())
-            tools.add(batchDeleteTool())
         }
         if (options.contains(LocalToolOption.Download)) {
             tools.add(downloadTool(context))
-            tools.add(writeTextFileTool(context))
+            // writeTextFileTool 已移除：文本写入属于 workspace_write_file，避免第三条写文件路径。
         }
         if (options.contains(LocalToolOption.Archive)) {
             tools.add(zipFilesTool(context))

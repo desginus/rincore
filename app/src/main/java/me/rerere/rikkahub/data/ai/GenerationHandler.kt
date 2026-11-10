@@ -161,7 +161,7 @@ private class ToolExecOutcome(
  * 无差别并行下互踩, 正是"并行调用失败"老毛病的机制根因; 只读工具并行无此问题。
  */
 private val CONCURRENCY_SAFE_TOOLS = setOf(
-    "workspace_read_file", "workspace_grep", "workspace_glob",
+    "workspace_read_file", "workspace_search",
     "read_image", "upload_fetch", "subagent_list", "subagent_get",
     // v5.0.56 ★用户实证「多组工具并发时全部互相干扰、最后全挂起」的根因：
     // subagent_dispatch 前台会阻塞到子代理终态，却因不在白名单被当成「非并发安全」
