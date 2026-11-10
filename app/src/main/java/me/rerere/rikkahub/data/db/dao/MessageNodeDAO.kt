@@ -56,6 +56,10 @@ interface MessageNodeDAO {
     @Query("DELETE FROM message_node WHERE id = :nodeId")
     suspend fun deleteById(nodeId: String)
 
+    /** ★v5.3.69：增量落库用 —— 只删真正消失的节点（不再整表 DELETE）。 */
+    @Query("DELETE FROM message_node WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
+
     // 使用 @RawQuery 绕过 Room 编译期校验，以便使用 json_each() 虚拟表
     @RawQuery
     suspend fun getTokenStatsRaw(query: SupportSQLiteQuery): MessageTokenStats

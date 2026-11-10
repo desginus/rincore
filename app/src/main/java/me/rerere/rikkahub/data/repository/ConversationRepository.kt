@@ -16,6 +16,9 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.fts.MessageFtsManager
@@ -46,6 +49,13 @@ class ConversationRepository(
         private const val PAGE_SIZE = 20
         private const val INITIAL_LOAD_SIZE = 40
     }
+
+    /** ★v5.3.69：上次落库的节点内容指纹（只服务流式增写；结构性写入会重置）。 */
+    private class NodeFingerprintCache(val hashes: Map<String, Int>)
+    private val nodeFingerprintCache = ConcurrentHashMap<String, NodeFingerprintCache>()
+    private val conversationWriteLocks = ConcurrentHashMap<String, Mutex>()
+    private fun writeLockOf(id: String): Mutex =
+        conversationWriteLocks.computeIfAbsent(id) { Mutex() }
 
     suspend fun hasFileReference(fileUrl: String): Boolean =
         messageNodeDAO.hasFileReference(JsonInstant.encodeToString(fileUrl))
@@ -315,7 +325,14 @@ class ConversationRepository(
         val entity = conversationDAO.getConversationById(uuid.toString())
         return if (entity != null) {
             val nodes = loadMessageNodes(entity.id)
-            conversationEntityToConversation(entity, nodes)
+            val conversation = conversationEntityToConversation(entity, nodes)
+            // ★v5.3.69：从 DB 读出即播种指纹 —— 打开长对话后第一条消息的流式落库
+            // 直接走增量，不必先做一次「全表删 + 全量插 + FTS 重建」。
+            nodeFingerprintCache.putIfAbsent(
+                entity.id,
+                NodeFingerprintCache(nodeFingerprints(conversation.messageNodes)),
+            )
+            conversation
         } else null
     }
 
@@ -380,6 +397,9 @@ class ConversationRepository(
             return
         }
         messageFtsManager.indexConversation(conversation)
+        // ★v5.3.69：插入即落库完当前节点，播种指纹，下一次流式落库可直接走增量。
+        nodeFingerprintCache[conversation.id.toString()] =
+            NodeFingerprintCache(nodeFingerprints(conversation.messageNodes))
     }
 
     /**
@@ -427,7 +447,32 @@ class ConversationRepository(
      * 默认 false 保持原有防丢数据保护。
      */
     suspend fun updateConversation(conversation: Conversation, allowShrink: Boolean = false) {
+        val conversationId = conversation.id.toString()
+        // ★v5.3.69：同一对话的落库串行化，保证「读指纹 → 写增量 → 更新指纹」不会互相踩。
+        writeLockOf(conversationId).withLock {
+            updateConversationLocked(conversation, allowShrink)
+        }
+    }
+
+    /**
+     * ★v5.3.69：落库从「整表删 + 全量重插 + 全量 FTS 重建」改为**按节点指纹增量写**。
+     *
+     * 旧实现每秒（流式节流）执行 `DELETE 全部节点 + INSERT 全部节点 + FTS 重建全部消息`；
+     * 300 条历史 = 每秒 300 删 + 300 插 + 300 条分词索引，是 UI 卡顿的主要来源。
+     * 现在只写真正变化的节点（流式时通常只有最后一条），并只重建这些节点的 FTS。
+     *
+     * 正确性边界（任何一条不满足就退回全量重写）：
+     *   · 首次落库 / 进程重启（无指纹缓存）
+     *   · allowShrink（压缩、恢复位点等结构性替换）
+     *   · 节点数量骤减（沿用 v5.0.24 的数据丢失守卫）
+     *   · 标题变化（FTS 行里存了 title，需整段重建）
+     */
+    private suspend fun updateConversationLocked(conversation: Conversation, allowShrink: Boolean) {
+        val conversationId = conversation.id.toString()
+        var plan = NodeWritePlan(fullRewrite = true, changed = emptyList(), removed = emptySet())
         var nodesWritten = false
+        var appliedIncremental = false
+
         database.withTransaction {
             conversationDAO.update(
                 conversationToConversationEntity(conversation)
@@ -435,31 +480,70 @@ class ConversationRepository(
             // v5.0.19 (B201 数据事故修复): 空消息列表绝不清空已落库节点。
             // 事故链：ChatPage 打开即 updateDraftFolder(空壳) → saveConversation →
             // 此处 deleteByConversation + 写入 0 条 = 该对话消息全部永久删除。
-            val existing = messageNodeDAO.countByConversation(conversation.id.toString())
+            val existing = messageNodeDAO.countByConversation(conversationId)
             val incoming = conversation.messageNodes.size
             // v5.0.24 用户明令「不希望再看见任何形式的删除上下文」：
             // 第二道守卫 —— 非空但骤减（少于已有一半）一律视为数据丢失特征，拒绝写节点。
             // 正常编辑/重新生成/分支切换只会等量或小幅变化，不会腰斩。
             val suspiciousShrink = existing > 0 && incoming > 0 && incoming < existing / 2
             if (suspiciousShrink && !allowShrink) {
-                android.util.Log.w(
-                    "ConversationRepository",
+                Log.w(
+                    TAG,
                     "updateConversation: REFUSE suspicious shrink ${conversation.id} ($existing -> $incoming) — metadata only"
                 )
             } else if (conversation.messageNodes.isNotEmpty() || existing == 0) {
-                // 删除旧的节点，插入新的节点
-                messageNodeDAO.deleteByConversation(conversation.id.toString())
-                saveMessageNodes(conversation.id.toString(), conversation.messageNodes)
-                nodesWritten = true
+                if (allowShrink) {
+                    // 结构性替换：全量重写（压缩/恢复位点），并重置指纹
+                    messageNodeDAO.deleteByConversation(conversationId)
+                    saveMessageNodes(conversationId, conversation.messageNodes)
+                    nodesWritten = true
+                } else {
+                    val cached = nodeFingerprintCache[conversationId]
+                    plan = planNodeWrite(cached?.hashes, conversation.messageNodes)
+                    if (plan.fullRewrite) {
+                        messageNodeDAO.deleteByConversation(conversationId)
+                        saveMessageNodes(conversationId, conversation.messageNodes)
+                        nodesWritten = true
+                    } else {
+                        if (plan.changed.isNotEmpty()) {
+                            messageNodeDAO.insertAll(
+                                plan.changed.map { (index, node) -> node.toEntity(conversationId, index) }
+                            )
+                            nodesWritten = true
+                        }
+                        if (plan.removed.isNotEmpty()) {
+                            messageNodeDAO.deleteByIds(plan.removed.toList())
+                            nodesWritten = true
+                        }
+                        appliedIncremental = true
+                    }
+                }
+                cacheToStore = NodeFingerprintCache(
+                    hashes = nodeFingerprints(conversation.messageNodes),
+                )
             }
         }
-        // v5.0.24: 节点未写入时不得用空壳重建索引（否则 FTS 也被清空）
-        if (nodesWritten || conversation.messageNodes.isNotEmpty()) {
+        // ★只在事务提交成功后更新指纹：事务回滚时缓存若先更新，下一次同内容写入会被
+        // 误判为「已落库」而跳过 —— 那才是真正的数据丢失。
+        cacheToStore?.let { nodeFingerprintCache[conversationId] = it }
+
+        if (appliedIncremental) {
+            if (plan.changed.isNotEmpty()) {
+                messageFtsManager.indexNodes(conversation, plan.changed.map { it.value })
+            }
+            if (plan.removed.isNotEmpty()) {
+                messageFtsManager.deleteNodes(conversationId, plan.removed)
+            }
+            // 标题 / 更新时间不再写 FTS：检索 SQL 已改为 JOIN conversationentity
+            // 实时读取（UNINDEXED 列仍保留以兼容旧库），因此这里零额外写入。
+        } else if (nodesWritten || conversation.messageNodes.isNotEmpty()) {
+            // v5.0.24: 节点未写入时不得用空壳重建索引（否则 FTS 也被清空）
             messageFtsManager.indexConversation(conversation)
         }
     }
 
     suspend fun deleteConversation(conversation: Conversation) {
+        nodeFingerprintCache.remove(conversation.id.toString())
         // 获取完整的 Conversation（包含 messageNodes）以正确清理文件
         val fullConversation = if (conversation.messageNodes.isEmpty()) {
             getConversationById(conversation.id) ?: conversation
@@ -674,17 +758,62 @@ class ConversationRepository(
     }
 
     private suspend fun saveMessageNodes(conversationId: String, nodes: List<MessageNode>) {
-        val entities = nodes.mapIndexed { index, node ->
-            MessageNodeEntity(
-                id = node.id.toString(),
-                conversationId = conversationId,
-                nodeIndex = index,
-                messages = JsonInstant.encodeToString(node.messages),
-                selectIndex = node.selectIndex
-            )
-        }
-        messageNodeDAO.insertAll(entities)
+        messageNodeDAO.insertAll(
+            nodes.mapIndexed { index, node -> node.toEntity(conversationId, index) }
+        )
     }
+
+    private fun MessageNode.toEntity(conversationId: String, index: Int) = MessageNodeEntity(
+        id = id.toString(),
+        conversationId = conversationId,
+        nodeIndex = index,
+        messages = JsonInstant.encodeToString(messages),
+        selectIndex = selectIndex,
+    )
+}
+
+/**
+ * ★v5.3.69：节点增量写计划（纯函数，可单测）。
+ * fullRewrite=true 表示调用方必须整段重写（首次 / 结构性替换 / 空缓存）。
+ */
+internal data class NodeWritePlan(
+    val fullRewrite: Boolean,
+    val changed: List<IndexedValue<MessageNode>>,
+    val removed: Set<String>,
+)
+
+internal fun nodeFingerprint(node: MessageNode, index: Int): Int {
+    var h = 17
+    h = 31 * h + node.id.hashCode()
+    h = 31 * h + index
+    h = 31 * h + node.selectIndex
+    h = 31 * h + node.messages.hashCode()
+    return h
+}
+
+internal fun nodeFingerprints(nodes: List<MessageNode>): Map<String, Int> {
+    val out = HashMap<String, Int>(nodes.size)
+    nodes.forEachIndexed { index, node -> out[node.id.toString()] = nodeFingerprint(node, index) }
+    return out
+}
+
+internal fun planNodeWrite(cachedHashes: Map<String, Int>?, nodes: List<MessageNode>): NodeWritePlan {
+    if (cachedHashes == null || cachedHashes.isEmpty() || nodes.isEmpty()) {
+        return NodeWritePlan(fullRewrite = true, changed = emptyList(), removed = emptySet())
+    }
+    val incoming = HashMap<String, Int>(nodes.size)
+    val changed = ArrayList<IndexedValue<MessageNode>>()
+    nodes.forEachIndexed { index, node ->
+        val key = node.id.toString()
+        val hash = nodeFingerprint(node, index)
+        incoming[key] = hash
+        if (cachedHashes[key] != hash) changed += IndexedValue(index, node)
+    }
+    return NodeWritePlan(
+        fullRewrite = false,
+        changed = changed,
+        removed = cachedHashes.keys - incoming.keys,
+    )
 }
 
 /**

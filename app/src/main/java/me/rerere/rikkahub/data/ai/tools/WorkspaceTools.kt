@@ -285,20 +285,30 @@ private fun createWriteFileTool(
         // 先复制到同目录 .versions/<name>.<时间戳>, 保留最近 8 份; 快照失败不阻断写入。
         var previousVersion: String? = null
         if (!append && overwrite) {
+            // ★v5.3.69：版本快照改为**宿主直写**。
+            // 旧实现用 proot 执行 mkdir/cp/ls/rm —— 每次覆盖写都先起一个沙箱（1~3 秒），
+            // 再起第二个沙箱执行真正的 `cat >` 写入，一次写文件两次冷启动。
             runCatching {
-                workspaceRepository.rootfsFileSize(workspaceId, path, cwdRel) // 不存在会抛, 无需覆盖保护
-                val ts = java.time.LocalDateTime.now(java.time.ZoneOffset.ofHours(8))
-                    .format(java.time.format.DateTimeFormatter.ofPattern("MMdd-HHmmss"))
-                val dir = path.substringBeforeLast('/')
-                val name = path.substringAfterLast('/')
-                val vdir = "$dir/.versions"
-                workspaceRepository.executeCommand(
-                    workspaceId,
-                    "mkdir -p '$vdir' && cp -p '$path' '$vdir/$name.$ts' && ls -1t '$vdir' | tail -n +9 | while read f; do rm -f \"$vdir/\$f\"; done",
-                    cwdRel.orEmpty(),
-                    WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
-                )
-                previousVersion = "$vdir/$name.$ts"
+                val host = workspaceRepository.hostFileFor(workspaceId, path, cwdRel)
+                if (host != null && host.isFile) {
+                    val ts = java.time.LocalDateTime.now(java.time.ZoneOffset.ofHours(8))
+                        .format(java.time.format.DateTimeFormatter.ofPattern("MMdd-HHmmss"))
+                    val dir = path.substringBeforeLast('/')
+                    val name = path.substringAfterLast('/')
+                    val vdirRootfs = "$dir/.versions"
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val vdir = java.io.File(host.parentFile, ".versions").apply { mkdirs() }
+                        val target = java.io.File(vdir, "$name.$ts")
+                        host.copyTo(target, overwrite = true)
+                        // 只保留同一文件名最近 8 份（与旧 shell 的 tail -n +9 同义）
+                        vdir.listFiles()?.asSequence()
+                            ?.filter { it.isFile && it.name.startsWith("$name.") }
+                            ?.sortedByDescending { it.lastModified() }
+                            ?.drop(8)
+                            ?.forEach { it.delete() }
+                    }
+                    previousVersion = "$vdirRootfs/$name.$ts"
+                }
             }
         }
         // v4.8.134 (B3, 用户实证"17KB 写入被取消后零落盘"): 落盘段 NonCancellable —
@@ -1370,6 +1380,9 @@ private suspend fun WorkspaceRepository.writeTextInRootfs(
     cwd: String? = null,
     append: Boolean = false,
 ): WorkspaceFileEntry {
+    // ★v5.3.69：宿主直写优先 —— 旧实现走 proot `cat >`，每次写文件都要 1~3 秒冷启动。
+    // 路径无法映射到宿主时才回退 proot（保持对特殊 rootfs 路径的兼容）。
+    writeTextToRootfsHost(workspaceId, path, text, overwrite, cwd, append)?.let { return it }
     val pathArg = path.shellQuote()
     val redirect = if (append) ">>" else ">"
     val result = runRootfsCommand(

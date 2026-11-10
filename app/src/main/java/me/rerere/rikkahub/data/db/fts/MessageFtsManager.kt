@@ -12,6 +12,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.MessageNode
 import java.time.Instant
 
 data class MessageSearchResult(
@@ -24,9 +25,10 @@ data class MessageSearchResult(
 )
 
 enum class MessageSearchSort(val orderBy: String) {
-    RELEVANCE("rank, update_at DESC"),
-    NEWEST_FIRST("update_at DESC, rank"),
-    OLDEST_FIRST("update_at ASC, rank"),
+    // v5.3.69：标题/时间改从 conversationentity 实时读，不再依赖 FTS 行里的旧副本
+    RELEVANCE("f.rank, c.update_at DESC"),
+    NEWEST_FIRST("c.update_at DESC, f.rank"),
+    OLDEST_FIRST("c.update_at ASC, f.rank"),
 }
 
 private const val TAG = "MessageFtsManager"
@@ -58,6 +60,49 @@ class MessageFtsManager(private val database: AppDatabase) {
         }
     }
 
+    /**
+     * ★v5.3.69：只重建**变化的节点**（流式落库每秒都在写，整表重建 FTS 是卡顿主因之一）。
+     * 语义与 [indexConversation] 对同一批节点完全一致：先删该节点的旧行，再按当前内容插入。
+     */
+    suspend fun indexNodes(conversation: Conversation, nodes: List<MessageNode>) = withContext(Dispatchers.IO) {
+        if (nodes.isEmpty()) return@withContext
+        val conversationId = conversation.id.toString()
+        val nodeIds = nodes.map { it.id.toString() }
+        db.execSQL(
+            "DELETE FROM message_fts WHERE node_id IN (${nodeIds.joinToString(",") { "?" }})",
+            nodeIds.toTypedArray(),
+        )
+        nodes.forEach { node ->
+            node.messages.forEach { message ->
+                val text = message.extractFtsText()
+                if (text.isNotBlank()) {
+                    db.execSQL(
+                        "INSERT INTO message_fts(text, node_id, message_id, conversation_id, title, update_at) VALUES (?, ?, ?, ?, ?, ?)",
+                        arrayOf(
+                            text,
+                            node.id.toString(),
+                            message.id.toString(),
+                            conversationId,
+                            conversation.title,
+                            conversation.updateAt.toEpochMilli().toString(),
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /** ★v5.3.69：增量落库用 —— 只删除已消失节点的索引。 */
+    suspend fun deleteNodes(conversationId: String, nodeIds: Collection<String>) = withContext(Dispatchers.IO) {
+        if (nodeIds.isEmpty()) return@withContext
+        val ids = nodeIds.toList()
+        db.execSQL(
+            "DELETE FROM message_fts WHERE conversation_id = ? AND node_id IN (${ids.joinToString(",") { "?" }})",
+            arrayOf<Any?>(conversationId, *ids.toTypedArray()),
+        )
+    }
+
+
     suspend fun deleteConversation(conversationId: String) = withContext(Dispatchers.IO) {
         db.execSQL("DELETE FROM message_fts WHERE conversation_id = ?", arrayOf(conversationId))
     }
@@ -75,22 +120,17 @@ class MessageFtsManager(private val database: AppDatabase) {
         val results = mutableListOf<MessageSearchResult>()
         if (assistantIds != null && assistantIds.isEmpty()) return@withContext results
         val assistantFilter = if (assistantIds != null) {
-            """
-            AND EXISTS (
-                SELECT 1 FROM conversationentity AS conversation
-                WHERE conversation.id = message_fts.conversation_id
-                  AND conversation.assistant_id IN (${assistantIds.joinToString { "?" }})
-            )
-            """.trimIndent()
+            "AND c.assistant_id IN (${assistantIds.joinToString { "?" }})"
         } else {
             ""
         }
         val cursor = db.query(
             """
-            SELECT node_id, message_id, conversation_id, title, update_at,
+            SELECT f.node_id, f.message_id, f.conversation_id, c.title, c.update_at,
                    simple_snippet(message_fts, 0, '[', ']', '...', 30) AS snippet
-            FROM message_fts
-            WHERE text MATCH jieba_query(?)
+            FROM message_fts AS f
+            JOIN conversationentity AS c ON c.id = f.conversation_id
+            WHERE f.text MATCH jieba_query(?)
             $assistantFilter
             ORDER BY ${sort.orderBy}
             LIMIT 50

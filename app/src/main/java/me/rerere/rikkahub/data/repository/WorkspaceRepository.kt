@@ -86,6 +86,43 @@ class WorkspaceRepository(
     }
 
     /**
+     * ★v5.3.69：**宿主直写**文本文件（不走 proot）。
+     *
+     * 旧实现 `workspace_write_file` 用 shell `cat > path` 写入 —— 每条命令都是一次
+     * proot 冷启动（1~3 秒）；覆盖时还要再起一个 proot 做版本快照，**一次写文件
+     * 两次沙箱启动**，用户感知就是「写入文件这个工具太慢」。
+     *
+     * 这里复用 `rootfsHostFileForWrite`（与 `writeBinaryInRootfs` 同一套路径解析 /
+     * 逃逸拒绝），语义保持与 shell 版一致：overwrite / append / 自动建父目录 /
+     * 目录拒绝。返回 null = 该路径无法映射到宿主（调用方回退 proot）。
+     */
+    suspend fun writeTextToRootfsHost(
+        workspaceId: String,
+        path: String,
+        text: String,
+        overwrite: Boolean,
+        cwd: String? = null,
+        append: Boolean = false,
+    ): me.rerere.workspace.WorkspaceFileEntry? = withContext(Dispatchers.IO) {
+        runCatching<me.rerere.workspace.WorkspaceFileEntry?> {
+            val ws = dao.getById(workspaceId) ?: return@runCatching null
+            val host = manager.rootfsHostFileForWrite(ws.root, path, cwd) ?: return@runCatching null
+            if (host.exists() && host.isDirectory) error("Path is not a file: $path")
+            if (!overwrite && !append && host.exists()) error("File already exists: $path")
+            host.parentFile?.mkdirs()
+            if (append) host.appendText(text, Charsets.UTF_8)
+            else host.writeText(text, Charsets.UTF_8)
+            me.rerere.workspace.WorkspaceFileEntry(
+                path = path,
+                name = host.name,
+                isDirectory = false,
+                sizeBytes = host.length(),
+                updatedAt = host.lastModified(),
+            )
+        }.getOrNull()
+    }
+
+    /**
      * v4.8.116: 浏览器截图 TTL 清理 — 只清理本应用自产工件
      * （文件名前缀 [prefix]，默认 shot-），TTL 内的与最新 [keep] 张保留。
      * 用户文件绝不动（前缀不匹配直接跳过）。
