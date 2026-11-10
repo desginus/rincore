@@ -96,9 +96,11 @@ class MessageFtsManager(private val database: AppDatabase) {
     suspend fun deleteNodes(conversationId: String, nodeIds: Collection<String>) = withContext(Dispatchers.IO) {
         if (nodeIds.isEmpty()) return@withContext
         val ids = nodeIds.toList()
+        val args: MutableList<Any?> = mutableListOf(conversationId)
+        args.addAll(ids)
         db.execSQL(
             "DELETE FROM message_fts WHERE conversation_id = ? AND node_id IN (${ids.joinToString(",") { "?" }})",
-            arrayOf<Any?>(conversationId, *ids.toTypedArray()),
+            args.toTypedArray(),
         )
     }
 

@@ -472,6 +472,7 @@ class ConversationRepository(
         var plan = NodeWritePlan(fullRewrite = true, changed = emptyList(), removed = emptySet())
         var nodesWritten = false
         var appliedIncremental = false
+        var cacheToStore: NodeFingerprintCache? = null
 
         database.withTransaction {
             conversationDAO.update(
