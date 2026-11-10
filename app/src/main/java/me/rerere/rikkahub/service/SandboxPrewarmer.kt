@@ -20,6 +20,7 @@ package me.rerere.rikkahub.service
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -34,6 +35,10 @@ object SandboxPrewarmer {
 
     /** 「每次开始输入进行一次」，但 60s 内的连续输入沿合并为一次。 */
     private const val WARM_WINDOW_MS = 60_000L
+
+    /** ★v5.3.71：最近一次成功预热时间 —— 5 分钟内不再重复起 proot。 */
+    @Volatile
+    private var lastWarmSuccessAtMs = 0L
 
     /** 启动预热延迟：让首帧、Room、Coil 先把启动 IO 跑完，再走沙箱重活。 */
     private const val STARTUP_DELAY_MS = 1_200L
@@ -50,6 +55,9 @@ object SandboxPrewarmer {
 
     /** Chromium 走热最多 10 分钟一次（它是 20~30 秒的重活，不能每轮都做）。 */
     private const val BROWSER_WARM_WINDOW_MS = 10 * 60_000L
+
+    /** 预热成功后的「已热」窗口；期间不再重复起 proot（页面缓存仍在）。 */
+    private const val WARM_SUCCESS_WINDOW_MS = 5 * 60_000L
 
     // ═══ v5.3.42 ★★熔断：预热在部分 rootfs/机型上会失败（officecli 崩溃）═══
     // 连续 3 次失败 → 24 小时内不再尝试；成功一次即清零。
@@ -78,6 +86,9 @@ object SandboxPrewarmer {
     private var generationEpoch: Long = 0L
 
     private val mutex = Mutex()
+
+    /** ★v5.3.71：首字到达后的补预热（请求已发出，不与 TLS/首包抢）；随进程存活。 */
+    private val inFlightScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
      * 启动预热（fire-and-forget）：PRoot + officecli + 浏览器内核。
@@ -114,6 +125,26 @@ object SandboxPrewarmer {
     }
 
     /**
+     * ★v5.3.71：**首字到达后**的补预热。
+     *
+     * 背景：启动预热在用户「打开应用立刻发消息」时会被 cancelForGeneration 取消，
+     * 于是首个工具调用仍然冷启动（proot 1~3s）。首字已经到达时，TLS/首包已经结束，
+     * 这时再走热 proot 不会影响首字，只为「模型想调工具」的那一刻做准备。
+     *
+     * 只做 PRoot/officecli（source=in-flight 不拉 Chromium）；与启动预热共享 60s 节流；
+     * 新的一轮生成开始（epoch 变化）即放弃。
+     */
+    fun warmDuringRequestAsync(delayMs: Long = 0L) {
+        if (warmJob?.isActive == true) return
+        val epoch = generationEpoch
+        warmJob = inFlightScope.launch {
+            if (delayMs > 0L) delay(delayMs)
+            if (epoch != generationEpoch) return@launch
+            runCatching { warmOnce(source = "in-flight") }
+        }
+    }
+
+    /**
      * 一轮生成结束后的空闲预热：不抢首字，只服务下一轮的工具调用。
      * 延迟 5 秒执行；期间若又开始生成，epoch 变化会让它安静退出。
      */
@@ -141,12 +172,14 @@ object SandboxPrewarmer {
     suspend fun warmOnce(source: String = "typing-start") {
         val now = System.currentTimeMillis()
         if (now < disabledUntilMs) return
+        if (now - lastWarmSuccessAtMs < WARM_SUCCESS_WINDOW_MS) return
         if (now - lastWarmAtMs < WARM_WINDOW_MS) return
         mutex.withLock {
             if (System.currentTimeMillis() < disabledUntilMs) return@withLock
             if (System.currentTimeMillis() - lastWarmAtMs < WARM_WINDOW_MS) return@withLock
             lastWarmAtMs = System.currentTimeMillis()
             val started = System.currentTimeMillis()
+            var ok = false
 
             val repo = runCatching {
                 GlobalContext.get().get<WorkspaceRepository>()
@@ -188,6 +221,8 @@ object SandboxPrewarmer {
                 }
             }.onSuccess {
                 consecutiveFailures = 0
+                ok = true
+                lastWarmSuccessAtMs = System.currentTimeMillis()
             }
 
             // ── 预热项 2：浏览器内核（best-effort，失败不计熔断）──
@@ -205,9 +240,11 @@ object SandboxPrewarmer {
                 warmBrowserKernel(repo, ws.id)
             }
 
+            val cost = System.currentTimeMillis() - started
+            PrewarmMetrics.onSandboxWarm(cost, ok)
             Log.d(
                 TAG,
-                "warm done in ${System.currentTimeMillis() - started}ms " +
+                "warm done in ${cost}ms " +
                     "(source=$source, browser=${source == "app-start"})",
             )
         }

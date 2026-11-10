@@ -1227,6 +1227,19 @@ class ChatService(
                     // ★v5.3.67 诊断：首字耗时一行可查（用户反馈「首字被拉到十几秒」时，
                     // 用它区分「客户端发送前等待」与「上游 TTFT」）。
                     Log.i(TAG, "ttfb id=$conversationId model=${model.id} ms=$ttfbMs")
+                    // ★v5.3.71：把首字耗时与「距上次连接预热多久」放同一行，直接判断预热有没有用。
+                    val ttfbHost = runCatching {
+                        when (val p = model.findProvider(settings.providers)) {
+                            is me.rerere.ai.provider.ProviderSetting.OpenAI -> p.baseUrl
+                            is me.rerere.ai.provider.ProviderSetting.Claude -> p.baseUrl
+                            is me.rerere.ai.provider.ProviderSetting.Google -> p.baseUrl
+                            else -> null
+                        }
+                    }.getOrNull()
+                    PrewarmMetrics.onTtfb(model.id.toString(), ttfbMs, ttfbHost)
+                    // ★v5.3.71：首字已到 → TLS/首包已结束，此时再走热沙箱不影响首字，
+                    // 专门为首个工具调用补预热（启动预热被发送取消时尤其重要）。
+                    SandboxPrewarmer.warmDuringRequestAsync(delayMs = 1_500L)
                 }
                 when (chunk) {
                     is GenerationChunk.Messages -> {

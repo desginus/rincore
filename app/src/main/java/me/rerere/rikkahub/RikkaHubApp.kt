@@ -172,7 +172,8 @@ class RikkaHubApp : Application() {
                 //   OpenAI 型 → 默认池 (opencode.ai 域进长保活池)
                 //   Claude 型 → claudeClient 长保活池 (300s keepalive + ping),
                 //     与 ClaudeProvider 主请求同池 (Console Go 等网关首次预热生效)
-                val providers = get<SettingsStore>().settingsFlow.value.providers
+                val st = get<SettingsStore>().settingsFlow.value
+                val providers = st.providers
                 val userUrls = providers
                     .filterIsInstance<ProviderSetting.OpenAI>()
                     .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
@@ -183,7 +184,23 @@ class RikkaHubApp : Application() {
                 // 跳过 DNS+TCP+TLS 缩短 TTFT; 裸 socket 预热保留作 DNS 兜底
                 val httpClient = get<OkHttpClient>()
                 val opencodeClient = me.rerere.ai.provider.ProviderManager.opencodeClient
-                userUrls.forEach { url -> ConnectionWarmer.warmWithOkHttp(httpClient, url, opencodeClient) }
+                // ★v5.3.71：开代理时主请求走 proxyClient，启动预热必须同池；
+                // 同时带上 API key —— 带鉴权的 /models 比 401 更容易让网关保持连接。
+                val ns = st.networkSetting
+                val proxyClient = if (ns.proxyEnabled && ns.proxyUrl.isNotBlank()) {
+                    runCatching {
+                        get<OkHttpClient>(org.koin.core.qualifier.named("proxy"))
+                    }.getOrNull()
+                } else null
+                val longLivedClient = proxyClient ?: opencodeClient
+                userUrls.forEach { url ->
+                    ConnectionWarmer.warmWithOkHttp(
+                        client = httpClient,
+                        baseUrl = url,
+                        opencodeClient = longLivedClient,
+                        apiKey = st.opencodeApiKey,
+                    )
+                }
                 claudeUrls.forEach { url ->
                     ConnectionWarmer.warmWithOkHttp(
                         me.rerere.ai.provider.ProviderManager.claudeClient ?: httpClient, url
@@ -196,13 +213,13 @@ class RikkaHubApp : Application() {
                 // v3.13.4: Command Code 启动即预热 (用户定版: 应用启动预热,
                 // 非"发消息时") — 焦点 key 为 user_ 且开关开时, 启动线程预热
                 // api.commandcode.ai, 冷启动 10-20s 窗口在首条消息前消化
-                val st = get<SettingsStore>().settingsFlow.value
                 if (st.opencodeApiKey.startsWith("user_", ignoreCase = true) && st.commandCodeWarmEnabled) {
                     // v3.17.0: CC 预热必须进长保活池 (与 v3.17.0 起 CC 主请求同池)
                     ConnectionWarmer.warmWithOkHttp(
-                        httpClient,
-                        "https://api.commandcode.ai/provider/v1",
-                        me.rerere.ai.provider.ProviderManager.opencodeClient,
+                        client = httpClient,
+                        baseUrl = "https://api.commandcode.ai/provider/v1",
+                        opencodeClient = longLivedClient,
+                        apiKey = st.opencodeApiKey,
                     )
                 }
                 // 4.1.3: 常驻保活心跳 — 服务端 (CF 系) 空闲 ~100s 关连接, 静态预热
@@ -215,6 +232,7 @@ class RikkaHubApp : Application() {
                     apiKey = st.opencodeApiKey,
                     commandCodeEnabled = st.commandCodeWarmEnabled,
                     opencodeEnabled = st.opencodeWarmEnabled,
+                    proxyClient = proxyClient,
                 )
             }
         }, "warmup-user-providers").start()

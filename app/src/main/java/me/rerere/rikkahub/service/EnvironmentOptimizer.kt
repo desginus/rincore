@@ -48,6 +48,15 @@ object ConnectionWarmer {
         }
     }
 
+    /**
+     * ★v5.3.71：当前 provider 是否允许预热。
+     *
+     * 用户定案：**只预热 OpenCode（go 订阅）与 Command Code**，且必须显式打开对应开关；
+     * 其余 provider 一律不预热（v5.1.12 定案）。本函数只是 [isWarmAllowed] 的语义别名，
+     * 放在这里是为了让「生成时/工具前」的调用点读起来不需要再判断 host 白名单。
+     */
+    private fun canWarmCurrentModel(url: String): Boolean = isWarmAllowed(url)
+
     // v4.7.18: 网络切换监听 — 网络可用性变化 (WiFi↔蜂窝切换/抖动恢复) 时
     // 清理连接池。用户实证: 电脑上同类断流与网卡有关; 手机对应场景 = 网络
     // 接口切换后旧连接已死, 复用即断流。
@@ -155,10 +164,18 @@ object ConnectionWarmer {
     // v3.12.6: okhttp 预热节流 — 同 host 60s 内只发一次 (此前每条消息都发)
     private val lastWarmAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
-    fun warmWithOkHttp(client: OkHttpClient, baseUrl: String, opencodeClient: OkHttpClient? = null) {
+    fun warmWithOkHttp(
+        client: OkHttpClient,
+        baseUrl: String,
+        opencodeClient: OkHttpClient? = null,
+        // ★v5.3.71：带鉴权的预热请求比 401 更容易被网关保持连接。
+        // 只对 OC/CC 生效；key 前缀不匹配该 host 时不发（避免把 CC 的 user_ key 发给 OC）。
+        apiKey: String? = null,
+    ) {
         // v5.1.12 ★开关未开 → 什么都不做（不 ping、不进池）
         if (!isWarmAllowed(baseUrl)) return
-        val safe = runCatching { baseUrl.trimEnd('/') + "/models" }.getOrNull() ?: return
+        val trimmed = baseUrl.trimEnd('/')
+        val safe = runCatching { "$trimmed/models" }.getOrNull() ?: return
         val host = runCatching { java.net.URI(baseUrl).host }.getOrNull() ?: return
         val now = System.currentTimeMillis()
         val last = lastWarmAt[host] ?: 0L
@@ -182,10 +199,27 @@ object ConnectionWarmer {
                 .writeTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
                 .build()
         }.getOrDefault(eff)
+        // ★v5.3.71：只给匹配 host 的 key（OC=sk…，CC=user_…）；不匹配时不带鉴权。
+        val hostKey = when (host) {
+            "opencode.ai" -> apiKey?.takeIf { it.startsWith("sk", ignoreCase = true) }
+            "api.commandcode.ai" -> apiKey?.takeIf { it.startsWith("user_", ignoreCase = true) }
+            else -> apiKey
+        }
         Thread({
+            val pingStart = android.os.SystemClock.elapsedRealtime()
             runCatching {
-                val req = okhttp3.Request.Builder().url(safe).get().build()
-                warmClient.newCall(req).execute().use { }
+                val reqBuilder = okhttp3.Request.Builder().url(safe).get()
+                if (!hostKey.isNullOrBlank()) {
+                    reqBuilder.addHeader("Authorization", "Bearer $hostKey")
+                }
+                warmClient.newCall(reqBuilder.build()).execute().use { }
+            }.onSuccess {
+                markWarm(trimmed)
+                PrewarmMetrics.onConnWarm(
+                    host = host,
+                    pingMs = android.os.SystemClock.elapsedRealtime() - pingStart,
+                    mode = "startup",
+                )
             }.onFailure {
                 Log.w(TAG, "OkHttp 预热失败: $safe — ${it.message}")
             }
@@ -211,6 +245,8 @@ object ConnectionWarmer {
     //  复用半死连接被 watchdog 60s 判死后重试) — "工具结束→恢复输出"的
     //  额外延迟来源之一)。按 host 幂等管理, 同 host 不重复起 job。
     private val keepAliveJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+    /** ★v5.3.71：每个 baseUrl 当前心跳使用的 client（用于检测启动/代理池切换）。 */
+    private val keepAliveClients = java.util.concurrent.ConcurrentHashMap<String, OkHttpClient>()
 
     // v5.0.92 ★收益熔断（用户定案："一定要稳定可靠地缩短时间，不能保证缩短时间的话可以放弃"）：
     // 心跳 ping 连续 3 次耗时 > 800ms（含失败）说明网关慢或预热本身成了负担，
@@ -238,14 +274,24 @@ object ConnectionWarmer {
     ) {
         val trimmed = baseUrl.trimEnd('/')
         if (trimmed.isBlank()) return
-        // v5.1.12 ★开关未开 → 不建心跳，并把可能残留的旧心跳停掉（改开关立即生效）
-        if (!isWarmAllowed(trimmed)) {
+        // ★v5.3.71：只认 OpenCode / Command Code 两个显式开关（v5.1.12 定案）。
+        // 开关关闭时立即停掉可能残留的旧心跳。
+        if (!canWarmCurrentModel(trimmed)) {
             keepAliveJobs.remove(trimmed)?.cancel()
+            keepAliveClients.remove(trimmed)
             return
         }
-        val existing = keepAliveJobs[trimmed]
-        if (existing?.isActive == true) return
         val host = runCatching { java.net.URI(trimmed).host }.getOrNull() ?: return
+        val existing = keepAliveJobs[trimmed]
+        if (existing?.isActive == true) {
+            if (keepAliveClients[trimmed] === client) return
+            // ★v5.3.71：启动心跳可能先用 opencodeClient 起来，之后才发现该模型走代理池。
+            // 同一 baseUrl 换池必须重启，否则心跳永远打在主请求不用的池里（v5.3.33 同族）。
+            Log.i(TAG, "keepalive $host pool changed — restarting")
+            existing.cancel()
+            keepAliveJobs.remove(trimmed)
+        }
+        keepAliveClients[trimmed] = client
         // v4.8.38: launch(Dispatchers.IO) — 循环体内 newCall().execute() 是同步
         // 阻塞网络调用; AppScope 的默认调度器为 Main, 原实现在主线程每 60s 阻塞
         // 一次 (网络差时数秒), 即"预热连接"引发的周期性卡顿源。统一移入 IO。
@@ -327,7 +373,11 @@ object ConnectionWarmer {
                 }.isSuccess
                 val pingCost = android.os.SystemClock.elapsedRealtime() - pingStart
                 // v4.8.98: 心跳成功打点 — 轮首探活据此判断"最近热", 热则零等待放行
-                if (warmOk) markWarm(trimmed)
+                if (warmOk) {
+                    markWarm(trimmed)
+                    // ★v5.3.71：把「连接已建立」这一事实记进统一观测，供首字日志对照
+                    PrewarmMetrics.onConnWarm(host, pingCost, "keepalive")
+                }
                 // v5.0.92 熔断判定（v5.1.3 已放宽）：慢 ping（>2500ms）或失败都记一次；
                 // 连续 4 次 → 暂停 10 分钟（移动网冷连 0.8~2.5s 属正常，不应判死）
                 if (warmOk && pingCost <= KEEPALIVE_SLOW_MS) {
@@ -360,13 +410,18 @@ object ConnectionWarmer {
      * 4s 短超时)。半死连接在此被剔除 + 清池, 真实请求不再整段等 readTimeout —
      * "工具返回后模型久久不开口"的客户端侧主因修复。成功返回 true 不清池。
      */
-    suspend fun pokeProviderHost(baseUrl: String, apiKey: String?): Boolean {
+    suspend fun pokeProviderHost(
+        baseUrl: String,
+        apiKey: String?,
+        overrideClient: OkHttpClient? = null,
+    ): Boolean {
         val trimmed = baseUrl.trimEnd('/')
         if (trimmed.isBlank()) return false
-        // v5.1.12 ★开关未开 → 不探活（工具完成后的后台探活同样受控）
-        if (!isWarmAllowed(trimmed)) return false
+        // ★v5.3.71：当前 provider 允许预热才探活（OC/CC 看两开关，其它看新开关）
+        if (!canWarmCurrentModel(trimmed)) return false
         val isOcCc = trimmed.contains("opencode.ai") || trimmed.contains("commandcode.ai")
-        val client = (if (isOcCc) me.rerere.ai.provider.ProviderManager.opencodeClient else null)
+        val client = overrideClient
+            ?: (if (isOcCc) me.rerere.ai.provider.ProviderManager.opencodeClient else null)
             ?: mainClient ?: return false
         val ok = runCatching {
             val warmClient = client.newBuilder()
@@ -386,7 +441,14 @@ object ConnectionWarmer {
             )
             false
         }
-        if (ok) markWarm(trimmed)
+        if (ok) {
+            markWarm(trimmed)
+            PrewarmMetrics.onConnWarm(
+                host = runCatching { java.net.URI(trimmed).host }.getOrNull() ?: trimmed,
+                pingMs = 0L,
+                mode = "poke",
+            )
+        }
         return ok
     }
 
@@ -434,7 +496,7 @@ object ConnectionWarmer {
         System.currentTimeMillis() - (lastPokeFailAtMs[host] ?: 0L) < POKE_FAIL_COOLDOWN_MS
 
     /** 工具执行开始前调用 (v4.8.105 C1 提前; 与消息组装并行, 不阻塞): 后台预探活 — 下一轮请求发起前通常已完成。 */
-    fun pokeAsync(baseUrl: String, apiKey: String?) {
+    fun pokeAsync(baseUrl: String, apiKey: String?, overrideClient: OkHttpClient? = null) {
         val trimmed = baseUrl.trimEnd('/')
         if (trimmed.isBlank()) return
         if (!(trimmed.contains("opencode.ai") || trimmed.contains("commandcode.ai"))) return
@@ -443,7 +505,7 @@ object ConnectionWarmer {
         val scope = appScopeRef ?: return
         if (pokeJobs[trimmed]?.isActive == true) return
         pokeJobs[trimmed] = scope.launch(Dispatchers.IO) {
-            runCatching { pokeProviderHost(trimmed, apiKey) }
+            runCatching { pokeProviderHost(trimmed, apiKey, overrideClient) }
         }
     }
 
@@ -452,7 +514,12 @@ object ConnectionWarmer {
      *  教训（v4.8.105→v4.8.106）: "冷=直接放行"在 VPN/抖动网络下会让真实请求整轮卡在
      *  半死连接上直到首包超时 —— 比前置 4s 探活更伤体感。必须保留前置剔除语义。
      *  预探活已在「工具执行开始前」提前发起（v4.8.105 C1），故此处兜底极少触发。 */
-    suspend fun awaitPokeIfStale(baseUrl: String, apiKey: String?, maxJoinMs: Long = 1500L): Boolean {
+    suspend fun awaitPokeIfStale(
+        baseUrl: String,
+        apiKey: String?,
+        maxJoinMs: Long = 1500L,
+        overrideClient: OkHttpClient? = null,
+    ): Boolean {
         val trimmed = baseUrl.trimEnd('/')
         if (trimmed.isBlank()) return false
         if (isRecentlyWarm(trimmed)) return true
@@ -463,10 +530,10 @@ object ConnectionWarmer {
         }
         // v4.8.132: 同步探活改"后台任务 + join 上限" — 总等待有界 (≤6s), 超时放行
         val scope = appScopeRef
-        if (scope == null) return pokeProviderHost(trimmed, apiKey)
+        if (scope == null) return pokeProviderHost(trimmed, apiKey, overrideClient)
         val existing = pokeJobs[trimmed]?.takeIf { it.isActive }
         val job = existing ?: scope.launch(Dispatchers.IO) {
-            runCatching { pokeProviderHost(trimmed, apiKey) }
+            runCatching { pokeProviderHost(trimmed, apiKey, overrideClient) }
         }.also { pokeJobs[trimmed] = it }
         val finished = kotlinx.coroutines.withTimeoutOrNull(SYNC_POKE_MAX_MS) { job.join() } != null
         return finished && isRecentlyWarm(trimmed)
@@ -479,6 +546,8 @@ object ConnectionWarmer {
         apiKey: String,
         commandCodeEnabled: Boolean,
         opencodeEnabled: Boolean,
+        // ★v5.3.71：开代理时主请求走 proxyClient；启动心跳必须同池，否则又是「白预热」。
+        proxyClient: OkHttpClient? = null,
     ) {
         mainClient = httpClient
         // v4.8.98: 存进程级作用域 — 工具完成瞬间的后台预探活 (pokeAsync) 使用
@@ -488,7 +557,7 @@ object ConnectionWarmer {
         // "开应用执行任务"的首请求仍付完整连接延迟)。现改为: 启动即 ping
         // (见 ensureProviderKeepAlive '先 ping 后计时') + 双 host 并行常驻;
         // per-host 幂等 (keepAliveJobs), 重复调用零成本。
-        val client = opencodeClient ?: httpClient
+        val client = proxyClient ?: opencodeClient ?: httpClient
         if (commandCodeEnabled) {
             val key = apiKey.takeIf { it.startsWith("user_", ignoreCase = true) }
             ensureProviderKeepAlive(appScope, client, "https://api.commandcode.ai/provider/v1", key)

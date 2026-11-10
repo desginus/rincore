@@ -906,7 +906,13 @@ class GenerationHandler(
                 val pokeKey = (provider as? ProviderSetting.OpenAI)?.apiKey
                     ?: (provider as? ProviderSetting.Claude)?.apiKey
                 if (pokeBase != null) {
-                    runCatching { me.rerere.rikkahub.service.ConnectionWarmer.pokeAsync(pokeBase, pokeKey) }
+                    runCatching {
+                        me.rerere.rikkahub.service.ConnectionWarmer.pokeAsync(
+                            pokeBase,
+                            pokeKey,
+                            proxyClientFor(settings, model),
+                        )
+                    }
                 }
             }
 
@@ -1401,6 +1407,25 @@ class GenerationHandler(
     }
 
 
+    /**
+     * ★v5.3.71：工具前探活必须与主请求同池 —— 代理命中时主请求走 proxyClient，
+     * 探活若仍进 opencodeClient，等于既没剔除半死连接、又把连接建到了不用的池里。
+     * 判据与 DataSourceModule 的 ProxyRoute 完全一致。
+     */
+    private fun proxyClientFor(
+        settings: Settings,
+        model: Model,
+    ): okhttp3.OkHttpClient? {
+        val ns = settings.networkSetting
+        val proxyOn = ns.proxyEnabled && ns.proxyUrl.isNotBlank() &&
+            (!ns.proxyPartialEnabled || model.modelId in ns.proxyModelIds)
+        if (!proxyOn) return null
+        return runCatching {
+            org.koin.core.context.GlobalContext.getOrNull()
+                ?.getOrNull<okhttp3.OkHttpClient>(org.koin.core.qualifier.named("proxy"))
+        }.getOrNull()
+    }
+
     private suspend fun generateInternal(
         assistant: Assistant,
         settings: Settings,
@@ -1843,7 +1868,11 @@ class GenerationHandler(
                         val ok = runCatching {
                             // v4.8.98: 仅在非新鲜时等待 — 最近心跳/探活成功 (≤70s) 零等待;
                             // 工具后已发起的后台预探活在此 join (上限 1.5s)
-                            me.rerere.rikkahub.service.ConnectionWarmer.awaitPokeIfStale(pokeBase, pokeKey)
+                            me.rerere.rikkahub.service.ConnectionWarmer.awaitPokeIfStale(
+                                pokeBase,
+                                pokeKey,
+                                overrideClient = proxyClientFor(settings, model),
+                            )
                         }.getOrDefault(false)
                         pokeWaitMs = System.currentTimeMillis() - pokeT0
                         CallTracer.event("CONN", "poke", "host=$pokeBase gapMs=$gapMs ok=$ok waitMs=$pokeWaitMs")

@@ -1168,6 +1168,8 @@ private fun createShellTool(
             rawSession.isEmpty() || rawSession.equals("none", ignoreCase = true) -> null
             else -> rawSession
         }
+        // ★v5.3.71：记录预热后第一条 shell 的耗时与渲染类命令，判断沙箱/浏览器预热是否被用上。
+        val shellStartedAt = android.os.SystemClock.elapsedRealtime()
         val rawResult = if (sessionKey != null) {
             workspaceRepository.executeCommandInSession(
                 id = workspaceId,
@@ -1179,6 +1181,10 @@ private fun createShellTool(
         } else {
             workspaceRepository.executeCommand(workspaceId, command, cwd, timeoutMillis)
         }
+        me.rerere.rikkahub.service.PrewarmMetrics.onShellCommand(
+            command = command,
+            durationMs = android.os.SystemClock.elapsedRealtime() - shellStartedAt,
+        )
         // v5.0.85（用户 C4）：过滤第三方 CLI 的已知无害 stderr 噪音（GPU 探测/libGL 等），
         // 避免被误读成任务失败；只过滤白名单关键字，其余原样保留。
         val result = rawResult.copy(
