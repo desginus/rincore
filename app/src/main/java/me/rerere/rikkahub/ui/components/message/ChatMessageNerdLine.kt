@@ -96,20 +96,32 @@ fun ChatMessageNerdLine(
                             message.createdAt.toJavaLocalDateTime(),
                             message.finishedAt!!.toJavaLocalDateTime()
                         )
-                        val tps = usage.completionTokens.toFloat() / duration.toMillis() * 1000
-                        val seconds = (duration.toMillis() / 1000f).toFixed(1)
-                        StatsItem(
-                            icon = {
-                                Icon(
-                                    imageVector = HugeIcons.Zap,
-                                    contentDescription = "Speed",
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            },
-                            content = {
-                                Text(text = "${tps.toFixed(1)} tok/s")
-                            }
-                        )
+                        // ★v5.3.73：tok/s 的分母必须是「真实生成时长」。
+                        // 旧实现用 createdAt→finishedAt = 整轮任务墙钟（含工具执行/审批/多轮），
+                        // 而 completionTokens 来自最后一次响应 → 工具一多就把速度算成 1/10。
+                        // generationTimeMs 由 GenerationHandler 按「每步首个 chunk→流结束」累计。
+                        val generationMs = message.generationTimeMs?.takeIf { it > 0L }
+                        val denominatorMs = generationMs ?: duration.toMillis()
+                        val tps = if (denominatorMs > 0) {
+                            usage.completionTokens.toFloat() / denominatorMs * 1000
+                        } else 0f
+                        val seconds = (denominatorMs / 1000f).toFixed(1)
+                        // ★v5.3.73：旧消息没有 generationTimeMs，无法还原真实生成时长；
+                        // 不再用「整轮墙钟」算出一个误导性的 tok/s，只显示耗时。
+                        if (generationMs != null) {
+                            StatsItem(
+                                icon = {
+                                    Icon(
+                                        imageVector = HugeIcons.Zap,
+                                        contentDescription = "Speed",
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                },
+                                content = {
+                                    Text(text = "${tps.toFixed(1)} tok/s")
+                                }
+                            )
+                        }
 
                         StatsItem(
                             icon = {

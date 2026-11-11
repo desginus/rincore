@@ -1328,6 +1328,28 @@ class ChatService(
         }.onSuccess {
             val finalConversation = getConversationFlow(conversationId).value
             saveConversation(conversationId, finalConversation)
+            // ★v5.3.73：最终统计一行可查 —— 用于区分「计数口径」与「真实生成慢」。
+            runCatching {
+                val msg = finalConversation.messageNodes
+                    .flatMap { it.messages }
+                    .lastOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
+                val usage = msg?.usage
+                val genMs = msg?.generationTimeMs
+                val wallMs = System.currentTimeMillis() - genStartedAt
+                val tps = if (genMs != null && genMs > 0) {
+                    (usage?.completionTokens ?: 0).toDouble() * 1000.0 / genMs
+                } else 0.0
+                Log.i(
+                    TAG,
+                    "final stats completion=${usage?.completionTokens ?: 0} prompt=${usage?.promptTokens ?: 0} " +
+                        "gen=${genMs ?: -1}ms wall=${wallMs}ms tps=${"%.1f".format(tps)}",
+                )
+                me.rerere.rikkahub.data.ai.CallTracer.event(
+                    "PERF", "final_stats",
+                    "completion=${usage?.completionTokens ?: 0} prompt=${usage?.promptTokens ?: 0} " +
+                        "gen=${genMs ?: -1}ms wall=${wallMs}ms tps=${"%.1f".format(tps)}",
+                )
+            }
 
             launchWithConversationReference(conversationId) {
                 generateTitle(finalConversation)

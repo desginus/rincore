@@ -63,6 +63,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
+import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.core.merge
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
@@ -720,6 +721,7 @@ class GenerationHandler(
                     layer1Prompt = matrixPrompt,
                     // v3.20.0: 会话 ID 恢复透传 (x-opencode-session 官方强制)
                     conversationId = conversationId,
+                    stepIndex = stepIndex,
                 )
                 CallTracer.event(
                     "RECV", "post_api",
@@ -1449,6 +1451,7 @@ class GenerationHandler(
         // v3.11.27: 子代理对话不注入用户自定义 prompt (其余正常注入)
         skipAssistantPrompt: Boolean = false,
         conversationId: Uuid? = null,
+        stepIndex: Int = 0,
     ) {
         val startMs = System.currentTimeMillis()
         // v3.6.74 (4.1.1 重申): 消息一律原样发送, 零改动。
@@ -1892,6 +1895,15 @@ class GenerationHandler(
             // chunk 间隔本就大于 50ms, 节流不产生额外延迟, 密集时批处理保帧率。
             var lastUiUpdateMs = 0L
             var repetitionCheckedLen = 0
+            // ★v5.3.73：真实生成统计基线。
+            // usage 在多轮工具调用里必须累计（merge 只适合同一次请求内的快照）；
+            // generationTimeMs 只累计「首个 chunk → 本步流结束」，不含 TTFB、工具执行、审批等待。
+            val statsBase = messages.lastOrNull()?.takeIf { it.role == MessageRole.ASSISTANT }
+            val baseUsage = statsBase?.usage
+            val baseGenerationMs = statsBase?.generationTimeMs ?: 0L
+            val baseContextTokens = statsBase?.contextTokens
+            var stepFirstChunkAtMs: Long? = null
+            var stepUsage: TokenUsage? = null
             try {
             // v3.11.4: 工具轮次诊断 — 运行日志页 SSE 现场可区分首轮/工具轮请求
             // v4.8.19 性能: 单遍无分配统计 (原 flatMap + filterIsInstance 每轮
@@ -1933,6 +1945,12 @@ class GenerationHandler(
                 messages = internalMessages,
                 params = params
             )).collect { chunk ->
+                if (stepFirstChunkAtMs == null && chunk !is me.rerere.ai.ui.StreamChunk.Finish) {
+                    stepFirstChunkAtMs = System.currentTimeMillis()
+                }
+                if (chunk is me.rerere.ai.ui.StreamChunk.Usage) {
+                    stepUsage = chunk.usage
+                }
                 messages = streamHandler.handle(messages, chunk)
                 // v4.5.2: 长度截断的工具调用修复 — finish_reason=length 时最后一条
                 // 助手消息里 input JSON 解析失败的调用 = 参数被 token 上限掐断。
@@ -2021,6 +2039,40 @@ class GenerationHandler(
             }
             // 流式成功完成 — 补一次 UI 更新, 确保节流期间的最后内容完整显示
             processingStatus.value = null  // v3.11.4: 重试提示清除
+            // ★v5.3.73：先落「本步真实统计」，再发 UI。
+            val stepEndAtMs = System.currentTimeMillis()
+            val stepGenerationMs = stepFirstChunkAtMs?.let {
+                (stepEndAtMs - it).coerceAtLeast(0L)
+            } ?: 0L
+            messages = applyStepGenerationStats(
+                messages = messages,
+                baseAssistant = statsBase,
+                baseUsage = baseUsage,
+                baseGenerationMs = baseGenerationMs,
+                baseContextTokens = baseContextTokens,
+                stepUsage = stepUsage,
+                stepGenerationMs = stepGenerationMs,
+            )
+            runCatching {
+                val stepTokens = stepUsage?.completionTokens ?: 0
+                val stepTps = if (stepGenerationMs > 0) {
+                    stepTokens.toDouble() * 1000.0 / stepGenerationMs
+                } else 0.0
+                val cumulativeTokens = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                    ?.usage?.completionTokens ?: 0
+                Log.i(
+                    TAG,
+                    "step stats #$stepIndex ttfb=${stepFirstChunkAtMs?.let { (it - attemptStartMs).coerceAtLeast(0L) } ?: -1}ms " +
+                        "gen=${stepGenerationMs}ms completion=$stepTokens tps=${"%.1f".format(stepTps)} " +
+                        "cumulative=$cumulativeTokens",
+                )
+                me.rerere.rikkahub.data.ai.CallTracer.event(
+                    "PERF", "step_stats",
+                    "step=$stepIndex ttfb=${stepFirstChunkAtMs?.let { (it - attemptStartMs).coerceAtLeast(0L) } ?: -1}ms " +
+                        "gen=${stepGenerationMs}ms completion=$stepTokens tps=${"%.1f".format(stepTps)} " +
+                        "cumulative=$cumulativeTokens",
+                )
+            }
             onUpdateMessages(messages)
             break@streamLoop  // 流式成功完成, 退出重试循环
             } catch (e: ClientGenerationGuardException) {
