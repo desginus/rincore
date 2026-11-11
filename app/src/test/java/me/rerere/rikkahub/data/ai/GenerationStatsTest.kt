@@ -18,7 +18,7 @@ import org.junit.Test
 class GenerationStatsTest {
 
     private fun msg(
-        id: java.util.UUID = java.util.UUID.randomUUID(),
+        id: kotlin.uuid.Uuid = kotlin.uuid.Uuid.random(),
         usage: TokenUsage? = null,
         generationTimeMs: Long? = null,
         contextTokens: Int? = null,
