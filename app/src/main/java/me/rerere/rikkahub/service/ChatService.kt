@@ -1335,19 +1335,18 @@ class ChatService(
                     .lastOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
                 val usage = msg?.usage
                 val genMs = msg?.generationTimeMs
-                val wallMs = System.currentTimeMillis() - genStartedAt
                 val tps = if (genMs != null && genMs > 0) {
                     (usage?.completionTokens ?: 0).toDouble() * 1000.0 / genMs
                 } else 0.0
                 Log.i(
                     TAG,
                     "final stats completion=${usage?.completionTokens ?: 0} prompt=${usage?.promptTokens ?: 0} " +
-                        "gen=${genMs ?: -1}ms wall=${wallMs}ms tps=${"%.1f".format(tps)}",
+                        "gen=${genMs ?: -1}ms tps=${"%.1f".format(tps)}",
                 )
                 me.rerere.rikkahub.data.ai.CallTracer.event(
                     "PERF", "final_stats",
                     "completion=${usage?.completionTokens ?: 0} prompt=${usage?.promptTokens ?: 0} " +
-                        "gen=${genMs ?: -1}ms wall=${wallMs}ms tps=${"%.1f".format(tps)}",
+                        "gen=${genMs ?: -1}ms tps=${"%.1f".format(tps)}",
                 )
             }
 
