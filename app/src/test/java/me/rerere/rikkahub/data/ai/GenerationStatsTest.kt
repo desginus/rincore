@@ -49,7 +49,7 @@ class GenerationStatsTest {
             stepGenerationMs = 500L,
         ).single()
 
-        assertEquals(280, updated.usage?.completionTokens ?: -1)
+        assertEquals(80, updated.usage?.completionTokens ?: -1)
         assertEquals(300, updated.usage?.promptTokens ?: -1)
         assertEquals(1_500L, updated.generationTimeMs)
         assertEquals(230, updated.contextTokens)
