@@ -3,7 +3,7 @@ schema: rincore-agent-handoff/v1
 project: RinCore
 package: me.rincore.app.hub
 version: 5.3.77
-commit: a0c7ee31e
+commit: c603b87e3
 updated: 2026-11-13
 status: ACTIVE
 owner: integration-agent
@@ -22,7 +22,7 @@ next_action: 真机验证手机操控；再决定是否接 ADB/Shizuku shell 或
 - 发布：<https://github.com/desginus/rincore/releases/tag/v5.3.77>（APK 由 `c603b87e3` 构建）
 - CI：**43441103268**，`build` + `unit-tests` 均 **success**。
 - APK：`app-arm64-v8a-research.apk`，**79,950,950 B**。
-- 三个 SHA：`HEAD = origin/adopt-3.0.0 = origin/main = a0c7ee31e`（v5.3.77 代码发布于 `c603b87e3`；`a0c7ee31e` 是之后的纯文档交接提交）。
+- 代码发布点：`c603b87e3`（v5.3.77 APK/CI 对应这个 commit）。发布后 main/adopt 还会包含纯文档交接提交；**最新 HEAD 以 `git rev-parse HEAD` 为准**，不要拿本文档里的 SHA 当代码 SHA。
 - 这一版的核心：3.2.0 非手机项收口 + **手机操控 P1**（A11y 读屏、DSH 三级点击、截图视觉网格、支付/银行拦截）。
 - **最大未完成**：手机操控没有 ADB/Shizuku shell 与 OCR；没有真机实测；ChatListPreview 长列表性能未专门优化。
 - 接手第一件事：读第 6 节验证命令，跑 `bin/audit fast` + `bin/rc check`；先证明环境可信，再改代码。
@@ -69,7 +69,7 @@ next_action: 真机验证手机操控；再决定是否接 ADB/Shizuku shell 或
 | 当前版本 | `versionName = 5.3.77`，`me.rincore.app.hub` |
 | 发布 APK | research 变体 `app-arm64-v8a-research.apk` |
 | 代码规模 | 约 1372 个 `.kt`（`bin/origin stats`） |
-| 文档 HEAD | `a0c7ee31e`（纯 docs/AGENTS 提交；main/adopt 已同步） |
+| 文档 HEAD | 发布后另有纯 docs/AGENTS 提交；`git rev-parse HEAD` 为准 |
 | 来源分布 | UPSTREAM 55.5% / MODIFIED 18.1% / PORTED 14.4% / PORTED-MODIFIED 5.1% / OURS 5.5% / DELETED 1.5% |
 | 无循环依赖 | `bin/deps cycles` 通过 |
 | 工作区 | `/workspace/rincore-adopt`；父 worktree `/workspace/rincore-src`（不能移走） |
@@ -222,7 +222,7 @@ cd /workspace
 | `deps cycles` | **无循环依赖** |
 | CI | **43441103268**，build + unit-tests success |
 | Release | v5.3.77，draft=false，prerelease=false，APK 79,950,950 B |
-| SHA | HEAD = adopt = main = `a0c7ee31e`（代码发布点 `c603b87e3`） |
+| SHA | 代码发布点 `c603b87e3`；文档 HEAD 以 `git rev-parse HEAD` 为准 |
 
 **验证纪律**：
 
@@ -395,7 +395,7 @@ finished_at: YYYY-MM-DD HH:mm
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
-| 2026-11-13 | 5.3.77 | 手机操控 P1（A11y/三级点击/截图/拦截）；3.2.0 非手机项收口；`a0c7ee31e` 建立交接协议 |
+| 2026-11-13 | 5.3.77 | 手机操控 P1（A11y/三级点击/截图/拦截）；3.2.0 非手机项收口；建立交接协议 |
 | 2026-11-13 | 5.3.76 | 工具轮中途自动压缩；Web UI lastUsage |
 | 2026-11-13 | 5.3.75 | 3.2.0 非手机首批；自动压缩（回合结束）/Claude/Mistral |
 | 2026-11-13 | 5.3.74 | DSH 鲸娘宠物 + 快捷消息/模型刷新 |
