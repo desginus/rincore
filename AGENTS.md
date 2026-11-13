@@ -103,6 +103,12 @@ Material 3 look (cards with dividers, plain forms).
 
 > 上面是上游 RikkaHub 的通用约定；以下是本仓库（desginus/rincore）额外的硬规则。
 
+### 交接文档（先读）
+
+- **唯一主文档：`docs/AGENT-HANDOFF.md`**。接手/交付/并行协作都从它开始。
+- 交付模板：`docs/handoffs/TEMPLATE.md`；并行占用：`docs/handoffs/CLAIMS.tsv`；最新交付：`docs/handoffs/`。
+- 每次交付必须更新主文档 + 新增交付记录 + 更新 `docs/KNOWN-ISSUES.md`；只写代码不写交接 = 未完成。
+
 ### 等待与查询 CI
 
 - **只用 `cd /workspace && ./bin/watch`**：

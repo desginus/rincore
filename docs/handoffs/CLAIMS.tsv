@@ -1,0 +1,3 @@
+claim_id	agent	branch_worktree	scope_paths	status	started_at	expires_at	note
+HANDOFF-DOC	integration-agent	rincore-adopt/adopt-3.0.0	docs/AGENT-HANDOFF.md,docs/handoffs/**,docs/KNOWN-ISSUES.md	ACTIVE	2026-11-13	2026-11-20	主文档与交付索引维护
+PHONE-P2	unassigned	-	app/src/main/java/me/rerere/rikkahub/phoneuse/**,app/src/main/java/me/rerere/rikkahub/data/ai/tools/local/PhoneUseTool.kt	OPEN	-	-	等 P1 真机验证后再接 ADB/Shizuku 或 OCR
