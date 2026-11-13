@@ -1400,7 +1400,7 @@ class GenerationHandler(
                 val compressed = onAfterTools(messages)
                 if (compressed != null && compressed !== messages) {
                     messages = compressed
-                    onUpdateMessages(messages)
+                    emit(GenerationChunk.Messages(messages))
                     CallTracer.event("COMPRESS", "mid_turn", "tool round ended, messages replaced by ${messages.size}")
                 }
             }
