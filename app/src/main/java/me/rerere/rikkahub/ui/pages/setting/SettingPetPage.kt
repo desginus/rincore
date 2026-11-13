@@ -50,6 +50,7 @@ import me.rerere.rikkahub.data.pet.PetRepository
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.floating.PetSprite
 import me.rerere.rikkahub.ui.theme.CustomColors
+import me.rerere.rikkahub.utils.plus
 
 /**
  * 宠物页：兼容 DSH-TUI 的 ZIP 宠物包（pack.json + 序列帧 PNG）。
