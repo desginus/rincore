@@ -64,6 +64,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -103,6 +104,7 @@ import me.rerere.hugeicons.stroke.Connect
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.FloppyDisk
 import me.rerere.hugeicons.stroke.Package01
+import me.rerere.hugeicons.stroke.Refresh01
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.hugeicons.stroke.Share01
 import me.rerere.hugeicons.stroke.Tick01
@@ -481,7 +483,8 @@ private fun ModelList(
     onUpdateProvider: (ProviderSetting) -> Unit
 ) {
     val providerManager = koinInject<ProviderManager>()
-    val modelList by produceState(emptyList(), providerSetting) {
+    var refreshTick by remember { mutableIntStateOf(0) }
+    val modelList by produceState(emptyList(), providerSetting, refreshTick) {
         runCatching {
             println("loading models...")
             value = providerManager.getProviderByType(providerSetting)
@@ -548,6 +551,7 @@ private fun ModelList(
         ) {
             AddModelButton(
                 models = modelList,
+                onRefresh = { refreshTick++ },
                 selectedModels = providerSetting.models,
                 onAddModel = {
                     onUpdateProvider(providerSetting.addModel(it))
@@ -725,6 +729,7 @@ private fun ModelSettingsForm(
 @Composable
 private fun AddModelButton(
     models: List<Model>,
+    onRefresh: () -> Unit,
     selectedModels: List<Model>,
     expanded: Boolean,
     onAddModel: (Model) -> Unit,
@@ -743,6 +748,7 @@ private fun AddModelButton(
     ) {
         ModelPicker(
             models = models,
+            onRefresh = onRefresh,
             selectedModels = selectedModels,
             onModelSelected = { model ->
                 val inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(model.modelId)
@@ -887,6 +893,7 @@ private fun AddModelButton(
 @Composable
 private fun ModelPicker(
     models: List<Model>,
+    onRefresh: () -> Unit,
     selectedModels: List<Model>,
     onModelSelected: (Model) -> Unit,
     onModelDeselected: (Model) -> Unit,
@@ -929,8 +936,13 @@ private fun ModelPicker(
                 ) {
                     Text(
                         text = stringResource(R.string.setting_provider_page_avaliable_models),
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f),
                     )
+
+                    IconButton(onClick = onRefresh) {
+                        Icon(HugeIcons.Refresh01, contentDescription = "刷新可用模型")
+                    }
 
                     val unselectedCount = filteredModels.count { model ->
                         selectedModels.none { it.modelId == model.modelId }

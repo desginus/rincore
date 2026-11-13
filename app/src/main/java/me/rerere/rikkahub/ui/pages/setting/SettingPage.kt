@@ -403,6 +403,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                             )
                         }
                     }
+                    item(
+                        onClick = { navController.navigate(Screen.SettingPet) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Image02, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("悬浮桌宠：鲸娘 / 导入 DSH 像素宠物包") },
+                        headlineContent = { Text("宠物") },
+                    )
                 }
             }
 

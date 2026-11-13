@@ -72,8 +72,16 @@ class ChatInputState {
         // 旧实现 `next = old + content; setTextAndPlaceCursorAtEnd(next)` 是**整串重写**：
         // IME 组合（中文输入法/语音上屏）进行中被打断 → selection 重置到组合起点 →
         // 用户看到"文本一直往后加、光标停在原地"。edit+append 保持增量语义，selection 到尾。
+        // ★v5.3.74（对齐上游 3.2.0）：快捷消息追加到已有内容之后时自动换行；
+        // 已以换行结尾不重复补，空输入框不产生前导空行。
+        val current = textContent.text.toString()
+        val appended = when {
+            current.isBlank() -> content
+            current.endsWith('\n') -> content
+            else -> "\n" + content
+        }
         textContent.edit {
-            append(content)
+            append(appended)
             this.selection = TextRange(this.length)
         }
         latestText = textContent.text.toString()

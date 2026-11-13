@@ -1,0 +1,285 @@
+{
+  "schema": 1,
+  "id": "whale-girl",
+  "name": "鲸娘",
+  "author": "DSH-TUI",
+  "license": "DSH-TUI 吉祥物，作者授权 dsh-go 使用",
+  "source": "https://dshtui.com/pets/whale-girl-emoji/",
+  "pixelArt": true,
+  "scale": 1,
+  "canvas": {"w": 69, "h": 66},
+  "anchor": {"x": 35.5, "baseline": 60},
+  "contentBox": {"x": 12, "y": 12, "w": 52, "h": 49},
+  "hitBoxes": {
+    "default": {"x": 13, "y": 12, "w": 50, "h": 48},
+    "wide": {"x": 10, "y": 12, "w": 53, "h": 48},
+    "sleeping": {"x": 12, "y": 12, "w": 51, "h": 49},
+    "byAnim": {"swim": {"x": 2, "y": 12, "w": 66, "h": 54}},
+    "wideAnims": ["typing"],
+    "sleepingAnims": ["sleeping"]
+  },
+  "animations": {
+    "idle": {
+      "sheet": "idle.png",
+      "frameW": 52,
+      "frameH": 49,
+      "cols": 13,
+      "box": {"x": 12, "y": 12, "w": 52, "h": 49},
+      "loop": true,
+      "ms": 5280,
+      "frames": [{"i": 0, "ms": 700}, {"i": 1, "ms": 280}, {"i": 2, "ms": 280}, {"i": 3, "ms": 240}, {"i": 4, "ms": 360}, {"i": 5, "ms": 60}, {"i": 6, "ms": 90}, {"i": 7, "ms": 60}, {"i": 0, "ms": 650}, {"i": 8, "ms": 280}, {"i": 9, "ms": 280}, {"i": 10, "ms": 240}, {"i": 11, "ms": 420}, {"i": 12, "ms": 60}, {"i": 6, "ms": 80}, {"i": 7, "ms": 60}, {"i": 0, "ms": 140}, {"i": 7, "ms": 60}, {"i": 6, "ms": 80}, {"i": 7, "ms": 60}, {"i": 0, "ms": 800}]
+    },
+    "idle-look": {
+      "sheet": "idle-look.png",
+      "frameW": 51,
+      "frameH": 51,
+      "cols": 10,
+      "box": {"x": 13, "y": 10, "w": 51, "h": 51},
+      "loop": true,
+      "ms": 3290,
+      "frames": [{"i": 0, "ms": 500}, {"i": 1, "ms": 420}, {"i": 2, "ms": 70}, {"i": 3, "ms": 80}, {"i": 2, "ms": 70}, {"i": 4, "ms": 380}, {"i": 5, "ms": 420}, {"i": 6, "ms": 110}, {"i": 7, "ms": 420}, {"i": 8, "ms": 140}, {"i": 9, "ms": 140}, {"i": 8, "ms": 140}, {"i": 0, "ms": 400}]
+    },
+    "idle-spout": {
+      "sheet": "idle-spout.png",
+      "frameW": 52,
+      "frameH": 57,
+      "cols": 10,
+      "box": {"x": 12, "y": 4, "w": 52, "h": 57},
+      "loop": true,
+      "ms": 2470,
+      "frames": [{"i": 0, "ms": 450}, {"i": 1, "ms": 260}, {"i": 2, "ms": 110}, {"i": 3, "ms": 110}, {"i": 4, "ms": 130}, {"i": 5, "ms": 150}, {"i": 6, "ms": 170}, {"i": 7, "ms": 170}, {"i": 8, "ms": 170}, {"i": 9, "ms": 350}, {"i": 0, "ms": 400}]
+    },
+    "thinking": {
+      "sheet": "thinking.png",
+      "frameW": 55,
+      "frameH": 60,
+      "cols": 16,
+      "box": {"x": 12, "y": 1, "w": 55, "h": 60},
+      "loop": true,
+      "ms": 3400,
+      "frames": [{"i": 0, "ms": 220}, {"i": 1, "ms": 220}, {"i": 2, "ms": 260}, {"i": 3, "ms": 260}, {"i": 4, "ms": 260}, {"i": 5, "ms": 300}, {"i": 6, "ms": 170}, {"i": 7, "ms": 170}, {"i": 8, "ms": 170}, {"i": 6, "ms": 170}, {"i": 9, "ms": 170}, {"i": 10, "ms": 170}, {"i": 11, "ms": 90}, {"i": 12, "ms": 110}, {"i": 13, "ms": 200}, {"i": 14, "ms": 200}, {"i": 15, "ms": 260}]
+    },
+    "typing": {
+      "sheet": "typing.png",
+      "frameW": 53,
+      "frameH": 57,
+      "cols": 14,
+      "box": {"x": 10, "y": 4, "w": 53, "h": 57},
+      "loop": true,
+      "ms": 2340,
+      "frames": [{"i": 0, "ms": 150}, {"i": 1, "ms": 170}, {"i": 2, "ms": 150}, {"i": 3, "ms": 170}, {"i": 4, "ms": 150}, {"i": 5, "ms": 170}, {"i": 6, "ms": 210}, {"i": 7, "ms": 150}, {"i": 8, "ms": 170}, {"i": 9, "ms": 150}, {"i": 10, "ms": 170}, {"i": 11, "ms": 150}, {"i": 12, "ms": 170}, {"i": 13, "ms": 210}]
+    },
+    "building": {
+      "sheet": "building.png",
+      "frameW": 63,
+      "frameH": 59,
+      "cols": 24,
+      "box": {"x": 0, "y": 2, "w": 63, "h": 59},
+      "loop": true,
+      "ms": 2520,
+      "frames": [{"i": 0, "ms": 130}, {"i": 1, "ms": 100}, {"i": 2, "ms": 80}, {"i": 3, "ms": 90}, {"i": 4, "ms": 100}, {"i": 5, "ms": 120}, {"i": 6, "ms": 90}, {"i": 7, "ms": 130}, {"i": 8, "ms": 130}, {"i": 9, "ms": 100}, {"i": 10, "ms": 80}, {"i": 11, "ms": 90}, {"i": 12, "ms": 100}, {"i": 13, "ms": 120}, {"i": 14, "ms": 90}, {"i": 15, "ms": 130}, {"i": 16, "ms": 130}, {"i": 17, "ms": 100}, {"i": 18, "ms": 80}, {"i": 19, "ms": 90}, {"i": 20, "ms": 100}, {"i": 21, "ms": 120}, {"i": 22, "ms": 90}, {"i": 23, "ms": 130}]
+    },
+    "music": {
+      "sheet": "music.png",
+      "frameW": 55,
+      "frameH": 50,
+      "cols": 8,
+      "box": {"x": 8, "y": 11, "w": 55, "h": 50},
+      "loop": true,
+      "ms": 1200,
+      "frames": [{"i": 0, "ms": 150}, {"i": 1, "ms": 150}, {"i": 2, "ms": 150}, {"i": 3, "ms": 150}, {"i": 4, "ms": 150}, {"i": 5, "ms": 150}, {"i": 6, "ms": 150}, {"i": 7, "ms": 150}]
+    },
+    "conducting": {
+      "sheet": "conducting.png",
+      "frameW": 68,
+      "frameH": 60,
+      "cols": 12,
+      "box": {"x": 0, "y": 1, "w": 68, "h": 60},
+      "loop": true,
+      "ms": 1800,
+      "frames": [{"i": 0, "ms": 150}, {"i": 1, "ms": 150}, {"i": 2, "ms": 150}, {"i": 3, "ms": 150}, {"i": 4, "ms": 150}, {"i": 5, "ms": 150}, {"i": 6, "ms": 150}, {"i": 7, "ms": 150}, {"i": 8, "ms": 150}, {"i": 9, "ms": 150}, {"i": 10, "ms": 150}, {"i": 11, "ms": 150}]
+    },
+    "error": {
+      "sheet": "error.png",
+      "frameW": 57,
+      "frameH": 57,
+      "cols": 10,
+      "box": {"x": 7, "y": 3, "w": 57, "h": 57},
+      "loop": true,
+      "ms": 1480,
+      "frames": [{"i": 0, "ms": 90}, {"i": 1, "ms": 80}, {"i": 2, "ms": 80}, {"i": 3, "ms": 80}, {"i": 4, "ms": 90}, {"i": 5, "ms": 200}, {"i": 6, "ms": 200}, {"i": 7, "ms": 160}, {"i": 8, "ms": 200}, {"i": 9, "ms": 300}]
+    },
+    "happy": {
+      "sheet": "happy.png",
+      "frameW": 59,
+      "frameH": 55,
+      "cols": 11,
+      "box": {"x": 5, "y": 6, "w": 59, "h": 55},
+      "loop": true,
+      "ms": 1520,
+      "frames": [{"i": 0, "ms": 200}, {"i": 1, "ms": 90}, {"i": 2, "ms": 90}, {"i": 3, "ms": 100}, {"i": 4, "ms": 100}, {"i": 5, "ms": 100}, {"i": 6, "ms": 100}, {"i": 7, "ms": 110}, {"i": 8, "ms": 110}, {"i": 9, "ms": 120}, {"i": 10, "ms": 400}]
+    },
+    "smile-hearts": {
+      "sheet": "smile-hearts.png",
+      "frameW": 57,
+      "frameH": 50,
+      "cols": 16,
+      "box": {"x": 7, "y": 11, "w": 57, "h": 50},
+      "loop": true,
+      "ms": 1600,
+      "frames": [{"i": 0, "ms": 100}, {"i": 1, "ms": 100}, {"i": 2, "ms": 100}, {"i": 3, "ms": 100}, {"i": 4, "ms": 100}, {"i": 5, "ms": 100}, {"i": 6, "ms": 100}, {"i": 7, "ms": 100}, {"i": 8, "ms": 100}, {"i": 9, "ms": 100}, {"i": 10, "ms": 100}, {"i": 11, "ms": 100}, {"i": 12, "ms": 100}, {"i": 13, "ms": 100}, {"i": 14, "ms": 100}, {"i": 15, "ms": 100}]
+    },
+    "thumbs-up": {
+      "sheet": "thumbs-up.png",
+      "frameW": 55,
+      "frameH": 50,
+      "cols": 13,
+      "box": {"x": 9, "y": 11, "w": 55, "h": 50},
+      "loop": true,
+      "ms": 1970,
+      "frames": [{"i": 0, "ms": 160}, {"i": 1, "ms": 120}, {"i": 2, "ms": 90}, {"i": 3, "ms": 80}, {"i": 4, "ms": 80}, {"i": 5, "ms": 100}, {"i": 6, "ms": 110}, {"i": 7, "ms": 110}, {"i": 8, "ms": 90}, {"i": 9, "ms": 110}, {"i": 9, "ms": 320}, {"i": 10, "ms": 100}, {"i": 11, "ms": 100}, {"i": 12, "ms": 400}]
+    },
+    "notification": {
+      "sheet": "notification.png",
+      "frameW": 52,
+      "frameH": 52,
+      "cols": 7,
+      "box": {"x": 12, "y": 8, "w": 52, "h": 52},
+      "loop": true,
+      "ms": 880,
+      "frames": [{"i": 0, "ms": 110}, {"i": 1, "ms": 110}, {"i": 2, "ms": 110}, {"i": 3, "ms": 110}, {"i": 4, "ms": 110}, {"i": 1, "ms": 110}, {"i": 5, "ms": 110}, {"i": 6, "ms": 110}]
+    },
+    "compacting": {
+      "sheet": "compacting.png",
+      "frameW": 66,
+      "frameH": 59,
+      "cols": 10,
+      "box": {"x": 1, "y": 2, "w": 66, "h": 59},
+      "loop": true,
+      "ms": 1740,
+      "frames": [{"i": 0, "ms": 300}, {"i": 1, "ms": 130}, {"i": 2, "ms": 130}, {"i": 3, "ms": 130}, {"i": 4, "ms": 130}, {"i": 5, "ms": 200}, {"i": 6, "ms": 100}, {"i": 7, "ms": 160}, {"i": 8, "ms": 220}, {"i": 9, "ms": 240}]
+    },
+    "carrying": {
+      "sheet": "carrying.png",
+      "frameW": 64,
+      "frameH": 49,
+      "cols": 8,
+      "box": {"x": 0, "y": 12, "w": 64, "h": 49},
+      "loop": true,
+      "ms": 1120,
+      "frames": [{"i": 0, "ms": 140}, {"i": 1, "ms": 140}, {"i": 2, "ms": 140}, {"i": 3, "ms": 140}, {"i": 4, "ms": 140}, {"i": 5, "ms": 140}, {"i": 6, "ms": 140}, {"i": 7, "ms": 140}]
+    },
+    "sleeping": {
+      "sheet": "sleeping.png",
+      "frameW": 51,
+      "frameH": 57,
+      "cols": 6,
+      "box": {"x": 12, "y": 4, "w": 51, "h": 57},
+      "loop": true,
+      "ms": 1980,
+      "frames": [{"i": 0, "ms": 330}, {"i": 1, "ms": 330}, {"i": 2, "ms": 330}, {"i": 3, "ms": 330}, {"i": 4, "ms": 330}, {"i": 5, "ms": 330}]
+    },
+    "waking": {
+      "sheet": "waking.png",
+      "frameW": 55,
+      "frameH": 50,
+      "cols": 10,
+      "box": {"x": 9, "y": 11, "w": 55, "h": 50},
+      "loop": false,
+      "ms": 1880,
+      "frames": [{"i": 0, "ms": 420}, {"i": 1, "ms": 110}, {"i": 2, "ms": 120}, {"i": 3, "ms": 100}, {"i": 4, "ms": 100}, {"i": 5, "ms": 110}, {"i": 6, "ms": 200}, {"i": 7, "ms": 70}, {"i": 8, "ms": 80}, {"i": 7, "ms": 70}, {"i": 9, "ms": 500}]
+    },
+    "swim": {
+      "sheet": "swim.png",
+      "frameW": 66,
+      "frameH": 55,
+      "cols": 8,
+      "box": {"x": 2, "y": 11, "w": 66, "h": 55},
+      "loop": true,
+      "ms": 1200,
+      "frames": [{"i": 0, "ms": 150}, {"i": 1, "ms": 150}, {"i": 2, "ms": 150}, {"i": 3, "ms": 150}, {"i": 4, "ms": 150}, {"i": 5, "ms": 150}, {"i": 6, "ms": 150}, {"i": 7, "ms": 150}]
+    },
+    "poke-left": {
+      "sheet": "poke-left.png",
+      "frameW": 51,
+      "frameH": 52,
+      "cols": 10,
+      "box": {"x": 12, "y": 8, "w": 51, "h": 52},
+      "loop": false,
+      "ms": 2110,
+      "frames": [{"i": 0, "ms": 300}, {"i": 1, "ms": 110}, {"i": 2, "ms": 90}, {"i": 3, "ms": 90}, {"i": 4, "ms": 200}, {"i": 5, "ms": 140}, {"i": 6, "ms": 140}, {"i": 7, "ms": 240}, {"i": 8, "ms": 200}, {"i": 9, "ms": 200}, {"i": 0, "ms": 400}]
+    },
+    "poke-right": {
+      "sheet": "poke-right.png",
+      "frameW": 51,
+      "frameH": 52,
+      "cols": 10,
+      "box": {"x": 12, "y": 8, "w": 51, "h": 52},
+      "loop": false,
+      "ms": 2110,
+      "frames": [{"i": 0, "ms": 300}, {"i": 1, "ms": 110}, {"i": 2, "ms": 90}, {"i": 3, "ms": 90}, {"i": 4, "ms": 200}, {"i": 5, "ms": 140}, {"i": 6, "ms": 140}, {"i": 7, "ms": 240}, {"i": 8, "ms": 200}, {"i": 9, "ms": 200}, {"i": 0, "ms": 400}]
+    },
+    "tickle": {
+      "sheet": "tickle.png",
+      "frameW": 62,
+      "frameH": 57,
+      "cols": 14,
+      "box": {"x": 2, "y": 4, "w": 62, "h": 57},
+      "loop": false,
+      "ms": 1680,
+      "frames": [{"i": 0, "ms": 90}, {"i": 1, "ms": 90}, {"i": 2, "ms": 90}, {"i": 3, "ms": 90}, {"i": 4, "ms": 90}, {"i": 5, "ms": 90}, {"i": 6, "ms": 90}, {"i": 7, "ms": 90}, {"i": 8, "ms": 90}, {"i": 9, "ms": 90}, {"i": 10, "ms": 90}, {"i": 11, "ms": 90}, {"i": 12, "ms": 200}, {"i": 13, "ms": 400}]
+    },
+    "drag": {
+      "sheet": "drag.png",
+      "frameW": 59,
+      "frameH": 51,
+      "cols": 10,
+      "box": {"x": 5, "y": 10, "w": 59, "h": 51},
+      "loop": true,
+      "ms": 900,
+      "frames": [{"i": 0, "ms": 90}, {"i": 1, "ms": 90}, {"i": 2, "ms": 90}, {"i": 3, "ms": 90}, {"i": 4, "ms": 90}, {"i": 5, "ms": 90}, {"i": 6, "ms": 90}, {"i": 7, "ms": 90}, {"i": 8, "ms": 90}, {"i": 9, "ms": 90}]
+    }
+  },
+  "idlePool": {
+    "everyMs": {"mean": 120000, "min": 45000, "max": 300000},
+    "anims": [
+      {"anim": "idle-look", "ms": 6580, "weight": 1},
+      {"anim": "idle-spout", "ms": 4940, "weight": 1}
+    ]
+  },
+  "states": {
+    "idle": ["idle"],
+    "thinking": ["thinking"],
+    "working": ["typing"],
+    "juggling": ["music"],
+    "error": ["error"],
+    "attention": ["happy"],
+    "notification": ["notification"],
+    "sweeping": ["compacting"],
+    "carrying": ["carrying"],
+    "sleeping": ["sleeping"],
+    "waking": ["waking"],
+    "roam": ["swim"]
+  },
+  "bonus": {"attention": {"anims": ["smile-hearts", "thumbs-up"], "chance": 0.2}},
+  "tiers": {
+    "working": [{"min": 3, "anim": "building"}, {"min": 2, "anim": "music"}, {"min": 1, "anim": "typing"}],
+    "juggling": [{"min": 2, "anim": "conducting"}, {"min": 1, "anim": "music"}]
+  },
+  "timings": {
+    "minDisplay": {
+      "attention": 3040,
+      "error": 1480,
+      "sweeping": 1740,
+      "notification": 2640,
+      "carrying": 2240,
+      "working": 1000,
+      "thinking": 1000
+    },
+    "autoReturn": {"attention": 3040, "error": 1480, "sweeping": 300000, "carrying": 2240},
+    "wakeMs": 1880
+  },
+  "reactions": {"tapLeft": "poke-left", "tapRight": "poke-right", "tickle": "tickle", "drag": "drag"},
+  "roam": {"anim": "swim", "faces": "front"},
+  "sleep": {"afterMs": 60000}
+}

@@ -1,10 +1,5 @@
 package me.rerere.rikkahub.ui.floating
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,7 +20,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -51,8 +45,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.rikkahub.data.pet.PetPack
+import me.rerere.rikkahub.data.pet.PetRepository
+import me.rerere.rikkahub.data.pet.PetSelection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -65,33 +63,20 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Alert01
 import me.rerere.hugeicons.stroke.ArrowUp02
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.hugeicons.stroke.Remove01
 import me.rerere.hugeicons.stroke.Sparkles
 import me.rerere.hugeicons.stroke.Stop
-import me.rerere.hugeicons.stroke.Tick01
-import me.rerere.hugeicons.stroke.Wrench01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.tools.local.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.data.model.GenerationPhase
 import me.rerere.rikkahub.service.ChatError
-import me.rerere.rikkahub.ui.components.ui.drawAppLogo
-import me.rerere.rikkahub.ui.components.ui.logoMorphShape
-import me.rerere.rikkahub.ui.components.ui.rememberAppLogoLayers
 import me.rerere.ui.markdown.Markdown
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.ceil
-import kotlin.math.floor
 import kotlin.uuid.Uuid
-
-// 和 Material3 LoadingIndicator 的参数一致；放宽 visibilityThreshold 让低阻尼弹簧在间隔内结束
-private val MorphSpring = spring<Float>(dampingRatio = 0.6f, stiffness = 200f, visibilityThreshold = 0.1f)
-private const val MORPH_INTERVAL_MILLIS = 650L
-private const val SPIN_DURATION_MILLIS = 4666
 
 /** 悬浮窗展示的会话状态 */
 data class FloatingChatUiState(
@@ -116,93 +101,27 @@ data class FloatingChatUiState(
     val failed: Boolean get() = !generating && error != null
 }
 
-/** 收起时的小图标：应用 logo，生成中轮廓不停变形，结束后在角上标出结果 */
+/** 收起时：鲸娘桌宠；不再有 logo 形变/旋转加载动画。 */
 @Composable
 fun ChatFloatingBubble(state: FloatingChatUiState, onClick: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    val logoLayers = rememberAppLogoLayers()
-    val shapePosition = remember { Animatable(0f) }
-    val spin = remember { Animatable(0f) }
-    // 收起到面板时窗口隐藏，帧还在跑，停下动画
-    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val morphing = state.generating && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
-    // 节奏照搬 LoadingIndicator：固定间隔变一个形状，弹簧和计时同时跑，另外整体匀速自转
-    LaunchedEffect(morphing) {
-        if (!morphing) {
-            // 停在一个完整的形状上
-            shapePosition.animateTo(ceil(shapePosition.value), MorphSpring)
-            return@LaunchedEffect
-        }
-        launch {
-            spin.animateTo(
-                targetValue = spin.value + 360f,
-                animationSpec = infiniteRepeatable(tween(SPIN_DURATION_MILLIS, easing = LinearEasing)),
-            )
-        }
-        while (true) {
-            val morph = launch { shapePosition.animateTo(floor(shapePosition.value) + 1f, MorphSpring) }
-            delay(MORPH_INTERVAL_MILLIS)
-            morph.join()
-        }
-    }
-
-    val logoShape = logoMorphShape(shapePosition.value, extraRotation = spin.value)
-
-    // 不用 Surface：它会吃掉触摸事件，拖动交给 FloatingX 处理
-    Box(modifier = Modifier.padding(6.dp)) {
-        Box(
+    val pack = rememberSelectedPet()
+    Box(modifier = Modifier.padding(4.dp)) {
+        PetSprite(
+            pack = pack,
+            animationName = state.petAnimationName(),
             modifier = Modifier
-                .size(52.dp)
-                // ═══ v5.3.30 ★★删除 dropShadow（崩溃根因，用户 5.3.29 OOM 报告）═══
-                //
-                // 堆栈：Bitmap.createBitmap ← ActualImageBitmap ← ImageBitmap
-                //      ← DropShadowRenderer.createOuterShadowBitmap ← DropShadowPainter.onDraw
-                //      ← SimpleDropShadowNode.draw
-                //
-                // Compose 的 dropShadow 是**软件阴影**：它要按绘制区域分配一张位图再模糊。
-                // 悬浮球带每 2 秒一次的形变动画（logoMorphShape），悬浮窗又常驻后台，
-                // 位图反复重建 → 直接 java.lang.OutOfMemoryError（Android 17 / SDK 37 实测）。
-                //
-                // 也不能用 elevation：轮廓是凹多边形，每帧重新三角剖分会把 RenderThread 卡住几十秒。
-                // 改用 radialGradient 光晕 —— 纯 draw 指令、零位图分配，视觉上仍是一圈柔和外扩。
-                .drawBehind {
-                    val halo = size.minDimension / 2f + 4.dp.toPx()
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(Color.Black.copy(alpha = 0.22f), Color.Transparent),
-                            center = center,
-                            radius = halo,
-                        ),
-                        radius = halo,
-                    )
-                }
-                .clip(logoShape)
-                .clickable(onClick = onClick)
-                .drawAppLogo(logoLayers)
+                .size(72.dp)
+                .clickable(onClick = onClick),
         )
-        when {
-            state.generating -> {}
-            state.error != null -> StatusBadge(HugeIcons.Alert01, colors.error, colors.onError)
-            state.pendingTools.isNotEmpty() -> StatusBadge(HugeIcons.Wrench01, colors.error, colors.onError)
-            state.hasReply -> StatusBadge(HugeIcons.Tick01, colors.primary, colors.onPrimary)
-        }
     }
 }
 
 @Composable
-private fun BoxScope.StatusBadge(icon: ImageVector, containerColor: Color, contentColor: Color) {
-    Box(
-        modifier = Modifier
-            .align(Alignment.TopEnd)
-            .size(20.dp)
-            .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
-            .padding(2.dp)
-            .clip(CircleShape)
-            .background(containerColor),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(10.dp))
-    }
+private fun rememberSelectedPet(): PetPack? {
+    val context = LocalContext.current
+    val repo = remember(context) { PetRepository(context) }
+    val revision by PetSelection.revision.collectAsStateWithLifecycle()
+    return remember(revision) { repo.selected() }
 }
 
 /** 展开后的面板：看进度、审批工具、停止生成和快速回复。[maxHeight] 是窗口能占的高度 */
@@ -289,24 +208,11 @@ private fun PanelHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (state.generating) {
-            ContainedLoadingIndicator(modifier = Modifier.size(40.dp))
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(if (state.failed) colors.errorContainer else colors.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = state.statusIcon(),
-                    contentDescription = null,
-                    tint = if (state.failed) colors.onErrorContainer else colors.onPrimaryContainer,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-        }
+        PetSprite(
+            pack = rememberSelectedPet(),
+            animationName = state.petAnimationName(),
+            modifier = Modifier.size(40.dp),
+        )
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = state.title.ifBlank { stringResource(R.string.chat_page_new_chat) },
@@ -486,12 +392,6 @@ private fun ReplyBar(
     }
 }
 
-private fun FloatingChatUiState.statusIcon(): ImageVector = when {
-    error != null -> HugeIcons.Alert01
-    pendingTools.isNotEmpty() -> HugeIcons.Wrench01
-    hasReply -> HugeIcons.Tick01
-    else -> HugeIcons.Sparkles
-}
 
 @Composable
 private fun FloatingChatUiState.statusText(): String {

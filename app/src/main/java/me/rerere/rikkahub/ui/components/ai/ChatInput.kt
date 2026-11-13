@@ -1069,6 +1069,7 @@ private fun QuickMessageButton(
     state: ChatInputState,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val hapticFeedback = LocalHapticFeedback.current
     IconButton(
         onClick = {
             expanded = !expanded
@@ -1082,12 +1083,22 @@ private fun QuickMessageButton(
         ) {
             quickMessages.forEach { quickMessage ->
                 Surface(
-                    onClick = {
-                        state.appendText(quickMessage.content)
-                        expanded = false
-                    },
                     color = Color.Transparent,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            onClick = {
+                                // 短按：追加到已有内容末尾（自动换行）
+                                state.appendText(quickMessage.content)
+                                expanded = false
+                            },
+                            onLongClick = {
+                                // 长按：用这条快捷消息替换输入框内容（上游 3.2.0 语义）
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                state.setMessageText(quickMessage.content)
+                                expanded = false
+                            },
+                        ),
                 ) {
                     Column(
                         modifier = Modifier.padding(8.dp)
