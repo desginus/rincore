@@ -316,6 +316,9 @@ class ChatService(
     // 自动压缩去重：同一条助手回复只尝试一次，避免每轮 onSuccess 重复扣费
     private val autoCompressedReplyIds: MutableSet<Uuid> =
         java.util.concurrent.ConcurrentHashMap.newKeySet()
+    // 3.2.0 pauseAfterTools：同一轮生成内最多触发一次中途压缩
+    private val autoCompressMidTurnDone: MutableSet<Uuid> =
+        java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /** v5.0.85：用量流水去重（同一条 assistant 消息只记一次） */
     private val usageRecordedMessages = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -905,6 +908,7 @@ class ChatService(
         conversationId: Uuid,
         messageRange: ClosedRange<Int>? = null
     ) {
+        autoCompressMidTurnDone.remove(conversationId)
         val settings = settingsStore.settingsFlow.first()
         val initialConversation = getConversationFlow(conversationId).value
         val assistant = settings.getAssistantById(initialConversation.assistantId)
@@ -1034,6 +1038,8 @@ class ChatService(
                 model = model,
                 // v3.20.0: 会话稳定 ID → x-opencode-session (OpenCode 官方强制)
                 conversationId = conversationId,
+                // ★v5.3.76（对齐 3.2.0 pauseAfterTools）：工具轮结束后按阈值暂停压缩
+                onAfterTools = { maybeCompressMidTurn(conversationId, model) },
                 processingStatus = session.processingStatus,
                 messages = conversation.currentMessages.let {
                     if (messageRange != null) {
@@ -1435,6 +1441,46 @@ class ChatService(
                 autoCompressedReplyIds.remove(reply.id)
             }
         }
+    }
+
+    /**
+     * 3.2.0 的 pauseAfterTools 语义：一轮工具执行完、下一轮请求前，
+     * 若上下文达到阈值就压缩一次，并把压缩后的消息返回给 GenerationHandler 继续。
+     * 可失败旁路：未启用/未达阈值/压缩失败 → 返回 null，生成链照常继续。
+     */
+    private suspend fun maybeCompressMidTurn(conversationId: Uuid, model: Model): List<UIMessage>? {
+        val latest = settingsStore.settingsFlow.value
+        if (!latest.enableAutoCompress || model.contextLength <= 0) return null
+        if (!autoCompressMidTurnDone.add(conversationId)) return null
+        val conversation = getConversationFlow(conversationId).value
+        val contextTokens = conversation.lastContextTokens()
+        if (contextTokens == null || contextTokens < model.contextLength * latest.autoCompressThreshold) {
+            autoCompressMidTurnDone.remove(conversationId)
+            return null
+        }
+        val reply = conversation.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT } ?: run {
+            autoCompressMidTurnDone.remove(conversationId)
+            return null
+        }
+        if (!autoCompressedReplyIds.add(reply.id)) return null
+        val keep = ContextCompressor.recommendedKeepMessages(conversation.currentMessages)
+        if (keep <= 0) {
+            autoCompressedReplyIds.remove(reply.id)
+            return null
+        }
+        val result = runCompression(
+            conversationId = conversationId,
+            conversation = conversation,
+            additionalPrompt = "",
+            targetTokens = 4_000,
+            keepRecentMessages = keep,
+        )
+        if (result.isFailure) {
+            autoCompressedReplyIds.remove(reply.id)
+            Log.w(TAG, "mid-turn auto compress failed id=$conversationId", result.exceptionOrNull())
+            return null
+        }
+        return getConversationFlow(conversationId).value.currentMessages
     }
 
     private suspend fun recordUsage(

@@ -331,6 +331,8 @@ class GenerationHandler(
         // v3.20.0: 会话稳定 ID → x-opencode-session 头 (OpenCode 官方 2026-09-06
         // 起强制, 自动生效非 opt-in; 非 OpenCode host 不发)
         conversationId: Uuid? = null,
+        /** ★v5.3.76：工具轮结束后的暂停点（自动压缩用）；返回 null 表示不压缩、继续原消息。 */
+        onAfterTools: (suspend (List<UIMessage>) -> List<UIMessage>?)? = null,
     ): Flow<GenerationChunk> = flow {
         // Trace ID 每次生成唯一 — 之前用 model.id 导致所有 trace 同 ID (日志无法区分)
         CallTracer.startTrace(id = java.util.UUID.randomUUID().toString().take(8))
@@ -722,6 +724,7 @@ class GenerationHandler(
                     // v3.20.0: 会话 ID 恢复透传 (x-opencode-session 官方强制)
                     conversationId = conversationId,
                     stepIndex = stepIndex,
+                    onAfterTools = onAfterTools,
                 )
                 CallTracer.event(
                     "RECV", "post_api",
@@ -1391,6 +1394,16 @@ class GenerationHandler(
                 )
             )
 
+            // ★v5.3.76（对齐 3.2.0 pauseAfterTools）：工具执行完、下一轮请求前，
+            // 给上层一个暂停点做自动压缩；返回新 messages 则替换本地消息并刷新 UI。
+            if (onAfterTools != null) {
+                val compressed = onAfterTools(messages)
+                if (compressed != null && compressed !== messages) {
+                    messages = compressed
+                    onUpdateMessages(messages)
+                    CallTracer.event("COMPRESS", "mid_turn", "tool round ended, messages replaced by ${messages.size}")
+                }
+            }
             // v4.8.105 (E): 计时打点 — 工具完成 → 下一轮首包 (resume_gap, 仅诊断)
             retry.lastToolEndAt = System.currentTimeMillis()
         }
@@ -1452,6 +1465,7 @@ class GenerationHandler(
         skipAssistantPrompt: Boolean = false,
         conversationId: Uuid? = null,
         stepIndex: Int = 0,
+        onAfterTools: (suspend (List<UIMessage>) -> List<UIMessage>?)? = null,
     ) {
         val startMs = System.currentTimeMillis()
         // v3.6.74 (4.1.1 重申): 消息一律原样发送, 零改动。
