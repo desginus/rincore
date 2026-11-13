@@ -71,6 +71,7 @@ private val TOOL_GROUPS: List<ToolGroup> = listOf(
             LocalToolOption.MediaScanner,
             LocalToolOption.ToastAndNotification,
             LocalToolOption.Calendar,
+            LocalToolOption.PhoneUse,
         ),
     ),
     ToolGroup(
@@ -139,6 +140,7 @@ private fun labelOf(option: LocalToolOption): String = when (option) {
     LocalToolOption.Archive -> "压缩包"
     LocalToolOption.CostGuards -> "用量护栏"
     LocalToolOption.Browser -> "浏览器"
+    LocalToolOption.PhoneUse -> "手机操控"
 }
 
 private fun descOf(option: LocalToolOption): String = when (option) {
@@ -166,6 +168,7 @@ private fun descOf(option: LocalToolOption): String = when (option) {
     LocalToolOption.Archive -> "解压/打包 zip、tar 等"
     LocalToolOption.CostGuards -> "限制单次会话的用量与成本"
     LocalToolOption.Browser -> "打开网页、抓正文、点击与输入"
+    LocalToolOption.PhoneUse -> "读取屏幕并点击、滑动、输入，操作其他应用（需无障碍）"
 }
 
 /** 内置工具 — 分类 + 开关 + 搜索（v5.1.0 重写；开关直接绑定当前助手） */
