@@ -5,6 +5,7 @@ task: 3.2.0 非手机项收口 + 手机操控 P1（A11y + DSH 三级点击 + 截
 version: 5.3.77
 base_commit: e760bb9fe
 head_commit: c603b87e3
+# 之后的纯文档交接提交：a0c7ee31e（main/adopt 已同步）
 status: MERGED
 evidence: E5
 started_at: 2026-11-13 19:30
