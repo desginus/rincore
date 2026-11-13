@@ -22,6 +22,9 @@ import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.phoneuse.PhoneUseManager
+import me.rerere.rikkahub.phoneuse.isFloatingChatWindowOn
 import me.rerere.rikkahub.data.repository.ScheduledJobRepository
 import me.rerere.rikkahub.data.repository.ScheduledJobRunRepository
 import me.rerere.rikkahub.service.CronJobScheduler
@@ -49,6 +52,8 @@ class LocalTools(
     private val browserPreferences: BrowserPreferences,
     private val workflowRepository: me.rerere.rikkahub.workflow.repository.WorkflowRepository,
     private val workflowEngine: me.rerere.rikkahub.workflow.execution.WorkflowEngine,
+    private val phoneUseManager: PhoneUseManager,
+    private val filesManager: FilesManager,
 ) {
     val javascriptTool by lazy { buildJavascriptTool() }
     val timeTool by lazy { buildTimeInfoTool() }
@@ -60,6 +65,21 @@ class LocalTools(
     val calendarCreateTool by lazy { buildCalendarCreateTool(context) }
     val chartDisplayTool by lazy { buildChartDisplayTool() }
     val costGuardTool by lazy { checkTokenUsageTool(settingsStore, conversationRepo) }
+
+    val phoneUseTool by lazy {
+        buildPhoneUseTool(
+            ownPackageName = context.packageName,
+            manager = phoneUseManager,
+            isFloatingWindowOn = { isFloatingChatWindowOn(context, settingsStore.settingsFlow.value) },
+            saveScreenshot = { bytes ->
+                filesManager.createChatFilesByByteArrays(
+                    byteArrays = listOf(bytes),
+                    displayName = "phone-screenshot.jpg",
+                    mimeType = "image/jpeg",
+                ).first().toString()
+            },
+        )
+    }
 
     fun getTools(
         options: List<LocalToolOption>,
@@ -177,6 +197,9 @@ class LocalTools(
                     createBrowserTool(name, context, convIdProvider, invocationContext)?.let { tools.add(it) }
                 }
             }
+        }
+        if (options.contains(LocalToolOption.PhoneUse) && PhoneUseManager.isSupported) {
+            tools.add(phoneUseTool)
         }
         return tools
     }

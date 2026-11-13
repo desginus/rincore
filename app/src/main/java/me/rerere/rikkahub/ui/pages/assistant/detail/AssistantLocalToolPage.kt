@@ -8,6 +8,8 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
  * 差异: 本地工具集合扩展 (自研工具清单)
  * ───────────────────────────────────────────────────────────────*/
 import android.Manifest
+import android.content.Intent
+import android.provider.Settings
 import android.os.Build
 import android.os.Environment
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +41,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
 import me.rerere.rikkahub.data.ai.tools.local.PermissionHelper
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.phoneuse.PhoneUseManager
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionInfo
@@ -50,6 +53,7 @@ import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.hasUsageStatsPermission
 import me.rerere.rikkahub.utils.openUsageAccessSettings
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -92,6 +96,8 @@ private fun AssistantLocalToolContent(
     onUpdateDisplaySetting: (me.rerere.rikkahub.data.datastore.DisplaySetting) -> Unit,
 ) {
     val context = LocalContext.current
+    val phoneManager: PhoneUseManager = koinInject()
+    val phoneController by phoneManager.controller.collectAsStateWithLifecycle()
     val toaster = LocalToaster.current
     val permissionRequiredText = stringResource(R.string.assistant_page_local_tools_screen_time_permission_required)
 
@@ -178,6 +184,36 @@ private fun AssistantLocalToolContent(
             item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_tts_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_tts_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Tts), onCheckedChange = { toggleLocalTool(LocalToolOption.Tts, it) }) })
             item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_ask_user_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_ask_user_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.AskUser), onCheckedChange = { toggleLocalTool(LocalToolOption.AskUser, it) }) })
             item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_screen_time_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_screen_time_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.ScreenTime), onCheckedChange = { toggleLocalTool(LocalToolOption.ScreenTime, it) }) })
+            item(
+                headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_phone_use_title)) },
+                supportingContent = {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            if (phoneController == null) stringResource(R.string.assistant_page_local_tools_phone_use_service_off)
+                            else "无障碍服务已连接 · 点击采用 节点 → 祖先 → 手势 三级策略"
+                        )
+                        if (!displaySetting.enableFloatingChatWindow || !Settings.canDrawOverlays(context)) {
+                            Text(stringResource(R.string.assistant_page_local_tools_phone_use_floating_window_required))
+                        }
+                    }
+                },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.PhoneUse),
+                        onCheckedChange = { enabled ->
+                            toggleLocalTool(LocalToolOption.PhoneUse, enabled)
+                            if (enabled && phoneController == null) {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            }
+                        },
+                    )
+                },
+            )
             item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_calendar_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_calendar_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Calendar), onCheckedChange = { toggleLocalTool(LocalToolOption.Calendar, it) }) })
             item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_chart_display_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_chart_display_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.ChartDisplay), onCheckedChange = { toggleLocalTool(LocalToolOption.ChartDisplay, it) }) })
             // v4.8.92: 补上此前遗漏的开关 —— 闹钟（getTools 一直在注入, 但页面无开关）

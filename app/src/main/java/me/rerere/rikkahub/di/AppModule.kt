@@ -18,6 +18,7 @@ import me.rerere.rikkahub.data.firebase.StubAnalytics
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
+import me.rerere.rikkahub.phoneuse.PhoneUseManager
 import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.agentrun.AgentRunBootRecovery
 import me.rerere.rikkahub.data.event.AppEventBus
@@ -80,8 +81,10 @@ val appModule = module {
         BrowserPreferences(get())
     }
 
+    single { PhoneUseManager() }
+
     single {
-        LocalTools(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get())
+        LocalTools(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get())
     }
 
     single {
