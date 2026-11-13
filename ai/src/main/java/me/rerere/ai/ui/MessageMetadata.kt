@@ -31,6 +31,8 @@ sealed interface PartMetadata
 @Serializable
 data class ClaudeReasoningMetadata(
     val signature: String? = null,
+    @kotlinx.serialization.SerialName("claude_redacted_data")
+    val redactedData: String? = null,
 ) : PartMetadata
 
 /**

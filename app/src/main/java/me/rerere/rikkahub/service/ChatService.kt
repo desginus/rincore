@@ -123,6 +123,7 @@ import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.toAssistantMemory
 import me.rerere.rikkahub.data.model.localFileUrls
+import me.rerere.rikkahub.data.model.lastContextTokens
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.replaceRegexes
@@ -311,6 +312,9 @@ class ChatService(
 
     /** ★v5.3.56：正在压缩的对话（原子集合，防重复点击导致重复扣费 + 结果互相覆盖）。 */
     private val compressingConversations: MutableSet<Uuid> =
+        java.util.concurrent.ConcurrentHashMap.newKeySet()
+    // 自动压缩去重：同一条助手回复只尝试一次，避免每轮 onSuccess 重复扣费
+    private val autoCompressedReplyIds: MutableSet<Uuid> =
         java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /** v5.0.85：用量流水去重（同一条 assistant 消息只记一次） */
@@ -1328,6 +1332,9 @@ class ChatService(
         }.onSuccess {
             val finalConversation = getConversationFlow(conversationId).value
             saveConversation(conversationId, finalConversation)
+            // ★v5.3.75（对齐上游 3.2.0）：回复结束后按上下文占用比例自动压缩。
+            // 本批先落在回合结束时；工具轮中途暂停压缩需要 AgentLoop，单独一批。
+            maybeAutoCompress(finalConversation, model)
             // ★v5.3.73：最终统计一行可查 —— 用于区分「计数口径」与「真实生成慢」。
             runCatching {
                 val msg = finalConversation.messageNodes
@@ -1400,6 +1407,36 @@ class ChatService(
      * v5.0.85：把本次生成的真实用量写进 usage_record（按消息 id 去重，重试/多次完成回调不重复计）。
      * DAO 用 GlobalContext 取（ChatService 构造参数保持稳定，避免 Koin 链改动）。
      */
+    /**
+     * 回复结束后自动压缩：上下文占用 >= 模型窗口 * autoCompressThreshold 时，
+     * 用现有压缩链（可失败旁路）在后台压一次；同一条助手回复只尝试一次。
+     */
+    private fun maybeAutoCompress(conversation: Conversation, model: Model) {
+        val latest = settingsStore.settingsFlow.value
+        if (!latest.enableAutoCompress || model.contextLength <= 0) return
+        val contextTokens = conversation.lastContextTokens() ?: return
+        if (contextTokens < model.contextLength * latest.autoCompressThreshold) return
+        val reply = conversation.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT } ?: return
+        if (!autoCompressedReplyIds.add(reply.id)) return
+        val keep = ContextCompressor.recommendedKeepMessages(conversation.currentMessages)
+        if (keep <= 0) {
+            autoCompressedReplyIds.remove(reply.id)
+            return
+        }
+        appScope.launch(Dispatchers.IO) {
+            runCompression(
+                conversationId = conversation.id,
+                conversation = conversation,
+                additionalPrompt = "",
+                targetTokens = 4_000,
+                keepRecentMessages = keep,
+            ).onFailure { e ->
+                Log.w(TAG, "auto compress failed id=${conversation.id}", e)
+                autoCompressedReplyIds.remove(reply.id)
+            }
+        }
+    }
+
     private suspend fun recordUsage(
         model: me.rerere.ai.provider.Model,
         assistant: me.rerere.rikkahub.data.model.Assistant?,

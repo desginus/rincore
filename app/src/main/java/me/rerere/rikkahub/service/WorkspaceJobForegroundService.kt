@@ -90,7 +90,7 @@ class WorkspaceJobForegroundService : Service() {
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        // 系统对 dataSync 前台服务有时长上限。命令本身不依赖前台服务才能跑 ——
+        // 系统对 specialUse 前台服务有时长上限。命令本身不依赖前台服务才能跑 ——
         // 进程还在就继续，被回收了就靠日志与 job 状态在下次查询时反映（不在这里杀任务）。
         Log.w(TAG, "Foreground service timed out (type=$fgsType) — job keeps running")
         activeJobs.clear()
@@ -116,7 +116,7 @@ class WorkspaceJobForegroundService : Service() {
                     this,
                     NOTIFICATION_ID,
                     notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
                 )
             } else {
                 startForeground(NOTIFICATION_ID, notification)

@@ -68,12 +68,11 @@ fun ChatMessageNerdLine(
                             )
                         },
                         content = {
-                            Text(text = "${usage.promptTokens.formatNumber()} tokens")
-                            // Cached tokens
-                            if (usage.cachedTokens > 0) {
-                                Text(
-                                    text = "(${message.usage?.cachedTokens?.formatNumber() ?: "0"} cached)"
-                                )
+                            // 3.2.0：多步工具轮的 usage 是累计值，输入显示最后一次请求（上下文占用）
+                            val lastUsage = message.lastUsage ?: usage
+                            Text(text = "${lastUsage.promptTokens.formatNumber()} tokens")
+                            if (lastUsage.cachedTokens > 0) {
+                                Text(text = "(${lastUsage.cachedTokens.formatNumber()} cached)")
                             }
                         }
                     )

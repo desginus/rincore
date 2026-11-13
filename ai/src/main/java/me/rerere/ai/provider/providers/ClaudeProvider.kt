@@ -1052,17 +1052,26 @@ class ClaudeProvider(
         }
 
         is UIMessagePart.Reasoning -> {
-            // v3.10.12 防御: 无 signature 的 thinking 块 — 兼容网关 (千问等)
-            // 不返回签名, Minimax 等严格校验上游要求历史 thinking 带签名 → 400
-            // (2013)。有签名 (官方 Claude) 保留, 无签名丢弃。
-            val sig = metadataAs<ClaudeReasoningMetadata>()?.signature
-            if (sig != null) {
+            val meta = metadataAs<ClaudeReasoningMetadata>()
+            val redacted = meta?.redactedData
+            if (redacted != null) {
+                // 3.2.0：redacted thinking 必须原样回传 data，不能当普通 thinking。
                 buildJsonObject {
-                    put("type", "thinking")
-                    put("thinking", reasoning)
-                    put("signature", sig)
+                    put("type", "redacted_thinking")
+                    put("data", redacted)
                 }
-            } else null
+            } else {
+                // v3.10.12 防御: 无 signature 的 thinking 块 — 兼容网关（千问等）
+                // 不返回签名，Minimax 等严格校验上游要求历史 thinking 带签名 → 400。
+                val sig = meta?.signature
+                if (sig != null) {
+                    buildJsonObject {
+                        put("type", "thinking")
+                        put("thinking", reasoning)
+                        put("signature", sig)
+                    }
+                } else null
+            }
         }
 
         else -> null
@@ -1128,8 +1137,16 @@ class ClaudeProvider(
                 }
 
                 "redacted_thinking" -> {
-                    val data = block["data"]?.jsonPrimitiveOrNull?.contentOrNull
-                    
+                    block["data"]?.jsonPrimitiveOrNull?.contentOrNull?.let { data ->
+                        parts.add(
+                            UIMessagePart.Reasoning(
+                                reasoning = "",
+                                createdAt = Clock.System.now(),
+                                finishedAt = null,
+                                metadata = ClaudeReasoningMetadata(redactedData = data).toMetadata(),
+                            )
+                        )
+                    }
                 }
 
                 "tool_use" -> {

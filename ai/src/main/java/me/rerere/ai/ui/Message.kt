@@ -56,6 +56,10 @@ data class UIMessage(
     // 模型名称的快照：modelId 指向的模型被删除后，靠它继续显示这条消息由谁生成
     val modelSnapshot: ModelSnapshot? = null,
     val usage: TokenUsage? = null,
+    // 最后一次请求自己的用量（usage 是多步累计值，不能拿来算上下文占用）
+    val lastUsage: TokenUsage? = null,
+    // 这条助手消息经历了几个 API step（工具轮次）
+    val stepCount: Int? = null,
     // 模型实际生成耗时（各步从首个 chunk 到响应结束的累计），不含首 token 延迟、工具执行和审批等待
     val generationTimeMs: Long? = null,
     // 最后一次请求结束时的上下文占用（prompt + completion），usage 是多步累计值，不能用来看上下文大小

@@ -11,8 +11,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID
@@ -167,6 +169,53 @@ class DebugVM(
         }
     }
 
+    /** 创建约 [targetTokens] token 的对话，用来测试上下文压缩。 */
+    fun createConversationWithTokens(targetTokens: Int = 500_000) {
+        viewModelScope.launch(Dispatchers.Default) {
+            val tokensPerMessage = 10_000
+            val messageCount = (targetTokens / tokensPerMessage).coerceAtLeast(2).let { it + it % 2 }
+            val timeZone = TimeZone.currentSystemDefault()
+            val random = Random(targetTokens)
+            val messageNodes = List(messageCount) { index ->
+                val role = if (index % 2 == 0) MessageRole.USER else MessageRole.ASSISTANT
+                val text = buildString {
+                    append("Section ${index + 1} (${role.name.lowercase()}):\n")
+                    var tokens = 0
+                    while (tokens < tokensPerMessage) {
+                        val words = random.nextInt(8, 17)
+                        repeat(words) { i ->
+                            if (i > 0) append(' ')
+                            append(TOKEN_WORDS[random.nextInt(TOKEN_WORDS.size)])
+                        }
+                        append(". ")
+                        tokens += words + 1
+                    }
+                }
+                val isLast = index == messageCount - 1
+                val message = UIMessage(
+                    id = Uuid.random(),
+                    role = role,
+                    parts = listOf(UIMessagePart.Text(text)),
+                    createdAt = Clock.System.now().toLocalDateTime(timeZone),
+                    lastUsage = if (isLast) TokenUsage(
+                        promptTokens = messageCount * tokensPerMessage - tokensPerMessage,
+                        completionTokens = tokensPerMessage,
+                        totalTokens = messageCount * tokensPerMessage,
+                    ) else null,
+                )
+                MessageNode.of(message)
+            }
+            conversationRepository.insertConversation(
+                Conversation(
+                    id = Uuid.random(),
+                    assistantId = DEFAULT_ASSISTANT_ID,
+                    title = "约 ${targetTokens / 1000}k token 对话测试",
+                    messageNodes = messageNodes,
+                )
+            )
+        }
+    }
+
     private fun randomMessageText(index: Int, role: MessageRole): String {
         val fragments = listOf(
             "快速", "随机", "消息", "样例", "用于", "测试", "列表", "渲染", "滚动", "性能",
@@ -178,3 +227,10 @@ class DebugVM(
         return "$prefix#${index + 1}: $body"
     }
 }
+
+private val TOKEN_WORDS = listOf(
+    "the", "a", "of", "to", "and", "in", "is", "it", "that", "for", "on", "with", "as", "was", "at",
+    "by", "be", "this", "from", "or", "but", "not", "are", "we", "you", "they", "he", "she", "can",
+    "will", "one", "all", "new", "time", "day", "way", "people", "year", "work", "life", "world",
+    "city", "river", "house", "road", "light", "water", "story", "music", "game", "plan", "team",
+)

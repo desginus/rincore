@@ -39,6 +39,12 @@ internal fun applyStepGenerationStats(
         ?: if (sameAssistant) baseContextTokens else current.contextTokens
     val updated = current.copy(
         usage = cumulativeUsage,
+        lastUsage = stepUsage ?: if (sameAssistant) current.lastUsage else current.lastUsage,
+        stepCount = if (stepUsage != null) {
+            (if (sameAssistant) current.stepCount ?: 0 else 0) + 1
+        } else {
+            current.stepCount
+        },
         generationTimeMs = generationMs.takeIf { it > 0 },
         contextTokens = contextTokens,
     )

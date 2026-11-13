@@ -100,6 +100,39 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
             item {
                 CardGroup {
                     switchItem(
+                        checked = settings.enableAutoCompress,
+                        onCheckedChange = { enabled ->
+                            vm.updateSettings { it.copy(enableAutoCompress = enabled) }
+                        },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_auto_compress_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_auto_compress_title)) },
+                    )
+                    if (settings.enableAutoCompress) {
+                        formItem(
+                            headlineContent = { Text(stringResource(R.string.setting_display_page_auto_compress_threshold_title)) },
+                            supportingContent = { Text(stringResource(R.string.setting_display_page_auto_compress_threshold_desc)) },
+                            trailingContent = {
+                                CardGroupValue("${(settings.autoCompressThreshold * 100).roundToInt()}%")
+                            },
+                        ) {
+                            Slider(
+                                value = settings.autoCompressThreshold,
+                                onValueChange = { value ->
+                                    val rounded = (value * 20).roundToInt() / 20f
+                                    vm.updateSettings { it.copy(autoCompressThreshold = rounded) }
+                                },
+                                valueRange = 0.5f..0.95f,
+                                steps = 8,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                CardGroup {
+                    switchItem(
                         checked = displaySetting.showMessageJumper,
                         onCheckedChange = { updateDisplaySetting(displaySetting.copy(showMessageJumper = it)) },
                         supportingContent = { Text(stringResource(R.string.setting_display_page_show_message_jumper_desc)) },

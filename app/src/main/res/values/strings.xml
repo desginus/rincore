@@ -440,6 +440,7 @@
   <string name="permission_desc_require_permission">In order to provide a better user experience, the app requires the following permissions:</string>
   <string name="permission_diaog_title">Permission Request</string>
   <string name="permission_go_to_settings">Go to Setting</string>
+  <string name="permission_notification_card_desc">没有通知权限时，生成、Web 服务器等前台服务的通知不会显示；点击授予。</string>
   <string name="permission_local_network">Local Network</string>
   <string name="permission_local_network_desc">Allow the web server to be accessed from devices on the same local network</string>
   <string name="permission_microphone">Microphone</string>
@@ -701,6 +702,10 @@
   <string name="setting_display_page_show_line_numbers_desc">Display line numbers in code blocks</string>
   <string name="setting_display_page_show_line_numbers_title">Show Line Numbers</string>
   <string name="setting_display_page_show_message_jumper_desc">Display quick jump buttons on the right when scrolling the chat list</string>
+  <string name="setting_display_page_auto_compress_title">自动压缩历史</string>
+  <string name="setting_display_page_auto_compress_desc">回复结束后，上下文占用达到窗口比例时自动压缩一次；在同一条回复上只尝试一次。</string>
+  <string name="setting_display_page_auto_compress_threshold_title">触发比例</string>
+  <string name="setting_display_page_auto_compress_threshold_desc">上下文占用达到模型窗口的该比例时触发自动压缩。</string>
   <string name="setting_display_page_show_message_jumper_title">Show Message Jumper</string>
   <string name="setting_display_page_show_model_name_desc">Whether to display model names in chat messages</string>
   <string name="setting_display_page_show_model_name_title">Show Model Name</string>

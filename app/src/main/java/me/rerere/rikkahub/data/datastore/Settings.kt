@@ -45,6 +45,9 @@ data class Settings(
     val fastModelId: Uuid = Uuid.random(),
     val fastModelReasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
     val imageGenerationModelId: Uuid = Uuid.random(),
+    // ★v5.3.75（对齐上游 3.2.0）：回复结束后上下文占用达到 autoCompressThreshold 时自动压缩历史
+    val enableAutoCompress: Boolean = false,
+    val autoCompressThreshold: Float = 0.8f,
     val enableAutoTitle: Boolean = true,
     val titlePrompt: String = DEFAULT_TITLE_PROMPT,
     val translateModeId: Uuid = Uuid.random(),

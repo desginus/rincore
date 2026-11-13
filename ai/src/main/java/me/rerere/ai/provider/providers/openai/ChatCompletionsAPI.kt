@@ -1023,7 +1023,7 @@ class ChatCompletionsAPI(
                 buildMessages(
                     messages = budgetedMessages,
                     includeHistoryReasoning = providerSetting.includeHistoryReasoning,
-    
+                    mistralReasoning = host == "api.mistral.ai",
                 )
             )
 
@@ -1378,7 +1378,7 @@ private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
     private fun buildMessages(
         messages: List<UIMessage>,
         includeHistoryReasoning: Boolean = true,
-
+        mistralReasoning: Boolean = false,
     ) = buildJsonArray {
         // ═══ v5.3.38 ★★历史图片保鲜期（用户实测：中期缓存命中率 7%）═══
         //
@@ -1400,6 +1400,7 @@ private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
                 addAssistantMessages(
                     message = message,
                     includeReasoning = includeHistoryReasoning,
+                    mistralReasoning = mistralReasoning,
                 )
             } else {
                 addNonAssistantMessage(message)
@@ -1411,6 +1412,7 @@ private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
         message: UIMessage,
         includeReasoning: Boolean,
         imageUploadCompat: Boolean = false,
+        mistralReasoning: Boolean = false,
     ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
@@ -1435,7 +1437,8 @@ private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
                     buildAssistantMessageJson(
                         contentParts = contentBuffer,
                         tools = group.tools,
-                        reasoningPart = reasoningPart
+                        reasoningPart = reasoningPart,
+                        mistralReasoning = mistralReasoning,
                     )?.let { assistantMessage ->
                         add(assistantMessage)
                     }
@@ -1502,7 +1505,8 @@ private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
             buildAssistantMessageJson(
                 contentParts = contentBuffer,
                 tools = emptyList(),
-                reasoningPart = reasoningPart
+                reasoningPart = reasoningPart,
+                mistralReasoning = mistralReasoning,
             )?.let { assistantMessage ->
                 add(assistantMessage)
             }
@@ -1513,6 +1517,7 @@ private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
         contentParts: List<UIMessagePart>,
         tools: List<UIMessagePart.Tool>,
         reasoningPart: UIMessagePart.Reasoning?,
+        mistralReasoning: Boolean = false,
     ): JsonObject? {
         // v4.5.18: 判定整段重写 — "模型输出→非法 assistant 消息"系统修复。
         // 病灶: 模型某轮只输出思考 (正文为空, 含 think 标签全文被剥离入思考
@@ -1536,6 +1541,8 @@ private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
             }
         }
         val hasReasoning = !reasoningPart?.reasoning.isNullOrBlank()
+        // Mistral 不接受 reasoning_content，思考内容要作为 content 里的 thinking 块回传。
+        val mistralThinking = if (mistralReasoning && hasReasoning) reasoningPart?.reasoning else null
         if (usableContent.isEmpty() && !hasReasoning && tools.isEmpty()) {
             return null
         }
@@ -1545,12 +1552,43 @@ private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
             // v3.6.53: reasoning_content 回传完全对齐原版 RikkaHub — hasReasoning 就回传
             // (所有模型、所有轮, 不区分 tool-call/plain)。原版超长对话缓存 99%+ 验证:
             // reasoning_content 字段时有时无会破坏 token 序列前缀稳定性。
-            if (hasReasoning) {
+            if (hasReasoning && mistralThinking == null) {
                 put("reasoning_content", reasoningPart.reasoning)
             }
 
             // content — 无 tool_calls 时必须有有效内容 (上游硬校验)
-            when {
+            if (mistralThinking != null) {
+                putJsonArray("content") {
+                    add(buildJsonObject {
+                        put("type", "thinking")
+                        putJsonArray("thinking") {
+                            add(buildJsonObject {
+                                put("type", "text")
+                                put("text", mistralThinking)
+                            })
+                        }
+                    })
+                    usableContent.forEach { part ->
+                        when (part) {
+                            is UIMessagePart.Text -> add(buildJsonObject {
+                                put("type", "text")
+                                put("text", part.text)
+                            })
+                            is UIMessagePart.Image -> add(buildJsonObject {
+                                part.encodeBase64().onSuccess { encodedImage ->
+                                    put("type", "image_url")
+                                    put("image_url", buildJsonObject { put("url", encodedImage.base64) })
+                                }.onFailure { e ->
+                                    Log.w(TAG, "encode user image failed: ${part.url}", e)
+                                    put("type", "text")
+                                    put("text", "[图片编码失败: ${part.url} — 需要查看时调用 read_image 工具传入该路径]")
+                                }
+                            })
+                            else -> {}
+                        }
+                    }
+                }
+            } else when {
                 usableContent.isNotEmpty() -> {
                     if (usableContent.size == 1 && usableContent[0] is UIMessagePart.Text) {
                         put("content", (usableContent[0] as UIMessagePart.Text).text)
@@ -1728,34 +1766,12 @@ private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
         val role = MessageRole.fromValueOrNull(jsonObject["role"]?.jsonPrimitiveOrNull?.contentOrNull)
             ?: MessageRole.ASSISTANT
 
-        // content 可能是字符串或 block 数组 (如 [{type:"text",text:"..."}]); 数组时拼接 text 块, 否则文本丢失 (对齐原版)
-        val contentElement = jsonObject["content"]
-        val content = contentElement?.jsonPrimitiveOrNull?.contentOrNull
-            ?: (contentElement as? JsonArray)?.mapNotNull { block ->
-                val obj = block.jsonObjectOrNull ?: return@mapNotNull null
-                if (obj["type"]?.jsonPrimitiveOrNull?.contentOrNull == "text") {
-                    obj["text"]?.jsonPrimitiveOrNull?.contentOrNull
-                } else {
-                    null
-                }
-            }?.joinToString("") ?: ""
+        // content 可能是字符串或块列表（Mistral thinking / text）；统一解析。
+        val parsedContent = parseChatCompletionsContent(jsonObject["content"])
+        val content = parsedContent.text
         val reasoning = jsonObject["reasoning_content"]?.jsonPrimitiveOrNull?.contentOrNull
             ?: jsonObject["reasoning"]?.jsonPrimitiveOrNull?.contentOrNull
-            ?: (contentElement as? JsonArray)?.mapNotNull { block ->
-                // v3.10.2: content 数组 thinking 块泛化提取 — 兼容多种网关形态,
-                // 修复 GPT-5.6-Luna (Opencode 订阅) 思考链完全丢失:
-                // 原实现只取第一块 thinking 的嵌套 thinking[0].text (Mistral 形态),
-                // 网关发 thinking 直接带 text / thinking 字符串 / 多块时全部丢失。
-                // 参考: Mistral {"content":[{"type":"thinking","thinking":[{"type":"text","text":"..."}]}]}
-                val obj = block.jsonObjectOrNull ?: return@mapNotNull null
-                if (obj["type"]?.jsonPrimitiveOrNull?.contentOrNull != "thinking") return@mapNotNull null
-                obj["text"]?.jsonPrimitiveOrNull?.contentOrNull
-                    ?: (obj["thinking"] as? JsonArray)?.mapNotNull { t ->
-                        t.jsonObjectOrNull?.get("text")?.jsonPrimitiveOrNull?.contentOrNull
-                            ?: t.jsonObjectOrNull?.toString()?.takeIf { it.isNotBlank() }
-                    }?.joinToString("")
-                    ?: obj["thinking"]?.jsonPrimitiveOrNull?.contentOrNull
-            }?.filter { !it.isNullOrBlank() }?.joinToString("\n")?.takeIf { it.isNotBlank() }
+            ?: parsedContent.reasoning
         val toolCalls = jsonObject["tool_calls"] as? JsonArray ?: JsonArray(emptyList())
         val images = jsonObject["images"] as? JsonArray ?: JsonArray(emptyList())
 
